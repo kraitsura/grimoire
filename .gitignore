@@ -40,9 +40,6 @@ Thumbs.db
 *.swo
 *~
 
-# Rust / Tauri
-**/src-tauri/target/
-**/src-tauri/Cargo.lock
 
 # Convex
 .convex/
@@ -56,3 +53,5 @@ convex/_generated/
 .beads/.exclusive-lock
 .beads/daemon.*
 .git/beads-worktrees/
+
+.worktrees/
