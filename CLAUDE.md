@@ -130,3 +130,26 @@ bd sync                               # Push to remote
 - `related` - Soft link (contextual connection)
 - `parent-child` - Epic/subtask hierarchy
 - `discovered-from` - Found during other work
+
+### Beads Viewer (bv)
+
+For graph-aware insights and execution planning, use `bv` with robot flags. This offloads complex dependency analysis to avoid hallucinated traversals.
+
+**AI agents must use robot flags only** (interactive mode traps the terminal):
+
+```bash
+bv --robot-help                       # Show all AI-facing commands
+bv --robot-insights                   # JSON graph metrics (PageRank, bottlenecks, cycles)
+bv --robot-plan                       # JSON execution plan with parallel tracks
+bv --robot-priority                   # Priority recommendations with confidence scores
+bv --robot-diff --diff-since HEAD~5   # Track structural changes since commit
+```
+
+**When to use bv:**
+- Before starting work: `bv --robot-insights` to assess project health and find bottlenecks
+- Planning execution order: `bv --robot-plan` for dependency-respecting task order
+- After refactoring: `bv --robot-diff` to verify no cycles introduced
+
+**bv vs bd:**
+- `bd` - CRUD operations (create, update, close, sync)
+- `bv` - Read-only analysis (insights, planning, visualization)
