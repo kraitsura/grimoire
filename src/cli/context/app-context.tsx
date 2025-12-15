@@ -104,9 +104,7 @@ const NOTIFICATION_TIMEOUT = 3000;
  * </AppProvider>
  * ```
  */
-export const AppProvider: React.FC<{ children: ReactNode }> = ({
-  children,
-}) => {
+export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Initialize state with list screen
   const [currentScreen, setCurrentScreen] = useState<Screen>({ name: "list" });
   const [history, setHistory] = useState<Screen[]>([]);
@@ -208,11 +206,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     setLLMConfig,
   };
 
-  return (
-    <AppContext.Provider value={{ state, actions }}>
-      {children}
-    </AppContext.Provider>
-  );
+  return <AppContext.Provider value={{ state, actions }}>{children}</AppContext.Provider>;
 };
 
 /**

@@ -5,7 +5,7 @@
  * run effectful computations with proper service dependency injection.
  */
 
-import { ManagedRuntime, Layer, Effect } from "effect";
+import { ManagedRuntime, Effect } from "effect";
 import React, {
   createContext,
   useContext,
@@ -15,189 +15,15 @@ import React, {
   type ReactNode,
 } from "react";
 
-// Import all services and the main layer
-import {
-  SqlService,
-  StorageService,
-  PromptStorageService,
-  EditorService,
-  Clipboard,
-  MigrationService,
-  SyncService,
-  FileWatcherService,
-  ExportService,
-  TagService,
-  SearchService,
-  ImportService,
-  ArchiveService,
-  ApiKeyService,
-  VersionService,
-  ChainService,
-  PinService,
-  FavoriteService,
-  SqlLive,
-  StorageServiceLive,
-  PromptStorageLive,
-  EditorServiceLive,
-  ClipboardLive,
-  MigrationLive,
-  SyncLive,
-  FileWatcherLive,
-  ExportServiceLive,
-  TagServiceLive,
-  SearchServiceLive,
-  ImportServiceLive,
-  ArchiveServiceLive,
-  ApiKeyServiceLive,
-  VersionServiceLive,
-  ChainServiceLive,
-  PinServiceLive,
-  FavoriteServiceLive,
-} from "../../services";
-
-/**
- * Main application layer combining all services
- *
- * This layer provides all services needed by the application with
- * proper dependency resolution:
- * - SqlService (foundation layer)
- * - MigrationService (depends on SqlService)
- * - PromptStorageService (file operations)
- * - SyncService (depends on SqlService and PromptStorageService)
- * - StorageService (depends on SqlService, PromptStorageService, and SyncService)
- * - ClipboardService (independent)
- * - EditorService (independent)
- * - ApiKeyService (independent)
- * - FileWatcherService (depends on SyncService)
- * - ExportService (depends on StorageService)
- * - TagService (depends on SqlService and PromptStorageService)
- * - SearchService (depends on SqlService and PromptStorageService)
- * - ImportService (depends on StorageService)
- * - ArchiveService (depends on SqlService and PromptStorageService)
- */
-const MainLayer = Layer.mergeAll(
-  SqlLive,
-  ClipboardLive,
-  EditorServiceLive,
-  PromptStorageLive,
-  ApiKeyServiceLive
-).pipe(
-  Layer.provideMerge(MigrationLive.pipe(Layer.provide(SqlLive))),
-  Layer.provideMerge(
-    SyncLive.pipe(Layer.provide(Layer.mergeAll(SqlLive, PromptStorageLive)))
-  ),
-  Layer.provideMerge(
-    StorageServiceLive.pipe(
-      Layer.provide(
-        Layer.mergeAll(SqlLive, PromptStorageLive, SyncLive.pipe(
-          Layer.provide(Layer.mergeAll(SqlLive, PromptStorageLive))
-        ))
-      )
-    )
-  ),
-  Layer.provideMerge(
-    FileWatcherLive.pipe(
-      Layer.provide(
-        SyncLive.pipe(Layer.provide(Layer.mergeAll(SqlLive, PromptStorageLive)))
-      )
-    )
-  ),
-  Layer.provideMerge(
-    ExportServiceLive.pipe(
-      Layer.provide(
-        StorageServiceLive.pipe(
-          Layer.provide(
-            Layer.mergeAll(
-              SqlLive,
-              PromptStorageLive,
-              SyncLive.pipe(
-                Layer.provide(Layer.mergeAll(SqlLive, PromptStorageLive))
-              )
-            )
-          )
-        )
-      )
-    )
-  ),
-  Layer.provideMerge(
-    TagServiceLive.pipe(
-      Layer.provide(Layer.mergeAll(SqlLive, PromptStorageLive))
-    )
-  ),
-  Layer.provideMerge(
-    SearchServiceLive.pipe(
-      Layer.provide(Layer.mergeAll(SqlLive, PromptStorageLive))
-    )
-  ),
-  Layer.provideMerge(
-    ImportServiceLive.pipe(
-      Layer.provide(
-        StorageServiceLive.pipe(
-          Layer.provide(
-            Layer.mergeAll(
-              SqlLive,
-              PromptStorageLive,
-              SyncLive.pipe(
-                Layer.provide(Layer.mergeAll(SqlLive, PromptStorageLive))
-              )
-            )
-          )
-        )
-      )
-    )
-  ),
-  Layer.provideMerge(
-    ArchiveServiceLive.pipe(
-      Layer.provide(Layer.mergeAll(SqlLive, PromptStorageLive))
-    )
-  ),
-  // Add VersionService
-  Layer.provideMerge(
-    VersionServiceLive.pipe(Layer.provide(SqlLive))
-  ),
-  // Add ChainService
-  Layer.provideMerge(
-    ChainServiceLive.pipe(Layer.provide(SqlLive))
-  ),
-  // Add PinService and FavoriteService
-  Layer.provideMerge(
-    PinServiceLive.pipe(
-      Layer.provide(Layer.mergeAll(SqlLive, PromptStorageLive))
-    )
-  ),
-  Layer.provideMerge(
-    FavoriteServiceLive.pipe(
-      Layer.provide(Layer.mergeAll(SqlLive, PromptStorageLive))
-    )
-  )
-);
+// Import the composed MainLive layer and AppServices type from services
+import { MainLive, type AppServices } from "../../services";
 
 /**
  * Runtime type - provides all application services
  *
- * We use any for the error type since it's determined by the layer at runtime.
+ * Uses the centralized AppServices type from services/index.ts
  */
-type RuntimeType = ManagedRuntime.ManagedRuntime<
-  | SqlService
-  | StorageService
-  | PromptStorageService
-  | EditorService
-  | Clipboard
-  | MigrationService
-  | SyncService
-  | FileWatcherService
-  | ExportService
-  | TagService
-  | SearchService
-  | ImportService
-  | ArchiveService
-  | ApiKeyService
-  | VersionService
-  | ChainService
-  | PinService
-  | FavoriteService,
-  any
->;
+type RuntimeType = ManagedRuntime.ManagedRuntime<AppServices, never>;
 
 /**
  * Runtime context
@@ -217,26 +43,22 @@ const RuntimeContext = createContext<RuntimeType | null>(null);
  * </RuntimeProvider>
  * ```
  */
-export const RuntimeProvider: React.FC<{ children: ReactNode }> = ({
-  children,
-}) => {
+export const RuntimeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const runtime = useMemo(() => {
     // Create a managed runtime with the main layer
-    return ManagedRuntime.make(MainLayer);
+    // Type assertion is safe because MainLive composes layers that don't produce build errors
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    return ManagedRuntime.make(MainLive) as RuntimeType;
   }, []);
 
   useEffect(() => {
     // Cleanup: dispose runtime when component unmounts
     return () => {
-      runtime.dispose();
+      void runtime.dispose();
     };
   }, [runtime]);
 
-  return (
-    <RuntimeContext.Provider value={runtime}>
-      {children}
-    </RuntimeContext.Provider>
-  );
+  return <RuntimeContext.Provider value={runtime}>{children}</RuntimeContext.Provider>;
 };
 
 /**
@@ -294,28 +116,7 @@ interface EffectState<A, E> {
  * ```
  */
 export const useEffectRun = <A, E>(
-  effect: Effect.Effect<
-    A,
-    E,
-    | SqlService
-    | StorageService
-    | PromptStorageService
-    | EditorService
-    | Clipboard
-    | MigrationService
-    | SyncService
-    | FileWatcherService
-    | ExportService
-    | TagService
-    | SearchService
-    | ImportService
-    | ArchiveService
-    | ApiKeyService
-    | VersionService
-    | ChainService
-    | PinService
-    | FavoriteService
-  >,
+  effect: Effect.Effect<A, E, AppServices>,
   deps: React.DependencyList
 ): EffectState<A, E> => {
   const runtime = useRuntime();
@@ -326,16 +127,26 @@ export const useEffectRun = <A, E>(
   });
 
   useEffect(() => {
-    setState({ result: null, error: null, loading: true });
+    let mounted = true;
 
+    // Run async operation
     runtime
       .runPromise(effect)
       .then((result: A) => {
-        setState({ result, error: null, loading: false });
+        if (mounted) {
+          setState({ result, error: null, loading: false });
+        }
       })
       .catch((error: E) => {
-        setState({ result: null, error: error as E, loading: false });
+        if (mounted) {
+          setState({ result: null, error: error, loading: false });
+        }
       });
+
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
   return state;
@@ -376,28 +187,7 @@ interface MutationState<A> {
  * ```
  */
 export const useEffectCallback = <A, E>(
-  effectFn: () => Effect.Effect<
-    A,
-    E,
-    | SqlService
-    | StorageService
-    | PromptStorageService
-    | EditorService
-    | Clipboard
-    | MigrationService
-    | SyncService
-    | FileWatcherService
-    | ExportService
-    | TagService
-    | SearchService
-    | ImportService
-    | ArchiveService
-    | ApiKeyService
-    | VersionService
-    | ChainService
-    | PinService
-    | FavoriteService
-  >
+  effectFn: () => Effect.Effect<A, E, AppServices>
 ): MutationState<A> => {
   const runtime = useRuntime();
   const [loading, setLoading] = useState(false);

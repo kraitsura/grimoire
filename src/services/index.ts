@@ -7,12 +7,15 @@
  */
 
 import { Effect, Context, Layer } from "effect";
-import { Prompt, PromptId, StorageError, ClipboardError, PromptNotFoundError } from "../models";
-import { SqlService as SqlServiceImport, SqlLive as SqlLiveImport } from "./sql-service";
+import { Prompt, PromptId, StorageError, PromptNotFoundError } from "../models";
 import { MigrationLive as MigrationLiveImport } from "./migration-service";
-import { Clipboard as ClipboardTag, ClipboardLive as ClipboardLiveImport } from "./clipboard-service";
+import {
+  Clipboard as ClipboardTag,
+  ClipboardLive as ClipboardLiveImport,
+} from "./clipboard-service";
 
 // Re-export SQL service (SqlService is a Context.Tag class)
+import { SqlLive as SqlLiveImport } from "./sql-service";
 export { SqlService, SqlLive } from "./sql-service";
 
 // Re-export Migration service (MigrationService is a Context.Tag class)
@@ -46,7 +49,13 @@ export { TagService, TagServiceLive } from "./tag-service";
 export type { TagWithCount } from "./tag-service";
 
 // Re-export Export service (ExportService is a Context.Tag class)
-export { ExportService, ExportServiceLive, VersionSchema, ExportedPromptSchema, ExportBundleSchema } from "./export-service";
+export {
+  ExportService,
+  ExportServiceLive,
+  VersionSchema,
+  ExportedPromptSchema,
+  ExportBundleSchema,
+} from "./export-service";
 export type { ExportOptions, ExportBundle, ExportedPrompt, Version } from "./export-service";
 
 // Re-export Import service (ImportService is a Context.Tag class)
@@ -61,18 +70,35 @@ export { LLMService, LLMServiceLive, LLMError } from "./llm-service";
 export type { LLMProvider, StreamChunk, Message, LLMRequest, LLMResponse } from "./llm-service";
 
 // Re-export API Key service (ApiKeyService is a Context.Tag class)
-export { ApiKeyService, ApiKeyServiceLive, ApiKeyNotFoundError, ConfigReadError, ConfigWriteError } from "./api-key-service";
+export {
+  ApiKeyService,
+  ApiKeyServiceLive,
+  ApiKeyNotFoundError,
+  EnvFileWriteError,
+  getEnvVarName,
+} from "./api-key-service";
 
 // Re-export Search service (SearchService is a Context.Tag class)
 export { SearchService, SearchServiceLive } from "./search-service";
 export type { SearchOptions, SearchResult, Range } from "./search-service";
 
 // Re-export Chain service (ChainService is a Context.Tag class)
-export { ChainService, ChainServiceLive, ChainNotFoundError, ChainValidationError } from "./chain-service";
+export {
+  ChainService,
+  ChainServiceLive,
+  ChainNotFoundError,
+  ChainValidationError,
+} from "./chain-service";
 export type { ChainDefinition, ChainStep, VariableSpec, ValidationResult } from "./chain-service";
 
 // Re-export Alias service (AliasService is a Context.Tag class)
-export { AliasService, AliasServiceLive, AliasNotFoundError, AliasError, CircularAliasError } from "./alias-service";
+export {
+  AliasService,
+  AliasServiceLive,
+  AliasNotFoundError,
+  AliasError,
+  CircularAliasError,
+} from "./alias-service";
 export type { Alias } from "./alias-service";
 
 // Re-export Stats service (StatsService is a Context.Tag class)
@@ -81,10 +107,22 @@ export type { UsageAction, PromptStats, CollectionStats } from "./stats-service"
 
 // Re-export Version service (VersionService is a Context.Tag class)
 export { VersionService, VersionServiceLive, VersionNotFoundError } from "./version-service";
-export type { PromptVersion, CreateVersionParams, ListVersionsOptions, RollbackOptions, DiffResult } from "./version-service";
+export type {
+  PromptVersion,
+  CreateVersionParams,
+  ListVersionsOptions,
+  RollbackOptions,
+  DiffResult,
+} from "./version-service";
 
 // Re-export Branch service (BranchService is a Context.Tag class)
-export { BranchService, BranchServiceLive, BranchNotFoundError, MergeConflictError, BranchError } from "./branch-service";
+export {
+  BranchService,
+  BranchServiceLive,
+  BranchNotFoundError,
+  MergeConflictError,
+  BranchError,
+} from "./branch-service";
 export type { CreateBranchParams, Branch, BranchComparison, MergeParams } from "./branch-service";
 
 // Re-export Response Cache service (ResponseCacheService is a Context.Tag class)
@@ -101,18 +139,46 @@ export type { RateLimitStatus } from "./rate-limiter-service";
 
 // Re-export Format service (FormatService is a Context.Tag class)
 export { FormatService, FormatServiceLive, FormatError } from "./format-service";
-export type { FormattingConfig, FormatResult, LintResult, LintIssue, FrontmatterResult } from "./format-service";
+export type {
+  FormattingConfig,
+  FormatResult,
+  LintResult,
+  LintIssue,
+  FrontmatterResult,
+} from "./format-service";
 
 // Re-export Remote Sync service (RemoteSyncService is a Context.Tag class)
 export { RemoteSyncService, RemoteSyncServiceLive, SyncConfigSchema } from "./remote-sync-service";
-export type { SyncConfig, SyncResult, SyncStatus, Resolution, PushOptions, PullOptions } from "./remote-sync-service";
+export type {
+  SyncConfig,
+  SyncResult,
+  SyncStatus,
+  Resolution,
+  PushOptions,
+  PullOptions,
+} from "./remote-sync-service";
 
 // Re-export Favorite and Pin services (FavoriteService and PinService are Context.Tag classes)
-export { FavoriteService, FavoriteServiceLive, PinService, PinServiceLive } from "./favorite-pin-service";
+export {
+  FavoriteService,
+  FavoriteServiceLive,
+  PinService,
+  PinServiceLive,
+} from "./favorite-pin-service";
 
 // Re-export Retention service (RetentionService is a Context.Tag class)
-export { RetentionService, RetentionServiceLive, DEFAULT_RETENTION_CONFIG, RetentionConfigSchema } from "./retention-service";
-export type { RetentionConfig, RetentionStrategy, CleanupResult, CleanupPreview } from "./retention-service";
+export {
+  RetentionService,
+  RetentionServiceLive,
+  DEFAULT_RETENTION_CONFIG,
+  RetentionConfigSchema,
+} from "./retention-service";
+export type {
+  RetentionConfig,
+  RetentionStrategy,
+  CleanupResult,
+  CleanupPreview,
+} from "./retention-service";
 
 // ============================================================================
 // PATTERN PART 1: Service Interface Definition
@@ -160,10 +226,7 @@ interface StorageService {
  * The tag associates a unique identifier ("Storage") with the service type.
  * Format: Context.Tag(identifier)<Tag, ServiceInterface>()
  */
-export class Storage extends Context.Tag("Storage")<
-  Storage,
-  StorageService
->() {}
+export class Storage extends Context.Tag("Storage")<Storage, StorageService>() {}
 
 // ============================================================================
 // PATTERN PART 3: Layer Implementation
@@ -179,74 +242,27 @@ export class Storage extends Context.Tag("Storage")<
  *
  * The Effect.gen function creates an effectful computation using generator syntax.
  */
-export const StorageLive = Layer.effect(
+export const StorageLive = Layer.succeed(
   Storage,
-  Effect.gen(function* () {
-    // Any setup logic goes here
-    // For example: const storagePath = yield* initializeStoragePath()
+  Storage.of({
+    getAll: Effect.succeed([] as Prompt[]),
 
-    // Return the service implementation
-    return Storage.of({
-      getAll: Effect.gen(function* () {
-        // Implementation would:
-        // 1. Read from ~/.grimoire/prompts.json
-        // 2. Parse JSON
-        // 3. Validate with Schema
-        // 4. Return Prompt[]
-        //
-        // Example structure:
-        // const raw = yield* readFile(storagePath)
-        // const parsed = yield* parseJson(raw)
-        // const prompts = yield* Schema.decodeUnknown(Schema.Array(Prompt))(parsed)
-        // return prompts
+    getById: (id: PromptId) =>
+      // In a real implementation, would access storage directly
+      // For now, return a placeholder that demonstrates error handling
+      Effect.fail(new PromptNotFoundError({ id })),
 
-        // Placeholder implementation
-        return [] as Prompt[];
-      }),
+    save: (_prompt: Prompt) =>
+      // Implementation would:
+      // 1. Read existing prompts
+      // 2. Add/update the prompt
+      // 3. Encode with Schema
+      // 4. Write to file
+      Effect.void,
 
-      getById: (id: PromptId) =>
-        Effect.gen(function* () {
-          // In a real implementation, would access storage directly
-          // For now, return a placeholder that demonstrates error handling
-          const prompts: Prompt[] = []; // Placeholder - would read from storage
-          const prompt = prompts.find((p: Prompt) => p.id === id);
-
-          if (!prompt) {
-            return yield* Effect.fail(new PromptNotFoundError({ id }));
-          }
-
-          return prompt;
-        }),
-
-      save: (prompt: Prompt) =>
-        Effect.gen(function* () {
-          // Implementation would:
-          // 1. Read existing prompts
-          // 2. Add/update the prompt
-          // 3. Encode with Schema
-          // 4. Write to file
-          //
-          // Example:
-          // const prompts = yield* Storage.getAll
-          // const updated = upsert(prompts, prompt)
-          // const encoded = yield* Schema.encode(Schema.Array(Prompt))(updated)
-          // yield* writeFile(storagePath, JSON.stringify(encoded))
-        }),
-
-      delete: (id: PromptId) =>
-        Effect.gen(function* () {
-          // In a real implementation, would read from storage, filter, and write back
-          const prompts: Prompt[] = []; // Placeholder - would read from storage
-          const filtered = prompts.filter((p: Prompt) => p.id !== id);
-
-          if (filtered.length === prompts.length) {
-            return yield* Effect.fail(new PromptNotFoundError({ id }));
-          }
-
-          // Write filtered prompts back
-          // yield* writeFile(storagePath, JSON.stringify(filtered))
-        }),
-    });
+    delete: (id: PromptId) =>
+      // In a real implementation, would read from storage, filter, and write back
+      Effect.fail(new PromptNotFoundError({ id })),
   })
 );
 
@@ -301,7 +317,10 @@ import { ResponseCacheServiceLive as ResponseCacheServiceLiveImport } from "./re
 import { RateLimiterServiceLive as RateLimiterServiceLiveImport } from "./rate-limiter-service";
 import { FormatServiceLive as FormatServiceLiveImport } from "./format-service";
 import { RemoteSyncServiceLive as RemoteSyncServiceLiveImport } from "./remote-sync-service";
-import { FavoriteServiceLive as FavoriteServiceLiveImport, PinServiceLive as PinServiceLiveImport } from "./favorite-pin-service";
+import {
+  FavoriteServiceLive as FavoriteServiceLiveImport,
+  PinServiceLive as PinServiceLiveImport,
+} from "./favorite-pin-service";
 import { RetentionServiceLive as RetentionServiceLiveImport } from "./retention-service";
 import { SyncLive as SyncLiveImport } from "./sync-service";
 import { StorageServiceLive as StorageServiceLiveImport } from "./storage-service";
@@ -313,7 +332,7 @@ import { ChainServiceLive as ChainServiceLiveImport } from "./chain-service";
 export const LLMLive = Layer.effectDiscard(
   Effect.gen(function* () {
     // Get dependencies
-    const apiKeyService = yield* ApiKeyService;
+    const _apiKeyService = yield* ApiKeyService;
 
     // Create providers
     const openAIProvider = yield* OpenAIProvider;
@@ -326,15 +345,7 @@ export const LLMLive = Layer.effectDiscard(
     yield* llmService.registerProvider(anthropicProvider);
     yield* llmService.registerProvider(geminiProvider);
   })
-).pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      LLMServiceLive,
-      ApiKeyServiceLive,
-      TokenCounterServiceLive
-    )
-  )
-);
+).pipe(Layer.provide(Layer.mergeAll(LLMServiceLive, ApiKeyServiceLive, TokenCounterServiceLive)));
 
 // Layer 1: Base - SqlService (no dependencies)
 const SqlLayer = SqlLiveImport;
@@ -343,9 +354,7 @@ const SqlLayer = SqlLiveImport;
 const PromptStorageLayer = PromptStorageLiveImport.pipe(Layer.provide(SqlLayer));
 
 // Layer 3: Sync needs SqlService + PromptStorageService
-const SyncLayer = SyncLiveImport.pipe(
-  Layer.provide(Layer.mergeAll(SqlLayer, PromptStorageLayer))
-);
+const SyncLayer = SyncLiveImport.pipe(Layer.provide(Layer.mergeAll(SqlLayer, PromptStorageLayer)));
 
 // Layer 4: Storage needs SqlService + PromptStorageService + SyncService
 const StorageLayer = StorageServiceLiveImport.pipe(
@@ -417,10 +426,16 @@ export const MainLive = Layer.mergeAll(
   ApiKeyServiceLive
 );
 
-export const MainLiveWithEditor = Layer.mergeAll(
-  MainLive,
-  EditorServiceLiveImport
-);
+export const MainLiveWithEditor = Layer.mergeAll(MainLive, EditorServiceLiveImport);
+
+/**
+ * Union type of all services provided by MainLive
+ *
+ * Inferred directly from MainLive to ensure type safety and prevent drift.
+ * Use this type when defining Effects that require application services,
+ * particularly in React hooks and components.
+ */
+export type AppServices = Layer.Layer.Success<typeof MainLive>;
 
 // Note: PromptStorageLive is exported separately and not included in MainLive
 // to allow for flexible composition based on specific use cases
