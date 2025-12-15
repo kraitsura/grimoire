@@ -180,6 +180,46 @@ export type {
   CleanupPreview,
 } from "./retention-service";
 
+// Re-export Skill Config service (SkillConfigService is a Context.Tag class)
+export { SkillConfigService, SkillConfigServiceLive } from "./skills/skill-config-service";
+export type { SkillsConfig } from "./skills/skill-config-service";
+
+// Re-export Skill Cache service (SkillCacheService is a Context.Tag class)
+export { SkillCacheService, SkillCacheServiceLive } from "./skills/skill-cache-service";
+export type { GitHubSource, CachedSkill } from "./skills/skill-cache-service";
+
+// Re-export Skill State service (SkillStateService is a Context.Tag class)
+export { SkillStateService, SkillStateServiceLive } from "./skills/skill-state-service";
+
+// Re-export Agent Adapter service (AgentAdapterService is a Context.Tag class)
+export {
+  AgentAdapterService,
+  AgentAdapterServiceLive,
+  AgentAdapterError,
+  getAgentAdapter,
+  detectAgent,
+} from "./skills/agent-adapter";
+export type { AgentAdapter, AgentEnableResult } from "./skills/agent-adapter";
+
+// Re-export CLI Installer service (CliInstallerService is a Context.Tag class)
+export { CliInstallerService, CliInstallerServiceLive } from "./skills/cli-installer-service";
+export type { InstallerType, InstallOptions } from "./skills/cli-installer-service";
+
+// Re-export Skill Engine service (SkillEngineService is a Context.Tag class)
+export { SkillEngineService, SkillEngineServiceLive } from "./skills/skill-engine-service";
+export type { EnableOptions, DisableOptions, EnableResult, EnableCheck, SkillError } from "./skills/skill-engine-service";
+
+// Re-export Skill Injection utilities
+export {
+  hasManagedSection,
+  addManagedSection,
+  hasSkillInjection,
+  addSkillInjection,
+  removeSkillInjection,
+  replaceSkillInjection,
+  listInjectedSkills,
+} from "./skills/injection-utils";
+
 // ============================================================================
 // PATTERN PART 1: Service Interface Definition
 // ============================================================================
@@ -325,6 +365,12 @@ import { RetentionServiceLive as RetentionServiceLiveImport } from "./retention-
 import { SyncLive as SyncLiveImport } from "./sync-service";
 import { StorageServiceLive as StorageServiceLiveImport } from "./storage-service";
 import { ChainServiceLive as ChainServiceLiveImport } from "./chain-service";
+import { SkillCacheServiceLive as SkillCacheServiceLiveImport } from "./skills/skill-cache-service";
+import { SkillStateServiceLive as SkillStateServiceLiveImport } from "./skills/skill-state-service";
+import { SkillConfigServiceLive as SkillConfigServiceLiveImport } from "./skills/skill-config-service";
+import { AgentAdapterServiceLive as AgentAdapterServiceLiveImport } from "./skills/agent-adapter";
+import { CliInstallerServiceLive as CliInstallerServiceLiveImport } from "./skills/cli-installer-service";
+import { SkillEngineServiceLive as SkillEngineServiceLiveImport } from "./skills/skill-engine-service";
 
 /**
  * LLM Layer - Provides LLM services with all providers
@@ -406,7 +452,24 @@ const IndependentServices = Layer.mergeAll(
   AliasServiceLiveImport,
   RateLimiterServiceLiveImport,
   FormatServiceLiveImport,
-  RemoteSyncServiceLiveImport
+  RemoteSyncServiceLiveImport,
+  SkillCacheServiceLiveImport,
+  SkillStateServiceLiveImport,
+  SkillConfigServiceLiveImport,
+  AgentAdapterServiceLiveImport,
+  CliInstallerServiceLiveImport
+);
+
+// SkillEngineService needs SkillCache, SkillState, AgentAdapter, CliInstaller
+const SkillEngineLayer = SkillEngineServiceLiveImport.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      SkillCacheServiceLiveImport,
+      SkillStateServiceLiveImport,
+      AgentAdapterServiceLiveImport,
+      CliInstallerServiceLiveImport
+    )
+  )
 );
 
 export const MainLive = Layer.mergeAll(
@@ -422,6 +485,7 @@ export const MainLive = Layer.mergeAll(
   SqlOnlyDependentServices,
   StorageDependentServices,
   IndependentServices,
+  SkillEngineLayer,
   LLMLive,
   ApiKeyServiceLive
 );

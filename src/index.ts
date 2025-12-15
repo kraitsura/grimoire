@@ -78,6 +78,7 @@ import {
   rollbackCommand,
   searchCommand,
   showCommand,
+  skillsCommand,
   statsCommand,
   syncCommand,
   tagCommand,
@@ -137,6 +138,7 @@ COMMANDS:
   sync                Sync with remote repository
   completion <shell>  Generate shell completions (bash/zsh/fish)
   config llm          Manage LLM provider configuration
+  skills              Package manager for agent context
 
 Run 'grimoire' with no arguments to launch interactive mode.
     `);
@@ -250,6 +252,9 @@ Run 'grimoire' with no arguments to launch interactive mode.
         break;
       case "config":
         yield* configCommand(parsedArgs);
+        break;
+      case "skills":
+        yield* skillsCommand(parsedArgs);
         break;
       default:
         console.log(`Unknown command: ${command}`);

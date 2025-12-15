@@ -1,0 +1,122 @@
+# Example Skill Manifest
+#
+# This file demonstrates the structure of a skill manifest (skill.yaml)
+# that defines a reusable AI agent capability.
+
+# Required fields
+name: example-skill
+version: 1.0.0
+description: An example skill demonstrating all available configuration options
+type: prompt  # Options: prompt, plugin, mcp, tool
+
+# Optional metadata
+tags:
+  - example
+  - tutorial
+  - documentation
+author: Your Name
+license: MIT
+repository: https://github.com/your-org/example-skill
+
+# CLI dependencies (optional)
+# Specify command-line tools required by this skill
+cli:
+  # Binary name as key
+  bd:
+    # Command to check if installed
+    check: bd --version
+    # Installation methods (at least one required)
+    install:
+      brew: brew install bd
+      cargo: cargo install bd
+      npm: npm install -g @beadifier/bd
+      go: go install github.com/beadifier/bd@latest
+      script: curl -fsSL https://get.bd.sh | sh
+
+  # Another example with simpler configuration
+  jq:
+    check: jq --version
+    install:
+      brew: brew install jq
+
+# Agent-specific configurations (optional)
+agents:
+  # Claude Code agent configuration
+  claude_code:
+    # Copy skill content to .claude/skills/ directory
+    skill_file: true
+
+    # Inject custom content into CLAUDE.md
+    inject:
+      file: CLAUDE.md
+      content: |
+        ## Example Skill
+
+        This skill demonstrates how to inject custom documentation
+        into the agent's context.
+
+    # Install a Claude Code plugin from marketplace
+    plugin:
+      marketplace: claude_code
+      name: example-plugin
+
+    # Configure MCP (Model Context Protocol) server
+    mcp:
+      command: node
+      args:
+        - /path/to/mcp-server.js
+      env:
+        API_KEY: ${EXAMPLE_API_KEY}
+        DEBUG: "true"
+
+  # OpenCode agent configuration
+  opencode:
+    # Inject content into agent configuration
+    inject:
+      file: .opencode/config.md
+      content: |
+        ## Example Skill for OpenCode
+
+        Custom documentation for OpenCode agent.
+
+    # MCP configuration (same structure as Claude Code)
+    mcp:
+      command: python
+      args:
+        - -m
+        - example_mcp_server
+
+# Initialization configuration (optional)
+# Commands and files to set up when skill is first enabled
+init:
+  # Commands to run on first enable
+  commands:
+    - echo "Initializing example skill..."
+    - mkdir -p .example
+    - echo "initialized" > .example/status.txt
+
+  # Files to create on first enable
+  files:
+    .example/config.json: |
+      {
+        "enabled": true,
+        "version": "1.0.0"
+      }
+    .example/README.md: |
+      # Example Skill
+
+      This skill has been initialized in your project.
+
+# Optional prompt text (for type: prompt skills)
+# This content is injected into the agent's context
+prompt: |
+  You are now equipped with the example skill. This skill provides:
+
+  - CLI tools: bd, jq
+  - MCP server integration
+  - Custom project initialization
+
+  When working with this skill:
+  1. Use bd for task management
+  2. Use jq for JSON processing
+  3. Refer to .example/ for skill-specific configuration

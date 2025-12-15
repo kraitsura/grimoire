@@ -85,6 +85,47 @@ Prompts are stored locally in `~/.grimoire/prompts.json`
 
 Uses system clipboard for copy operations
 
+## Skills Commands
+
+Skills are reusable AI agent capabilities that can be enabled in projects. Skills inject documentation and configuration into the agent's context.
+
+```bash
+grimoire skills init           # Initialize skills in project
+grimoire skills add <source>   # Add skill from GitHub
+grimoire skills enable <name>  # Enable skill in project
+grimoire skills disable <name> # Disable skill
+grimoire skills list           # List skills
+grimoire skills info <name>    # Show skill details
+grimoire skills search <query> # Search for skills
+grimoire skills sync           # Update enabled skills
+grimoire skills doctor         # Diagnose issues
+```
+
+### Enable Skill
+
+Enable one or more skills in the current project:
+
+```bash
+grimoire skills enable beads
+grimoire skills enable beads typescript-strict
+grimoire skills enable beads -y                 # Auto-confirm
+grimoire skills enable beads --no-deps          # Skip CLI dependency installation
+grimoire skills enable beads --no-init          # Skip init commands
+```
+
+### Disable Skill
+
+Disable one or more skills in the current project:
+
+```bash
+grimoire skills disable beads
+grimoire skills disable beads typescript-strict
+grimoire skills disable beads --purge           # Also remove project artifacts
+grimoire skills disable beads --purge -y        # Skip confirmation
+```
+
+Note: Disabling a skill removes its documentation from the agent but does NOT uninstall CLI tools or plugins, as these may be used by other skills or projects.
+
 ## Issue Tracking (Beads)
 
 This project uses Beads (`bd`) for AI-native task and issue tracking. Issues are stored in `.beads/issues.jsonl` and synced via git.

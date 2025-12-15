@@ -26,6 +26,7 @@ export { rmCommand } from "./rm";
 export { rollbackCommand } from "./rollback";
 export { searchCommand } from "./search";
 export { showCommand } from "./show";
+export { skillsCommand } from "./skills";
 export { statsCommand } from "./stats";
 export { syncCommand } from "./sync";
 export { tagCommand } from "./tag";
