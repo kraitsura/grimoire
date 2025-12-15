@@ -1,0 +1,9 @@
+[install]
+# Install exact versions
+exact = true
+
+[test]
+# Test configuration
+preload = ["./tests/setup.ts"]
+coverage = true
+coverageDir = "./coverage"
