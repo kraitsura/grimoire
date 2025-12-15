@@ -41,6 +41,14 @@ export interface Notification {
 }
 
 /**
+ * LLM configuration for model hotswapping
+ */
+export interface LLMConfig {
+  currentProvider: string;
+  currentModel: string;
+}
+
+/**
  * Application state structure
  */
 export interface AppState {
@@ -49,6 +57,7 @@ export interface AppState {
   statusMessage: string | null;
   isDirty: boolean;
   notification: Notification | null;
+  llmConfig: LLMConfig;
 }
 
 /**
@@ -61,6 +70,7 @@ export interface AppActions {
   setDirty: (dirty: boolean) => void;
   showNotification: (notification: Notification) => void;
   dismissNotification: () => void;
+  setLLMConfig: (provider: string, model: string) => void;
 }
 
 /**
@@ -103,6 +113,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [notification, setNotification] = useState<Notification | null>(null);
+  const [llmConfig, setLLMConfigState] = useState<LLMConfig>({
+    currentProvider: "openai",
+    currentModel: "gpt-4o",
+  });
 
   // Auto-dismiss notification after timeout
   useEffect(() => {
@@ -168,12 +182,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     setNotification(null);
   }, []);
 
+  /**
+   * Set LLM provider and model for hotswapping
+   */
+  const setLLMConfig = useCallback((provider: string, model: string) => {
+    setLLMConfigState({ currentProvider: provider, currentModel: model });
+  }, []);
+
   const state: AppState = {
     currentScreen,
     history,
     statusMessage,
     isDirty,
     notification,
+    llmConfig,
   };
 
   const actions: AppActions = {
@@ -183,6 +205,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     setDirty,
     showNotification,
     dismissNotification,
+    setLLMConfig,
   };
 
   return (

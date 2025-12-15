@@ -8,6 +8,7 @@ import { Effect } from "effect";
 import { AppProvider, useAppState } from "./context/app-context.js";
 import { RuntimeProvider } from "./context/runtime-context.js";
 import { Router } from "./components/Router.js";
+import { ModelSwitcherOverlay } from "./components/ModelSwitcherOverlay.js";
 
 /**
  * Help Overlay Component
@@ -51,6 +52,10 @@ const HelpOverlay: React.FC<{ onDismiss: () => void }> = ({ onDismiss }) => {
           <Text>
             <Text color="green">  /    </Text>
             <Text dimColor>Search</Text>
+          </Text>
+          <Text>
+            <Text color="green">  m    </Text>
+            <Text dimColor>Switch model</Text>
           </Text>
           <Text>
             <Text color="green">  Esc  </Text>
@@ -205,12 +210,13 @@ const AppInner: React.FC = () => {
   const { exit } = useApp();
   const [showHelp, setShowHelp] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  const [showModelSwitcher, setShowModelSwitcher] = useState(false);
 
   // Global keyboard shortcuts
   useInput(
     (input, key) => {
       // Don't handle global shortcuts when overlays are shown
-      if (showHelp || showQuitConfirm) {
+      if (showHelp || showQuitConfirm || showModelSwitcher) {
         return;
       }
 
@@ -230,6 +236,12 @@ const AppInner: React.FC = () => {
         return;
       }
 
+      // m - Quick model switch
+      if (input === "m") {
+        setShowModelSwitcher(true);
+        return;
+      }
+
       // Esc - Go back
       if (key.escape) {
         // Only go back if there's history
@@ -245,7 +257,7 @@ const AppInner: React.FC = () => {
         return;
       }
     },
-    { isActive: !showHelp && !showQuitConfirm }
+    { isActive: !showHelp && !showQuitConfirm && !showModelSwitcher }
   );
 
   const handleQuitConfirm = () => {
@@ -267,6 +279,12 @@ const AppInner: React.FC = () => {
 
       {/* Help overlay */}
       {showHelp && <HelpOverlay onDismiss={handleHelpDismiss} />}
+
+      {/* Model switcher overlay */}
+      <ModelSwitcherOverlay
+        visible={showModelSwitcher}
+        onClose={() => setShowModelSwitcher(false)}
+      />
 
       {/* Quit confirmation */}
       {showQuitConfirm && (

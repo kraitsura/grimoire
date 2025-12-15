@@ -8,12 +8,13 @@ import type { ParsedArgs } from "../cli/parser";
 import * as readline from "readline";
 
 // Supported providers
-const PROVIDERS = ["openai", "anthropic", "ollama"] as const;
+const PROVIDERS = ["openai", "anthropic", "google", "ollama"] as const;
 type Provider = (typeof PROVIDERS)[number];
 
 const PROVIDER_INFO: Record<Provider, { name: string; envVar: string; keyPrefix?: string }> = {
   openai: { name: "OpenAI", envVar: "OPENAI_API_KEY", keyPrefix: "sk-" },
   anthropic: { name: "Anthropic", envVar: "ANTHROPIC_API_KEY", keyPrefix: "sk-ant-" },
+  google: { name: "Google Gemini", envVar: "GOOGLE_API_KEY" },
   ollama: { name: "Ollama", envVar: "OLLAMA_HOST" },
 };
 

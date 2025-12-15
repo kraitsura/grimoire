@@ -32,14 +32,16 @@ interface Provider {
 const KNOWN_PROVIDERS = ["openai", "anthropic", "ollama", "google"];
 
 export const LLMConfigScreen: React.FC = () => {
-  const { actions } = useAppState();
+  const { state, actions } = useAppState();
   const [mode, setMode] = useState<ConfigMode>("list");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState("");
-  const [defaultModel] = useState("gpt-4o");
   const [focusedField, setFocusedField] = useState(0);
   const [testResult, setTestResult] = useState<"success" | "failed" | null>(null);
+
+  // Use llmConfig from app state
+  const { currentProvider, currentModel } = state.llmConfig;
 
   // Fetch configured providers
   const { result: configuredProviders, loading } = useEffectRun(
@@ -60,12 +62,12 @@ export const LLMConfigScreen: React.FC = () => {
       return {
         name,
         status: isConfigured ? "connected" : "not_configured",
-        isDefault: name === "openai", // Default to openai
+        isDefault: name === currentProvider,
         hasApiKey: isConfigured,
         maskedKey: isConfigured ? "sk-...xxxx" : undefined,
       };
     });
-  }, [configuredProviders]);
+  }, [configuredProviders, currentProvider]);
 
   // Test connection callback
   const { execute: testConnection, loading: testing } = useEffectCallback(() =>
@@ -124,9 +126,18 @@ export const LLMConfigScreen: React.FC = () => {
         setEditingProvider(providers[selectedIndex].name);
         void testConnection();
       } else if (input === "d") {
+        // Set as default provider with a default model
+        const selectedProvider = providers[selectedIndex].name;
+        const defaultModels: Record<string, string> = {
+          openai: "gpt-4o",
+          anthropic: "claude-sonnet-4-20250514",
+          google: "gemini-2.0-flash",
+          ollama: "llama3.2",
+        };
+        actions.setLLMConfig(selectedProvider, defaultModels[selectedProvider] ?? "");
         actions.showNotification({
           type: "success",
-          message: `Set ${providers[selectedIndex].name} as default`,
+          message: `Set ${selectedProvider} as default provider`,
         });
       } else if (input === "a") {
         setMode("add");
@@ -198,7 +209,9 @@ export const LLMConfigScreen: React.FC = () => {
         </Box>
 
         <Box marginTop={1} flexDirection="column">
-          <Text dimColor>Default Model: {defaultModel}</Text>
+          <Text bold color="cyan">Current: </Text>
+          <Text>{currentProvider} / {currentModel}</Text>
+          <Text dimColor> (Press 'm' anywhere to switch models quickly)</Text>
         </Box>
 
         <Box marginTop={1}>
@@ -255,7 +268,7 @@ export const LLMConfigScreen: React.FC = () => {
           {/* Default Model */}
           <Box>
             <Text color={focusedField === 1 ? "cyan" : undefined}>
-              Default Model: [{defaultModel.padEnd(20)}]
+              Current Model: [{currentModel.padEnd(20)}]
             </Text>
           </Box>
 
