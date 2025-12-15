@@ -118,7 +118,7 @@ export const FavoriteManager: React.FC<FavoriteManagerProps> = ({
     const pinIcon = prompt.isPinned ? "📌" : "  ";
 
     const name = prompt.name.slice(0, 35).padEnd(37);
-    const tags = (prompt.tags?.join(", ") || "").slice(0, 20).padEnd(22);
+    const tags = (prompt.tags?.join(", ") ?? "").slice(0, 20).padEnd(22);
 
     const checkbox = mode === "view" ? (isSelected ? "[x] " : "[ ] ") : "";
 
@@ -140,8 +140,7 @@ export const FavoriteManager: React.FC<FavoriteManagerProps> = ({
         </Text>
         {selectedItems.size > 0 && (
           <Text color="yellow">
-            {selectedItems.size} item{selectedItems.size > 1 ? "s" : ""}{" "}
-            selected
+            {selectedItems.size} item{selectedItems.size > 1 ? "s" : ""} selected
           </Text>
         )}
       </Box>
@@ -153,17 +152,15 @@ export const FavoriteManager: React.FC<FavoriteManagerProps> = ({
       return (
         <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
           <Text color="gray">
-            j/k: navigate | Enter: toggle | Space: select | a: select all | d:
-            remove selected | r: reorder | q: quit
+            j/k: navigate | Enter: toggle | Space: select | a: select all | d: remove selected | r:
+            reorder | q: quit
           </Text>
         </Box>
       );
     } else {
       return (
         <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
-          <Text color="gray">
-            j/k: reposition | Enter: apply | q/Esc: cancel
-          </Text>
+          <Text color="gray">j/k: reposition | Enter: apply | q/Esc: cancel</Text>
         </Box>
       );
     }

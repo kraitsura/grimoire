@@ -25,7 +25,7 @@ type Mode = "input" | "results" | "preview";
 export const SearchUI: React.FC<SearchUIProps> = ({ onExit, onSelect }) => {
   const [mode, setMode] = useState<Mode>("input");
   const [query, setQuery] = useState("");
-  const [tagFilters, setTagFilters] = useState<string[]>([]);
+  const [tagFilters, _setTagFilters] = useState<string[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searching, setSearching] = useState(false);
@@ -55,7 +55,7 @@ export const SearchUI: React.FC<SearchUIProps> = ({ onExit, onSelect }) => {
 
     setSearching(true);
     const timer = setTimeout(() => {
-      performSearch()
+      void performSearch()
         .then((searchResults) => {
           setResults(searchResults);
           setSelectedIndex(0);
@@ -120,7 +120,7 @@ export const SearchUI: React.FC<SearchUIProps> = ({ onExit, onSelect }) => {
   );
 
   // Highlight text function
-  const highlightText = (text: string, highlights: Array<{ start: number; end: number }>) => {
+  const highlightText = (text: string, highlights: { start: number; end: number }[]) => {
     if (highlights.length === 0) {
       return <Text>{text}</Text>;
     }
@@ -131,9 +131,7 @@ export const SearchUI: React.FC<SearchUIProps> = ({ onExit, onSelect }) => {
     highlights.forEach((range, index) => {
       // Add text before highlight
       if (range.start > lastEnd) {
-        segments.push(
-          <Text key={`before-${index}`}>{text.slice(lastEnd, range.start)}</Text>
-        );
+        segments.push(<Text key={`before-${index}`}>{text.slice(lastEnd, range.start)}</Text>);
       }
       // Add highlighted text
       segments.push(
@@ -228,7 +226,7 @@ export const SearchUI: React.FC<SearchUIProps> = ({ onExit, onSelect }) => {
               </Text>
               <Box marginTop={1}>
                 <Text color="gray">Tags: </Text>
-                <Text>{selectedResult.prompt.tags?.join(", ") || "none"}</Text>
+                <Text>{selectedResult.prompt.tags?.join(", ") ?? "none"}</Text>
               </Box>
               <Box marginTop={1}>
                 <Text color="gray">Updated: </Text>

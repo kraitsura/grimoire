@@ -168,16 +168,10 @@ const normalizeXmlTags = (content: string): string => {
   let normalized = content;
 
   // Add newline after opening tags if not present
-  normalized = normalized.replace(
-    /<([a-zA-Z][a-zA-Z0-9]*)([^>]*)>(?!\n)/g,
-    "<$1$2>\n"
-  );
+  normalized = normalized.replace(/<([a-zA-Z][a-zA-Z0-9]*)([^>]*)>(?!\n)/g, "<$1$2>\n");
 
   // Add newline before closing tags if not present
-  normalized = normalized.replace(
-    /(?<!\n)<\/([a-zA-Z][a-zA-Z0-9]*)>/g,
-    "\n</$1>"
-  );
+  normalized = normalized.replace(/(?<!\n)<\/([a-zA-Z][a-zA-Z0-9]*)>/g, "\n</$1>");
 
   // Remove extra blank lines around tags (max 1 blank line)
   normalized = normalized.replace(/\n{3,}/g, "\n\n");
@@ -188,10 +182,7 @@ const normalizeXmlTags = (content: string): string => {
 /**
  * Check indentation consistency
  */
-const checkIndentation = (
-  content: string,
-  expectedSize: number
-): LintIssue[] => {
+const checkIndentation = (content: string, expectedSize: number): LintIssue[] => {
   const issues: LintIssue[] = [];
   const lines = content.split("\n");
 
@@ -203,8 +194,8 @@ const checkIndentation = (
     if (line.trim().length === 0) continue;
 
     // Count leading whitespace
-    const leadingSpaces = line.match(/^[ ]*/)?.[0].length ?? 0;
-    const leadingTabs = line.match(/^\t*/)?.[0].length ?? 0;
+    const leadingSpaces = (/^[ ]*/.exec(line))?.[0].length ?? 0;
+    const leadingTabs = (/^\t*/.exec(line))?.[0].length ?? 0;
 
     // Check for mixed spaces and tabs
     if (leadingSpaces > 0 && leadingTabs > 0) {

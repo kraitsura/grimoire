@@ -114,7 +114,11 @@ interface BranchServiceImpl {
    */
   readonly mergeBranch: (
     params: MergeParams
-  ) => Effect.Effect<PromptVersion, MergeConflictError | SqlError | BranchNotFoundError | VersionNotFoundError, never>;
+  ) => Effect.Effect<
+    PromptVersion,
+    MergeConflictError | SqlError | BranchNotFoundError | VersionNotFoundError,
+    never
+  >;
 
   /**
    * Compare two branches (how many versions ahead/behind)
@@ -220,15 +224,12 @@ export const BranchServiceLive = Layer.effect(
           );
 
           // Retrieve the newly created branch
-          const rows = yield* sql.query<BranchRow>(
-            "SELECT * FROM branches WHERE id = ?",
-            [branchId]
-          );
+          const rows = yield* sql.query<BranchRow>("SELECT * FROM branches WHERE id = ?", [
+            branchId,
+          ]);
 
           if (rows.length === 0) {
-            return yield* Effect.die(
-              new Error("Failed to retrieve newly created branch")
-            );
+            return yield* Effect.die(new Error("Failed to retrieve newly created branch"));
           }
 
           return rowToBranch(rows[0]);
@@ -255,25 +256,20 @@ export const BranchServiceLive = Layer.effect(
           );
 
           if (branchRows.length === 0) {
-            return yield* Effect.fail(
-              new BranchNotFoundError({ promptId, branchName })
-            );
+            return yield* Effect.fail(new BranchNotFoundError({ promptId, branchName }));
           }
 
           // Use transaction to ensure atomic update
           yield* sql.transaction(
             Effect.gen(function* () {
               // Set all branches to inactive
-              yield* sql.run(
-                "UPDATE branches SET is_active = 0 WHERE prompt_id = ?",
-                [promptId]
-              );
+              yield* sql.run("UPDATE branches SET is_active = 0 WHERE prompt_id = ?", [promptId]);
 
               // Set the target branch to active
-              yield* sql.run(
-                "UPDATE branches SET is_active = 1 WHERE prompt_id = ? AND name = ?",
-                [promptId, branchName]
-              );
+              yield* sql.run("UPDATE branches SET is_active = 1 WHERE prompt_id = ? AND name = ?", [
+                promptId,
+                branchName,
+              ]);
             })
           );
 
@@ -347,10 +343,10 @@ export const BranchServiceLive = Layer.effect(
           }
 
           // Delete the branch
-          yield* sql.run(
-            "DELETE FROM branches WHERE prompt_id = ? AND name = ?",
-            [promptId, branchName]
-          );
+          yield* sql.run("DELETE FROM branches WHERE prompt_id = ? AND name = ?", [
+            promptId,
+            branchName,
+          ]);
         }),
 
       mergeBranch: (params: MergeParams) =>
@@ -446,15 +442,11 @@ export const BranchServiceLive = Layer.effect(
           );
 
           if (branchARows.length === 0) {
-            return yield* Effect.fail(
-              new BranchNotFoundError({ promptId, branchName: branchA })
-            );
+            return yield* Effect.fail(new BranchNotFoundError({ promptId, branchName: branchA }));
           }
 
           if (branchBRows.length === 0) {
-            return yield* Effect.fail(
-              new BranchNotFoundError({ promptId, branchName: branchB })
-            );
+            return yield* Effect.fail(new BranchNotFoundError({ promptId, branchName: branchB }));
           }
 
           // Get versions for both branches
@@ -500,9 +492,7 @@ export const BranchServiceLive = Layer.effect(
             );
 
             if (mainRows.length === 0) {
-              return yield* Effect.fail(
-                new BranchNotFoundError({ promptId, branchName: "main" })
-              );
+              return yield* Effect.fail(new BranchNotFoundError({ promptId, branchName: "main" }));
             }
 
             return rowToBranch(mainRows[0]);

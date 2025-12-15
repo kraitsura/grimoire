@@ -182,10 +182,7 @@ export const EditorServiceLive = Layer.effect(
           }).pipe(
             Effect.catchAll((error) => {
               // Log warning but don't fail - file cleanup is not critical
-              console.warn(
-                `Warning: Failed to clean up temporary file ${tempFilePath}:`,
-                error
-              );
+              console.warn(`Warning: Failed to clean up temporary file ${tempFilePath}:`, error);
               return Effect.succeed(undefined);
             })
           );

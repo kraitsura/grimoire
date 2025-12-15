@@ -30,7 +30,11 @@ export const TagManager: React.FC<TagManagerProps> = ({ onExit }) => {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
 
   // Load all tags
-  const { result: tags, loading, error } = useEffectRun(
+  const {
+    result: tags,
+    loading,
+    error,
+  } = useEffectRun(
     Effect.gen(function* () {
       const tagService = yield* TagService;
       return yield* tagService.listTags();
@@ -82,7 +86,7 @@ export const TagManager: React.FC<TagManagerProps> = ({ onExit }) => {
   // Load prompts when entering prompts mode
   useEffect(() => {
     if (mode === "prompts" && selectedTag) {
-      loadPrompts().then((loadedPrompts) => setPrompts(loadedPrompts));
+      void loadPrompts().then((loadedPrompts) => setPrompts(loadedPrompts));
     }
   }, [mode, selectedTag]);
 
@@ -114,7 +118,7 @@ export const TagManager: React.FC<TagManagerProps> = ({ onExit }) => {
         // Just viewing prompts, escape returns to list
       } else if (mode === "rename") {
         if (key.return) {
-          renameTag();
+          void renameTag();
         } else if (key.backspace || key.delete) {
           setRenameInput((prev) => prev.slice(0, -1));
         } else if (input && !key.ctrl && !key.meta) {
@@ -122,7 +126,7 @@ export const TagManager: React.FC<TagManagerProps> = ({ onExit }) => {
         }
       } else if (mode === "confirm-delete") {
         if (input === "y" || input === "Y") {
-          deleteTag();
+          void deleteTag();
         } else {
           setMode("list");
         }
@@ -187,7 +191,11 @@ export const TagManager: React.FC<TagManagerProps> = ({ onExit }) => {
         <Box flexDirection="column">
           <Box marginBottom={1}>
             <Text>
-              Tag: <Text color="cyan" bold>{selectedTag?.name}</Text> ({selectedTag?.count} prompts)
+              Tag:{" "}
+              <Text color="cyan" bold>
+                {selectedTag?.name}
+              </Text>{" "}
+              ({selectedTag?.count} prompts)
             </Text>
           </Box>
           {loadingPrompts ? (
@@ -213,7 +221,9 @@ export const TagManager: React.FC<TagManagerProps> = ({ onExit }) => {
       {mode === "rename" && (
         <Box flexDirection="column">
           <Box marginBottom={1}>
-            <Text>Rename tag: <Text color="yellow">{selectedTag?.name}</Text></Text>
+            <Text>
+              Rename tag: <Text color="yellow">{selectedTag?.name}</Text>
+            </Text>
           </Box>
           <Box marginBottom={1}>
             <Text>New name: </Text>

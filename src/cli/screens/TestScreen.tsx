@@ -104,10 +104,7 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
       // Replace variables in content
       let processedContent = selectedPrompt.content;
       for (const [key, value] of Object.entries(config.variables)) {
-        processedContent = processedContent.replace(
-          new RegExp(`\\{\\{${key}\\}\\}`, "g"),
-          value
-        );
+        processedContent = processedContent.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value);
       }
 
       // Simulate streaming response
@@ -264,22 +261,18 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
           {/* Model selection */}
           <Box>
             <Text color={focusedField === 0 ? "cyan" : undefined}>
-              Model:       [{config.model.padEnd(20)}]
+              Model: [{config.model.padEnd(20)}]
             </Text>
             {focusedField === 0 && <Text dimColor> (use left/right)</Text>}
           </Box>
 
           {/* Temperature */}
           <Box>
-            <Text color={focusedField === 1 ? "cyan" : undefined}>
-              Temperature: [
-            </Text>
+            <Text color={focusedField === 1 ? "cyan" : undefined}>Temperature: [</Text>
             {focusedField === 1 ? (
               <TextInput
                 value={String(config.temperature)}
-                onChange={(v) =>
-                  setConfig((c) => ({ ...c, temperature: parseFloat(v) || 0.7 }))
-                }
+                onChange={(v) => setConfig((c) => ({ ...c, temperature: parseFloat(v) || 0.7 }))}
                 focused={true}
               />
             ) : (
@@ -290,15 +283,11 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
 
           {/* Max tokens */}
           <Box>
-            <Text color={focusedField === 2 ? "cyan" : undefined}>
-              Max Tokens:  [
-            </Text>
+            <Text color={focusedField === 2 ? "cyan" : undefined}>Max Tokens: [</Text>
             {focusedField === 2 ? (
               <TextInput
                 value={String(config.maxTokens)}
-                onChange={(v) =>
-                  setConfig((c) => ({ ...c, maxTokens: parseInt(v) || 1024 }))
-                }
+                onChange={(v) => setConfig((c) => ({ ...c, maxTokens: parseInt(v) || 1024 }))}
                 focused={true}
               />
             ) : (
@@ -417,10 +406,10 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
 
         <Box flexDirection="column">
           <Text bold>Stats:</Text>
-          <Text>  Input Tokens:  {stats.inputTokens}</Text>
-          <Text>  Output Tokens: {stats.outputTokens}</Text>
-          <Text>  Total Cost:    ${stats.cost.toFixed(4)}</Text>
-          <Text>  Duration:      {stats.duration.toFixed(1)}s</Text>
+          <Text> Input Tokens: {stats.inputTokens}</Text>
+          <Text> Output Tokens: {stats.outputTokens}</Text>
+          <Text> Total Cost: ${stats.cost.toFixed(4)}</Text>
+          <Text> Duration: {stats.duration.toFixed(1)}s</Text>
         </Box>
 
         <Box marginTop={1}>

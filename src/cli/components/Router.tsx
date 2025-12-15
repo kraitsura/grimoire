@@ -47,10 +47,7 @@ interface ErrorBoundaryState {
  * Catches errors thrown by screen components and displays
  * a user-friendly error message instead of crashing the app.
  */
-class ScreenErrorBoundary extends React.Component<
-  ErrorBoundaryProps,
-  ErrorBoundaryState
-> {
+class ScreenErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -71,9 +68,7 @@ class ScreenErrorBoundary extends React.Component<
           <Text bold color="red">
             Screen Error: {this.props.screenName}
           </Text>
-          <Text dimColor>
-            {this.state.error?.message || "An unexpected error occurred"}
-          </Text>
+          <Text dimColor>{this.state.error?.message ?? "An unexpected error occurred"}</Text>
           <Box marginTop={1}>
             <Text dimColor>Press ESC to go back or q to quit</Text>
           </Box>
@@ -107,18 +102,22 @@ export interface RouterProps {
  * ```
  */
 export const Router: React.FC<RouterProps> = ({ screen, loading = false }) => {
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [delayedLoading, setDelayedLoading] = useState(loading);
 
-  // Handle loading state transitions
+  // Handle loading state transitions with delay to prevent flashing
   useEffect(() => {
     if (loading) {
-      setIsTransitioning(true);
+      // Immediately show loading state
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDelayedLoading(true);
     } else {
       // Small delay to prevent flashing on fast transitions
-      const timer = setTimeout(() => setIsTransitioning(false), 100);
+      const timer = setTimeout(() => setDelayedLoading(false), 100);
       return () => clearTimeout(timer);
     }
   }, [loading]);
+
+  const isTransitioning = delayedLoading;
 
   // Show loading indicator during transitions
   if (isTransitioning) {
@@ -171,7 +170,7 @@ export const Router: React.FC<RouterProps> = ({ screen, loading = false }) => {
       case "templates":
         return <TemplatesScreen />;
 
-      default:
+      default: {
         // Type-safe exhaustive check
         const _exhaustive: never = screen;
         return (
@@ -179,17 +178,12 @@ export const Router: React.FC<RouterProps> = ({ screen, loading = false }) => {
             <Text bold color="red">
               Unknown Screen
             </Text>
-            <Text dimColor>
-              The requested screen could not be found
-            </Text>
+            <Text dimColor>The requested screen could not be found</Text>
           </Box>
         );
+      }
     }
   };
 
-  return (
-    <ScreenErrorBoundary screenName={screen.name}>
-      {renderScreen()}
-    </ScreenErrorBoundary>
-  );
+  return <ScreenErrorBoundary screenName={screen.name}>{renderScreen()}</ScreenErrorBoundary>;
 };

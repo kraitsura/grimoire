@@ -22,17 +22,13 @@ export const RollbackConfirm: React.FC<RollbackConfirmProps> = ({
   onConfirm,
   onCancel,
 }) => {
-  const [selectedAction, setSelectedAction] = useState<"confirm" | "cancel">(
-    "cancel"
-  );
+  const [selectedAction, setSelectedAction] = useState<"confirm" | "cancel">("cancel");
 
   useInput(
     (input, key) => {
       // Toggle between confirm and cancel
       if (key.leftArrow || key.rightArrow || input === "h" || input === "l") {
-        setSelectedAction((prev) =>
-          prev === "confirm" ? "cancel" : "confirm"
-        );
+        setSelectedAction((prev) => (prev === "confirm" ? "cancel" : "confirm"));
       }
       // Execute selected action
       else if (key.return) {
@@ -70,9 +66,7 @@ export const RollbackConfirm: React.FC<RollbackConfirmProps> = ({
         <Text>
           <Text bold>Current Version: </Text>
           <Text color="blue">v{currentVersion.version}</Text>
-          {currentVersion.changeReason && (
-            <Text dimColor> - {currentVersion.changeReason}</Text>
-          )}
+          {currentVersion.changeReason && <Text dimColor> - {currentVersion.changeReason}</Text>}
         </Text>
 
         <Text dimColor>{formatDate(currentVersion.createdAt)}</Text>
@@ -81,9 +75,7 @@ export const RollbackConfirm: React.FC<RollbackConfirmProps> = ({
           <Text>
             <Text bold>Rolling back to: </Text>
             <Text color="green">v{targetVersion.version}</Text>
-            {targetVersion.changeReason && (
-              <Text dimColor> - {targetVersion.changeReason}</Text>
-            )}
+            {targetVersion.changeReason && <Text dimColor> - {targetVersion.changeReason}</Text>}
           </Text>
         </Box>
 
@@ -94,20 +86,14 @@ export const RollbackConfirm: React.FC<RollbackConfirmProps> = ({
       <Box flexDirection="column" marginBottom={1}>
         <Text bold>Changes Preview:</Text>
         <Box marginTop={1}>
-          <DiffViewer
-            diff={diff}
-            focused={false}
-            height={15}
-            showStats={true}
-          />
+          <DiffViewer diff={diff} focused={false} height={15} showStats={true} />
         </Box>
       </Box>
 
       {/* Warning message */}
       <Box marginBottom={1} paddingX={1}>
         <Text color="yellow">
-          This will create a new version with the content from v
-          {targetVersion.version}.
+          This will create a new version with the content from v{targetVersion.version}.
         </Text>
       </Box>
 

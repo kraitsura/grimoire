@@ -116,9 +116,7 @@ export const PromptStorageLive = Layer.effect(
           const parsed = matter(fileContent);
 
           // Validate frontmatter against schema
-          const frontmatter = yield* Schema.decodeUnknown(FrontmatterSchema)(
-            parsed.data
-          ).pipe(
+          const frontmatter = yield* Schema.decodeUnknown(FrontmatterSchema)(parsed.data).pipe(
             Effect.mapError(
               (error) =>
                 new StorageError({

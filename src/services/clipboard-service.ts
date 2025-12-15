@@ -58,10 +58,7 @@ export interface ClipboardService {
 /**
  * Clipboard service tag
  */
-export class Clipboard extends Context.Tag("Clipboard")<
-  Clipboard,
-  ClipboardService
->() {}
+export class Clipboard extends Context.Tag("Clipboard")<Clipboard, ClipboardService>() {}
 
 /**
  * Clipboard service implementation
@@ -91,7 +88,7 @@ export const ClipboardLive = Layer.succeed(
 
             // Write text to stdin using the writer
             proc.stdin.write(text);
-            proc.stdin.end();
+            await proc.stdin.end();
 
             // Wait for process to complete
             const exitCode = await proc.exited;

@@ -40,11 +40,7 @@ interface TagRow {
 /**
  * Convert database row to Prompt object
  */
-const rowToPrompt = (
-  row: PromptRow,
-  content: string,
-  tags?: string[]
-): Prompt => ({
+const rowToPrompt = (row: PromptRow, content: string, tags?: string[]): Prompt => ({
   id: row.id,
   name: row.name,
   created: new Date(row.created_at),
@@ -94,9 +90,7 @@ interface FavoriteServiceImpl {
   /**
    * Reorder favorites based on array of prompt IDs
    */
-  readonly reorder: (
-    promptIds: string[]
-  ) => Effect.Effect<void, SqlError | StorageError>;
+  readonly reorder: (promptIds: string[]) => Effect.Effect<void, SqlError | StorageError>;
 }
 
 /**
@@ -141,18 +135,13 @@ interface PinServiceImpl {
   /**
    * Reorder pinned prompts based on array of prompt IDs
    */
-  readonly reorder: (
-    promptIds: string[]
-  ) => Effect.Effect<void, SqlError | StorageError>;
+  readonly reorder: (promptIds: string[]) => Effect.Effect<void, SqlError | StorageError>;
 }
 
 /**
  * Pin service tag
  */
-export class PinService extends Context.Tag("PinService")<
-  PinService,
-  PinServiceImpl
->() {}
+export class PinService extends Context.Tag("PinService")<PinService, PinServiceImpl>() {}
 
 /**
  * Favorite service implementation
@@ -174,10 +163,7 @@ export const FavoriteServiceLive = Layer.effect(
     ): Effect.Effect<void, PromptNotFoundError | SqlError | StorageError> =>
       Effect.gen(function* () {
         // Get prompt file path from database
-        const rows = yield* sql.query<PromptRow>(
-          "SELECT * FROM prompts WHERE id = ?",
-          [promptId]
-        );
+        const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts WHERE id = ?", [promptId]);
 
         if (rows.length === 0) {
           return yield* Effect.fail(new PromptNotFoundError({ id: promptId }));
@@ -197,19 +183,13 @@ export const FavoriteServiceLive = Layer.effect(
         };
 
         // Write updated file
-        yield* promptStorage.writePrompt(
-          row.file_path,
-          updatedFrontmatter,
-          parsed.content
-        );
+        yield* promptStorage.writePrompt(row.file_path, updatedFrontmatter, parsed.content);
       });
 
     /**
      * Get all tags for a prompt from the database
      */
-    const getPromptTags = (
-      promptId: string
-    ): Effect.Effect<string[], SqlError> =>
+    const getPromptTags = (promptId: string): Effect.Effect<string[], SqlError> =>
       Effect.gen(function* () {
         const tagRows = yield* sql.query<TagRow>(
           `SELECT t.name
@@ -227,15 +207,12 @@ export const FavoriteServiceLive = Layer.effect(
       toggle: (promptId: string) =>
         Effect.gen(function* () {
           // Get current state
-          const rows = yield* sql.query<PromptRow>(
-            "SELECT is_favorite FROM prompts WHERE id = ?",
-            [promptId]
-          );
+          const rows = yield* sql.query<PromptRow>("SELECT is_favorite FROM prompts WHERE id = ?", [
+            promptId,
+          ]);
 
           if (rows.length === 0) {
-            return yield* Effect.fail(
-              new PromptNotFoundError({ id: promptId })
-            );
+            return yield* Effect.fail(new PromptNotFoundError({ id: promptId }));
           }
 
           const isFavorite = rows[0].is_favorite === 1;
@@ -249,10 +226,10 @@ export const FavoriteServiceLive = Layer.effect(
             const nextOrder = (maxRows[0]?.max_order ?? -1) + 1;
 
             // Update database
-            yield* sql.run(
-              "UPDATE prompts SET is_favorite = 1, favorite_order = ? WHERE id = ?",
-              [nextOrder, promptId]
-            );
+            yield* sql.run("UPDATE prompts SET is_favorite = 1, favorite_order = ? WHERE id = ?", [
+              nextOrder,
+              promptId,
+            ]);
 
             // Update file
             yield* updatePromptFavorite(promptId, true, nextOrder);
@@ -273,15 +250,12 @@ export const FavoriteServiceLive = Layer.effect(
       add: (promptId: string) =>
         Effect.gen(function* () {
           // Check if prompt exists
-          const rows = yield* sql.query<PromptRow>(
-            "SELECT is_favorite FROM prompts WHERE id = ?",
-            [promptId]
-          );
+          const rows = yield* sql.query<PromptRow>("SELECT is_favorite FROM prompts WHERE id = ?", [
+            promptId,
+          ]);
 
           if (rows.length === 0) {
-            return yield* Effect.fail(
-              new PromptNotFoundError({ id: promptId })
-            );
+            return yield* Effect.fail(new PromptNotFoundError({ id: promptId }));
           }
 
           // If already favorite, do nothing
@@ -296,10 +270,10 @@ export const FavoriteServiceLive = Layer.effect(
           const nextOrder = (maxRows[0]?.max_order ?? -1) + 1;
 
           // Update database
-          yield* sql.run(
-            "UPDATE prompts SET is_favorite = 1, favorite_order = ? WHERE id = ?",
-            [nextOrder, promptId]
-          );
+          yield* sql.run("UPDATE prompts SET is_favorite = 1, favorite_order = ? WHERE id = ?", [
+            nextOrder,
+            promptId,
+          ]);
 
           // Update file
           yield* updatePromptFavorite(promptId, true, nextOrder);
@@ -308,22 +282,18 @@ export const FavoriteServiceLive = Layer.effect(
       remove: (promptId: string) =>
         Effect.gen(function* () {
           // Check if prompt exists
-          const rows = yield* sql.query<PromptRow>(
-            "SELECT is_favorite FROM prompts WHERE id = ?",
-            [promptId]
-          );
+          const rows = yield* sql.query<PromptRow>("SELECT is_favorite FROM prompts WHERE id = ?", [
+            promptId,
+          ]);
 
           if (rows.length === 0) {
-            return yield* Effect.fail(
-              new PromptNotFoundError({ id: promptId })
-            );
+            return yield* Effect.fail(new PromptNotFoundError({ id: promptId }));
           }
 
           // Update database
-          yield* sql.run(
-            "UPDATE prompts SET is_favorite = 0, favorite_order = NULL WHERE id = ?",
-            [promptId]
-          );
+          yield* sql.run("UPDATE prompts SET is_favorite = 0, favorite_order = NULL WHERE id = ?", [
+            promptId,
+          ]);
 
           // Update file
           yield* updatePromptFavorite(promptId, false, undefined);
@@ -349,7 +319,7 @@ export const FavoriteServiceLive = Layer.effect(
               const tags = yield* getPromptTags(row.id);
 
               prompts.push(rowToPrompt(row, parsed.content, tags));
-            } catch (error) {
+            } catch {
               // Skip prompts that can't be read
               continue;
             }
@@ -374,10 +344,9 @@ export const FavoriteServiceLive = Layer.effect(
                 );
 
                 // Update file
-                const rows = yield* sql.query<PromptRow>(
-                  "SELECT * FROM prompts WHERE id = ?",
-                  [promptId]
-                );
+                const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts WHERE id = ?", [
+                  promptId,
+                ]);
 
                 if (rows.length > 0) {
                   const row = rows[0];
@@ -423,10 +392,7 @@ export const PinServiceLive = Layer.effect(
     ): Effect.Effect<void, PromptNotFoundError | SqlError | StorageError> =>
       Effect.gen(function* () {
         // Get prompt file path from database
-        const rows = yield* sql.query<PromptRow>(
-          "SELECT * FROM prompts WHERE id = ?",
-          [promptId]
-        );
+        const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts WHERE id = ?", [promptId]);
 
         if (rows.length === 0) {
           return yield* Effect.fail(new PromptNotFoundError({ id: promptId }));
@@ -446,19 +412,13 @@ export const PinServiceLive = Layer.effect(
         };
 
         // Write updated file
-        yield* promptStorage.writePrompt(
-          row.file_path,
-          updatedFrontmatter,
-          parsed.content
-        );
+        yield* promptStorage.writePrompt(row.file_path, updatedFrontmatter, parsed.content);
       });
 
     /**
      * Get all tags for a prompt from the database
      */
-    const getPromptTags = (
-      promptId: string
-    ): Effect.Effect<string[], SqlError> =>
+    const getPromptTags = (promptId: string): Effect.Effect<string[], SqlError> =>
       Effect.gen(function* () {
         const tagRows = yield* sql.query<TagRow>(
           `SELECT t.name
@@ -476,15 +436,12 @@ export const PinServiceLive = Layer.effect(
       toggle: (promptId: string) =>
         Effect.gen(function* () {
           // Get current state
-          const rows = yield* sql.query<PromptRow>(
-            "SELECT is_pinned FROM prompts WHERE id = ?",
-            [promptId]
-          );
+          const rows = yield* sql.query<PromptRow>("SELECT is_pinned FROM prompts WHERE id = ?", [
+            promptId,
+          ]);
 
           if (rows.length === 0) {
-            return yield* Effect.fail(
-              new PromptNotFoundError({ id: promptId })
-            );
+            return yield* Effect.fail(new PromptNotFoundError({ id: promptId }));
           }
 
           const isPinned = rows[0].is_pinned === 1;
@@ -498,19 +455,18 @@ export const PinServiceLive = Layer.effect(
             const nextOrder = (maxRows[0]?.max_order ?? -1) + 1;
 
             // Update database
-            yield* sql.run(
-              "UPDATE prompts SET is_pinned = 1, pin_order = ? WHERE id = ?",
-              [nextOrder, promptId]
-            );
+            yield* sql.run("UPDATE prompts SET is_pinned = 1, pin_order = ? WHERE id = ?", [
+              nextOrder,
+              promptId,
+            ]);
 
             // Update file
             yield* updatePromptPin(promptId, true, nextOrder);
           } else {
             // Unpinning
-            yield* sql.run(
-              "UPDATE prompts SET is_pinned = 0, pin_order = NULL WHERE id = ?",
-              [promptId]
-            );
+            yield* sql.run("UPDATE prompts SET is_pinned = 0, pin_order = NULL WHERE id = ?", [
+              promptId,
+            ]);
 
             // Update file
             yield* updatePromptPin(promptId, false, undefined);
@@ -522,15 +478,12 @@ export const PinServiceLive = Layer.effect(
       pin: (promptId: string) =>
         Effect.gen(function* () {
           // Check if prompt exists
-          const rows = yield* sql.query<PromptRow>(
-            "SELECT is_pinned FROM prompts WHERE id = ?",
-            [promptId]
-          );
+          const rows = yield* sql.query<PromptRow>("SELECT is_pinned FROM prompts WHERE id = ?", [
+            promptId,
+          ]);
 
           if (rows.length === 0) {
-            return yield* Effect.fail(
-              new PromptNotFoundError({ id: promptId })
-            );
+            return yield* Effect.fail(new PromptNotFoundError({ id: promptId }));
           }
 
           // If already pinned, do nothing
@@ -545,10 +498,10 @@ export const PinServiceLive = Layer.effect(
           const nextOrder = (maxRows[0]?.max_order ?? -1) + 1;
 
           // Update database
-          yield* sql.run(
-            "UPDATE prompts SET is_pinned = 1, pin_order = ? WHERE id = ?",
-            [nextOrder, promptId]
-          );
+          yield* sql.run("UPDATE prompts SET is_pinned = 1, pin_order = ? WHERE id = ?", [
+            nextOrder,
+            promptId,
+          ]);
 
           // Update file
           yield* updatePromptPin(promptId, true, nextOrder);
@@ -557,22 +510,18 @@ export const PinServiceLive = Layer.effect(
       unpin: (promptId: string) =>
         Effect.gen(function* () {
           // Check if prompt exists
-          const rows = yield* sql.query<PromptRow>(
-            "SELECT is_pinned FROM prompts WHERE id = ?",
-            [promptId]
-          );
+          const rows = yield* sql.query<PromptRow>("SELECT is_pinned FROM prompts WHERE id = ?", [
+            promptId,
+          ]);
 
           if (rows.length === 0) {
-            return yield* Effect.fail(
-              new PromptNotFoundError({ id: promptId })
-            );
+            return yield* Effect.fail(new PromptNotFoundError({ id: promptId }));
           }
 
           // Update database
-          yield* sql.run(
-            "UPDATE prompts SET is_pinned = 0, pin_order = NULL WHERE id = ?",
-            [promptId]
-          );
+          yield* sql.run("UPDATE prompts SET is_pinned = 0, pin_order = NULL WHERE id = ?", [
+            promptId,
+          ]);
 
           // Update file
           yield* updatePromptPin(promptId, false, undefined);
@@ -598,7 +547,7 @@ export const PinServiceLive = Layer.effect(
               const tags = yield* getPromptTags(row.id);
 
               prompts.push(rowToPrompt(row, parsed.content, tags));
-            } catch (error) {
+            } catch {
               // Skip prompts that can't be read
               continue;
             }
@@ -617,16 +566,15 @@ export const PinServiceLive = Layer.effect(
                 const promptId = promptIds[i];
 
                 // Update database
-                yield* sql.run(
-                  "UPDATE prompts SET pin_order = ? WHERE id = ? AND is_pinned = 1",
-                  [i, promptId]
-                );
+                yield* sql.run("UPDATE prompts SET pin_order = ? WHERE id = ? AND is_pinned = 1", [
+                  i,
+                  promptId,
+                ]);
 
                 // Update file
-                const rows = yield* sql.query<PromptRow>(
-                  "SELECT * FROM prompts WHERE id = ?",
-                  [promptId]
-                );
+                const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts WHERE id = ?", [
+                  promptId,
+                ]);
 
                 if (rows.length > 0) {
                   const row = rows[0];

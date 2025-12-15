@@ -198,9 +198,7 @@ export const LLMConfigScreen: React.FC = () => {
               <Box key={provider.name}>
                 <Text inverse={isFocused} color={isFocused ? "white" : undefined}>
                   {isFocused ? "> " : "  "}
-                  <Text color={statusColor}>{statusIcon}</Text>
-                  {" "}
-                  {provider.name.padEnd(15)}
+                  <Text color={statusColor}>{statusIcon}</Text> {provider.name.padEnd(15)}
                   {provider.isDefault && <Text color="yellow">[default]</Text>}
                 </Text>
               </Box>
@@ -209,9 +207,13 @@ export const LLMConfigScreen: React.FC = () => {
         </Box>
 
         <Box marginTop={1} flexDirection="column">
-          <Text bold color="cyan">Current: </Text>
-          <Text>{currentProvider} / {currentModel}</Text>
-          <Text dimColor> (Press 'm' anywhere to switch models quickly)</Text>
+          <Text bold color="cyan">
+            Current:{" "}
+          </Text>
+          <Text>
+            {currentProvider} / {currentModel}
+          </Text>
+          <Text dimColor> (Press {`'m'`} anywhere to switch models quickly)</Text>
         </Box>
 
         <Box marginTop={1}>
@@ -245,9 +247,7 @@ export const LLMConfigScreen: React.FC = () => {
         <Box flexDirection="column" gap={1}>
           {/* API Key */}
           <Box>
-            <Text color={focusedField === 0 ? "cyan" : undefined}>
-              API Key: [
-            </Text>
+            <Text color={focusedField === 0 ? "cyan" : undefined}>API Key: [</Text>
             {focusedField === 0 ? (
               <TextInput
                 value={apiKeyInput}
@@ -259,7 +259,7 @@ export const LLMConfigScreen: React.FC = () => {
               <Text>
                 {apiKeyInput
                   ? "*".repeat(Math.min(apiKeyInput.length, 20))
-                  : currentProvider?.maskedKey ?? "Not set"}
+                  : (currentProvider?.maskedKey ?? "Not set")}
               </Text>
             )}
             <Text color={focusedField === 0 ? "cyan" : undefined}>]</Text>

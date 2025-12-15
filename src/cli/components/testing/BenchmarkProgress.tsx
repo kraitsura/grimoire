@@ -22,9 +22,7 @@ export const BenchmarkProgress: React.FC<BenchmarkProgressProps> = ({
   currentTestId,
   currentTestMessage,
 }) => {
-  const completed = tests.filter(
-    (t) => t.status === "passed" || t.status === "failed"
-  ).length;
+  const completed = tests.filter((t) => t.status === "passed" || t.status === "failed").length;
   const total = tests.length;
   const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -41,9 +39,7 @@ export const BenchmarkProgress: React.FC<BenchmarkProgressProps> = ({
     }
   };
 
-  const getStatusColor = (
-    status: BenchmarkTest["status"]
-  ): "green" | "red" | "yellow" | "gray" => {
+  const getStatusColor = (status: BenchmarkTest["status"]): "green" | "red" | "yellow" | "gray" => {
     switch (status) {
       case "passed":
         return "green";
@@ -75,28 +71,25 @@ export const BenchmarkProgress: React.FC<BenchmarkProgressProps> = ({
       {/* Progress Bar */}
       <Box marginBottom={1}>
         <Text color="cyan">{renderProgressBar()}</Text>
-        <Text> {percentage}% ({completed}/{total})</Text>
+        <Text>
+          {" "}
+          {percentage}% ({completed}/{total})
+        </Text>
       </Box>
 
       {/* Test List */}
       <Box flexDirection="column" marginBottom={1}>
         {tests.map((test) => (
           <Box key={test.id}>
-            <Text color={getStatusColor(test.status)}>
-              {getStatusIcon(test.status)}{" "}
-            </Text>
+            <Text color={getStatusColor(test.status)}>{getStatusIcon(test.status)} </Text>
             <Text
               bold={test.status === "running"}
               color={test.status === "running" ? "yellow" : undefined}
             >
               {test.name}
             </Text>
-            {test.duration && (
-              <Text dimColor> ({test.duration.toFixed(1)}s)</Text>
-            )}
-            {test.error && (
-              <Text color="red"> - {test.error}</Text>
-            )}
+            {test.duration && <Text dimColor> ({test.duration.toFixed(1)}s)</Text>}
+            {test.error && <Text color="red"> - {test.error}</Text>}
           </Box>
         ))}
       </Box>
@@ -105,9 +98,7 @@ export const BenchmarkProgress: React.FC<BenchmarkProgressProps> = ({
       {currentTest && (
         <Box flexDirection="column" borderStyle="single" paddingX={1}>
           <Text bold>Current: {currentTest.name}</Text>
-          {currentTestMessage && (
-            <Text dimColor>  &gt; {currentTestMessage}</Text>
-          )}
+          {currentTestMessage && <Text dimColor> &gt; {currentTestMessage}</Text>}
         </Box>
       )}
 

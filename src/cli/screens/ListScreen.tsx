@@ -46,7 +46,11 @@ export const ListScreen: React.FC = () => {
   });
 
   // Fetch all prompts
-  const { result: prompts, error, loading } = useEffectRun(
+  const {
+    result: prompts,
+    error,
+    loading,
+  } = useEffectRun(
     Effect.gen(function* () {
       const storage = yield* StorageService;
       return yield* storage.getAll;
@@ -440,11 +444,7 @@ export const ListScreen: React.FC = () => {
       <Box>
         <Text bold color="blue">
           {"  "}
-          {truncate("NAME", 30)}
-          {" "}
-          {truncate("TAGS", 25)}
-          {" "}
-          {truncate("UPDATED", 12)}
+          {truncate("NAME", 30)} {truncate("TAGS", 25)} {truncate("UPDATED", 12)}
         </Text>
       </Box>
 
@@ -468,10 +468,7 @@ export const ListScreen: React.FC = () => {
                   backgroundColor={isSelected ? "blue" : undefined}
                 >
                   {prefix}
-                  {truncate(prompt.name, 30)}
-                  {" "}
-                  <Text color="gray">{truncate(tags, 25)}</Text>
-                  {" "}
+                  {truncate(prompt.name, 30)} <Text color="gray">{truncate(tags, 25)}</Text>{" "}
                   <Text dimColor>{truncate(formatDate(prompt.updated), 12)}</Text>
                 </Text>
               </Box>
@@ -494,7 +491,9 @@ export const ListScreen: React.FC = () => {
           </Box>
           <Box flexWrap="wrap" gap={1}>
             {filteredTags.length === 0 ? (
-              <Text color="gray" dimColor>No matching tags</Text>
+              <Text color="gray" dimColor>
+                No matching tags
+              </Text>
             ) : (
               filteredTags.map((tag, index) => {
                 const isActive = filter.tags.includes(tag);

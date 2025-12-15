@@ -85,27 +85,21 @@ interface RemoteSyncServiceImpl {
    * @param config - Sync configuration
    * @returns Effect that succeeds or fails with StorageError
    */
-  readonly configure: (
-    config: SyncConfig
-  ) => Effect.Effect<void, StorageError>;
+  readonly configure: (config: SyncConfig) => Effect.Effect<void, StorageError>;
 
   /**
    * Push local changes to remote
    * @param options - Push options
    * @returns Effect that succeeds with SyncResult or fails with StorageError
    */
-  readonly push: (
-    options?: PushOptions
-  ) => Effect.Effect<SyncResult, StorageError>;
+  readonly push: (options?: PushOptions) => Effect.Effect<SyncResult, StorageError>;
 
   /**
    * Pull remote changes
    * @param options - Pull options
    * @returns Effect that succeeds with SyncResult or fails with StorageError
    */
-  readonly pull: (
-    options?: PullOptions
-  ) => Effect.Effect<SyncResult, StorageError>;
+  readonly pull: (options?: PullOptions) => Effect.Effect<SyncResult, StorageError>;
 
   /**
    * Get current sync status
@@ -118,9 +112,7 @@ interface RemoteSyncServiceImpl {
    * @param resolutions - Array of conflict resolutions
    * @returns Effect that succeeds or fails with StorageError
    */
-  readonly resolveConflicts: (
-    resolutions: Resolution[]
-  ) => Effect.Effect<void, StorageError>;
+  readonly resolveConflicts: (resolutions: Resolution[]) => Effect.Effect<void, StorageError>;
 }
 
 /**
@@ -277,16 +269,12 @@ const initGitRepo = (config: SyncConfig): Effect.Effect<void, StorageError> =>
     yield* runGit(["init"]);
 
     // Set default branch if specified
-    const branch = config.branch || "main";
-    yield* runGit(["checkout", "-b", branch]).pipe(
-      Effect.catchAll(() => Effect.void)
-    );
+    const branch = config.branch ?? "main";
+    yield* runGit(["checkout", "-b", branch]).pipe(Effect.catchAll(() => Effect.void));
 
     // Add remote
     yield* runGit(["remote", "add", "origin", config.remote]).pipe(
-      Effect.catchAll(() =>
-        runGit(["remote", "set-url", "origin", config.remote])
-      )
+      Effect.catchAll(() => runGit(["remote", "set-url", "origin", config.remote]))
     );
   });
 
@@ -296,7 +284,10 @@ const initGitRepo = (config: SyncConfig): Effect.Effect<void, StorageError> =>
 const countChangedFiles = (): Effect.Effect<number, StorageError> =>
   Effect.gen(function* () {
     const status = yield* runGit(["status", "--porcelain"]);
-    const lines = status.trim().split("\n").filter((line) => line.length > 0);
+    const lines = status
+      .trim()
+      .split("\n")
+      .filter((line) => line.length > 0);
     return lines.length;
   });
 
@@ -316,11 +307,10 @@ const getConflictedFiles = (): Effect.Effect<string[], StorageError> =>
 /**
  * Remote sync service implementation
  */
-export const RemoteSyncServiceLive = Layer.effect(
+export const RemoteSyncServiceLive = Layer.succeed(
   RemoteSyncService,
-  Effect.gen(function* () {
-    return RemoteSyncService.of({
-      configure: (config: SyncConfig) =>
+  RemoteSyncService.of({
+    configure: (config: SyncConfig) =>
         Effect.gen(function* () {
           // Validate config
           yield* Schema.decodeUnknown(SyncConfigSchema)(config).pipe(
@@ -345,9 +335,7 @@ export const RemoteSyncServiceLive = Layer.effect(
           } else {
             // Update remote URL if repo already exists
             yield* runGit(["remote", "set-url", "origin", config.remote]).pipe(
-              Effect.catchAll(() =>
-                runGit(["remote", "add", "origin", config.remote])
-              )
+              Effect.catchAll(() => runGit(["remote", "add", "origin", config.remote]))
             );
 
             // Update branch if specified
@@ -385,13 +373,13 @@ export const RemoteSyncServiceLive = Layer.effect(
           yield* runGit(["add", "."]);
 
           // Commit changes
-          const message = options?.message || "Sync prompts";
+          const message = options?.message ?? "Sync prompts";
           yield* runGit(["commit", "-m", message]).pipe(
             Effect.catchAll(() => Effect.void) // Ignore if nothing to commit
           );
 
           // Push to remote
-          const branch = config.branch || "main";
+          const branch = config.branch ?? "main";
           const pushArgs = ["push", "origin", branch];
           if (options?.force) {
             pushArgs.push("--force");
@@ -418,7 +406,7 @@ export const RemoteSyncServiceLive = Layer.effect(
             );
           }
 
-          const branch = config.branch || "main";
+          const branch = config.branch ?? "main";
 
           // Fetch from remote
           yield* runGit(["fetch", "origin", branch]);
@@ -427,7 +415,7 @@ export const RemoteSyncServiceLive = Layer.effect(
           const beforeFiles = yield* countChangedFiles();
 
           // Pull changes
-          const strategy = options?.strategy || "merge";
+          const strategy = options?.strategy ?? "merge";
           if (strategy === "rebase") {
             yield* runGit(["pull", "--rebase", "origin", branch]).pipe(
               Effect.catchAll((error) => {
@@ -484,12 +472,10 @@ export const RemoteSyncServiceLive = Layer.effect(
             };
           }
 
-          const branch = config.branch || "main";
+          const branch = config.branch ?? "main";
 
           // Fetch to get latest remote state
-          yield* runGit(["fetch", "origin", branch]).pipe(
-            Effect.catchAll(() => Effect.void)
-          );
+          yield* runGit(["fetch", "origin", branch]).pipe(Effect.catchAll(() => Effect.void));
 
           // Get ahead/behind counts
           const revList = yield* runGit([
@@ -497,13 +483,11 @@ export const RemoteSyncServiceLive = Layer.effect(
             "--left-right",
             "--count",
             `origin/${branch}...HEAD`,
-          ]).pipe(
-            Effect.catchAll(() => Effect.succeed("0\t0"))
-          );
+          ]).pipe(Effect.catchAll(() => Effect.succeed("0\t0")));
 
           const [behindStr, aheadStr] = revList.trim().split("\t");
-          const behind = parseInt(behindStr || "0", 10);
-          const ahead = parseInt(aheadStr || "0", 10);
+          const behind = parseInt(behindStr ?? "0", 10);
+          const ahead = parseInt(aheadStr ?? "0", 10);
 
           // Check for conflicts
           const conflicts = yield* getConflictedFiles();
@@ -546,6 +530,5 @@ export const RemoteSyncServiceLive = Layer.effect(
             }
           }
         }),
-    });
   })
 );

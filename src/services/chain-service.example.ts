@@ -6,11 +6,7 @@
  */
 
 import { Effect, Layer } from "effect";
-import {
-  ChainService,
-  ChainServiceLive,
-  type ChainDefinition,
-} from "./chain-service";
+import { ChainService, ChainServiceLive, type ChainDefinition } from "./chain-service";
 import { SqlLive } from "./sql-service";
 
 /**
@@ -194,7 +190,7 @@ const listChainsExample = () =>
 /**
  * Example: Delete a chain
  */
-const deleteChainExample = (chainName: string) =>
+const _deleteChainExample = (chainName: string) =>
   Effect.gen(function* () {
     const chainService = yield* ChainService;
 
@@ -231,7 +227,9 @@ const exampleProgram = Effect.gen(function* () {
 export const runExample = () => {
   const layer = ChainServiceLive.pipe(Layer.provide(SqlLive));
 
-  return Effect.runPromise(exampleProgram.pipe(Effect.provide(layer)) as Effect.Effect<void, never, never>);
+  return Effect.runPromise(
+    exampleProgram.pipe(Effect.provide(layer)) as Effect.Effect<void, never, never>
+  );
 };
 
 // Export example chains for use in tests

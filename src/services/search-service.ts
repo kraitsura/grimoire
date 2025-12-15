@@ -6,7 +6,7 @@ import { Context, Effect, Layer } from "effect";
 import { SqlService } from "./sql-service";
 import { PromptStorageService } from "./prompt-storage-service";
 import type { Prompt } from "../models";
-import { SqlError, StorageError } from "../models";
+import { SqlError } from "../models";
 
 /**
  * Range representing highlighted text position
@@ -113,7 +113,6 @@ const parseHighlights = (snippet: string): Range[] => {
   const markStart = "<mark>";
   const markEnd = "</mark>";
 
-  let offset = 0;
   let cleanPosition = 0;
   let searchFrom = 0;
 
@@ -217,24 +216,6 @@ const rowToPrompt = (row: FtsRow): Prompt => {
     filePath: row.filePath ?? undefined,
   };
 };
-
-/**
- * Row structure returned from FTS5 query for prompts table
- */
-interface PromptDbRow {
-  id: string;
-  name: string;
-  content_hash: string;
-  file_path: string;
-  created_at: string;
-  updated_at: string;
-  is_template: number;
-  version: number;
-  is_favorite?: number;
-  favorite_order?: number;
-  is_pinned?: number;
-  pin_order?: number;
-}
 
 /**
  * Search service implementation
@@ -354,30 +335,30 @@ export const SearchServiceLive = Layer.effect(
 
           // Get all prompt files
           const promptFiles = yield* storage.listPrompts().pipe(
-            Effect.mapError((error) =>
-              new SqlError({
-                message: "Failed to list prompts",
-                cause: error,
-              })
+            Effect.mapError(
+              (error) =>
+                new SqlError({
+                  message: "Failed to list prompts",
+                  cause: error,
+                })
             )
           );
 
           // Index each prompt
           for (const filePath of promptFiles) {
             const parsed = yield* storage.readPrompt(filePath).pipe(
-              Effect.mapError((error) =>
-                new SqlError({
-                  message: "Failed to read prompt",
-                  cause: error,
-                })
+              Effect.mapError(
+                (error) =>
+                  new SqlError({
+                    message: "Failed to read prompt",
+                    cause: error,
+                  })
               )
             );
             const { frontmatter, content } = parsed;
 
             const tagsStr =
-              frontmatter.tags && frontmatter.tags.length > 0
-                ? frontmatter.tags.join(",")
-                : "";
+              frontmatter.tags && frontmatter.tags.length > 0 ? frontmatter.tags.join(",") : "";
 
             // Insert into FTS index
             yield* sql.run(

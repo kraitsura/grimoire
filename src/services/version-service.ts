@@ -250,9 +250,7 @@ export const VersionServiceLive = Layer.effect(
           );
 
           if (rows.length === 0) {
-            return yield* Effect.die(
-              new Error("Failed to retrieve newly created version")
-            );
+            return yield* Effect.die(new Error("Failed to retrieve newly created version"));
           }
 
           return rowToVersion(rows[0]);
@@ -310,9 +308,7 @@ export const VersionServiceLive = Layer.effect(
           );
 
           if (rows.length === 0) {
-            return yield* Effect.fail(
-              new VersionNotFoundError({ promptId, branch: branchName })
-            );
+            return yield* Effect.fail(new VersionNotFoundError({ promptId, branch: branchName }));
           }
 
           return rowToVersion(rows[0]);
@@ -387,15 +383,11 @@ export const VersionServiceLive = Layer.effect(
           );
 
           if (fromRows.length === 0) {
-            return yield* Effect.fail(
-              new VersionNotFoundError({ promptId, version: fromVersion })
-            );
+            return yield* Effect.fail(new VersionNotFoundError({ promptId, version: fromVersion }));
           }
 
           if (toRows.length === 0) {
-            return yield* Effect.fail(
-              new VersionNotFoundError({ promptId, version: toVersion })
-            );
+            return yield* Effect.fail(new VersionNotFoundError({ promptId, version: toVersion }));
           }
 
           const fromContent = fromRows[0].content;

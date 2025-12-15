@@ -5,7 +5,7 @@
  * validates responses with assertions, and reports results with statistics.
  */
 
-import { Effect, pipe } from "effect";
+import { Effect } from "effect";
 import * as yaml from "js-yaml";
 import { StorageService } from "../services";
 import { LLMService } from "../services/llm-service";
@@ -117,10 +117,7 @@ const runAssertions = (
 /**
  * Interpolate variables in prompt content
  */
-const interpolateVariables = (
-  content: string,
-  variables: Record<string, string>
-): string => {
+const interpolateVariables = (content: string, variables: Record<string, string>): string => {
   let result = content;
   for (const [key, value] of Object.entries(variables)) {
     const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g");
@@ -132,17 +129,13 @@ const interpolateVariables = (
 /**
  * Run a single test case
  */
-const runTestCase = (
-  testCase: TestCase,
-  promptContent: string,
-  model: string
-) =>
+const runTestCase = (testCase: TestCase, promptContent: string, model: string) =>
   Effect.gen(function* () {
     const llm = yield* LLMService;
     const tokenCounter = yield* TokenCounterService;
 
     // Interpolate variables
-    const variables = testCase.variables || {};
+    const variables = testCase.variables ?? {};
     const content = interpolateVariables(promptContent, variables);
 
     const startTime = Date.now();
@@ -159,10 +152,7 @@ const runTestCase = (
       const duration = (Date.now() - startTime) / 1000;
 
       // Run assertions
-      const { passed, error } = runAssertions(
-        response.content,
-        testCase.expected
-      );
+      const { passed, error } = runAssertions(response.content, testCase.expected);
 
       // Calculate cost
       const cost = yield* tokenCounter.estimateCost(
@@ -269,11 +259,7 @@ const formatJsonOutput = (
 /**
  * Format results as JUnit XML
  */
-const formatJunitOutput = (
-  suiteName: string,
-  results: TestResult[],
-  totalTime: number
-): string => {
+const formatJunitOutput = (suiteName: string, results: TestResult[], totalTime: number): string => {
   const failed = results.filter((r) => !r.passed).length;
 
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
@@ -286,7 +272,7 @@ const formatJunitOutput = (
       xml += " />\n";
     } else {
       xml += ">\n";
-      xml += `    <failure message="${result.error || "Assertion failed"}" />\n`;
+      xml += `    <failure message="${result.error ?? "Assertion failed"}" />\n`;
       xml += "  </testcase>\n";
     }
   }
@@ -324,10 +310,10 @@ EXAMPLES:
     }
 
     // Get options from flags
-    const modelOverride = (args.flags["model"] as string) || (args.flags["m"] as string);
-    const parallel = parseInt((args.flags["parallel"] as string) || "3", 10);
-    const format = (args.flags["format"] as string) || "table";
-    const verbose = args.flags["verbose"] === true || args.flags["v"] === true;
+    const modelOverride = (args.flags.model as string) || (args.flags.m as string);
+    const parallel = parseInt((args.flags.parallel as string) || "3", 10);
+    const format = (args.flags.format as string) || "table";
+    const verbose = args.flags.verbose === true || args.flags.v === true;
 
     // Validate format
     if (!["table", "json", "junit"].includes(format)) {
@@ -361,7 +347,9 @@ EXAMPLES:
     try {
       suite = yaml.load(testFileContent) as BenchmarkSuite;
     } catch (error) {
-      console.error(`Error: Invalid YAML: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `Error: Invalid YAML: ${error instanceof Error ? error.message : String(error)}`
+      );
       return;
     }
 
@@ -372,13 +360,11 @@ EXAMPLES:
     }
 
     // Determine model to use
-    const model = modelOverride || suite.model || "gpt-4o";
+    const model = modelOverride ?? suite.model ?? "gpt-4o";
 
     // Load prompt from storage
     const prompt = yield* storage.getByName(suite.prompt).pipe(
-      Effect.catchTag("PromptNotFoundError", () =>
-        storage.getById(suite.prompt)
-      ),
+      Effect.catchTag("PromptNotFoundError", () => storage.getById(suite.prompt)),
       Effect.catchAll((error) =>
         Effect.fail(
           new BenchmarkError({
@@ -393,9 +379,7 @@ EXAMPLES:
     const startTime = Date.now();
 
     const results = yield* Effect.all(
-      suite.tests.map((testCase) =>
-        runTestCase(testCase, prompt.content, model)
-      ),
+      suite.tests.map((testCase) => runTestCase(testCase, prompt.content, model)),
       { concurrency: parallel }
     );
 
@@ -414,13 +398,7 @@ EXAMPLES:
         output = formatJunitOutput(suite.name, results, totalTime);
         break;
       default:
-        output = formatTableOutput(
-          suite.name,
-          results,
-          totalTime,
-          totalCost,
-          verbose
-        );
+        output = formatTableOutput(suite.name, results, totalTime, totalCost, verbose);
     }
 
     console.log(output);

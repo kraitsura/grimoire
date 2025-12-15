@@ -41,14 +41,16 @@ export const CompareExample = () => {
   const results: CompareResult[] = [
     {
       name: "prompt-a",
-      content: "This is the response from prompt A.\nIt has multiple lines.\nAnd provides detailed output.",
+      content:
+        "This is the response from prompt A.\nIt has multiple lines.\nAnd provides detailed output.",
       tokens: 423,
       duration: 2.3,
       cost: 0.0051,
     },
     {
       name: "prompt-b",
-      content: "This is the response from prompt B.\nIt's slightly different.\nBut covers the same topic.",
+      content:
+        "This is the response from prompt B.\nIt's slightly different.\nBut covers the same topic.",
       tokens: 398,
       duration: 2.1,
       cost: 0.0048,

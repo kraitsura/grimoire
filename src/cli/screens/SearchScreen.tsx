@@ -10,7 +10,7 @@
  * - Enter to view selected result
  */
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Box, Text, useInput } from "ink";
 import { Effect } from "effect";
 import { useAppState } from "../context/app-context.js";
@@ -77,7 +77,7 @@ export const SearchScreen: React.FC = () => {
 
   // Load tags on mount
   useEffect(() => {
-    loadTags().then((tags) => {
+    void loadTags().then((tags) => {
       setAvailableTags(tags);
     });
   }, []);
@@ -164,9 +164,7 @@ export const SearchScreen: React.FC = () => {
             setSelectedResultIndex((prev) => Math.max(0, prev - 1));
           }
         } else if (key.downArrow) {
-          setSelectedResultIndex((prev) =>
-            Math.min(results.length - 1, prev + 1)
-          );
+          setSelectedResultIndex((prev) => Math.min(results.length - 1, prev + 1));
         }
         // Enter to view selected result
         else if (key.return) {
@@ -193,9 +191,7 @@ export const SearchScreen: React.FC = () => {
         if (key.leftArrow) {
           setSelectedTagIndex((prev) => Math.max(0, prev - 1));
         } else if (key.rightArrow) {
-          setSelectedTagIndex((prev) =>
-            Math.min(availableTags.length - 1, prev + 1)
-          );
+          setSelectedTagIndex((prev) => Math.min(availableTags.length - 1, prev + 1));
         }
         // Space or Enter to toggle tag
         else if (key.return || input === " ") {
@@ -233,9 +229,7 @@ export const SearchScreen: React.FC = () => {
     highlights.forEach((range, index) => {
       // Add text before highlight
       if (range.start > lastEnd) {
-        segments.push(
-          <Text key={`before-${index}`}>{text.slice(lastEnd, range.start)}</Text>
-        );
+        segments.push(<Text key={`before-${index}`}>{text.slice(lastEnd, range.start)}</Text>);
       }
       // Add highlighted text
       segments.push(

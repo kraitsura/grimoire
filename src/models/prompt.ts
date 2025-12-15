@@ -21,7 +21,7 @@ export const FrontmatterSchema = Schema.Struct({
   isFavorite: Schema.optional(Schema.Boolean),
   favoriteOrder: Schema.optional(Schema.Number),
   isPinned: Schema.optional(Schema.Boolean),
-  pinOrder: Schema.optional(Schema.Number)
+  pinOrder: Schema.optional(Schema.Number),
 });
 
 /**
@@ -43,7 +43,7 @@ export const PromptSchema = Schema.Struct({
   isPinned: Schema.optional(Schema.Boolean),
   pinOrder: Schema.optional(Schema.Number),
   content: Schema.String,
-  filePath: Schema.optional(Schema.String)
+  filePath: Schema.optional(Schema.String),
 });
 
 /**

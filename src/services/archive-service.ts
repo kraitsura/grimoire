@@ -6,7 +6,7 @@
  */
 
 import { Context, Effect, Layer } from "effect";
-import { rename, unlink, readdir, mkdir } from "node:fs/promises";
+import { rename, unlink, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { SqlService } from "./sql-service";
@@ -164,22 +164,20 @@ export const ArchiveServiceLive = Layer.effect(
 
           for (const name of promptNames) {
             // Find the prompt by name
-            const rows = yield* sql.query<PromptRow>(
-              "SELECT id, name, file_path FROM prompts WHERE name = ?",
-              [name]
-            ).pipe(
-              Effect.mapError((error) =>
-                new StorageError({
-                  message: "Failed to query prompt",
-                  cause: error,
-                })
-              )
-            );
+            const rows = yield* sql
+              .query<PromptRow>("SELECT id, name, file_path FROM prompts WHERE name = ?", [name])
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new StorageError({
+                      message: "Failed to query prompt",
+                      cause: error,
+                    })
+                )
+              );
 
             if (rows.length === 0) {
-              return yield* Effect.fail(
-                new PromptNotFoundError({ id: `name:${name}` })
-              );
+              return yield* Effect.fail(new PromptNotFoundError({ id: `name:${name}` }));
             }
 
             const row = rows[0];
@@ -202,36 +200,41 @@ export const ArchiveServiceLive = Layer.effect(
             });
 
             // Record in archived_prompts table
-            yield* sql.run(
-              `INSERT INTO archived_prompts (id, name, archived_at, original_path, archive_path)
+            yield* sql
+              .run(
+                `INSERT INTO archived_prompts (id, name, archived_at, original_path, archive_path)
                VALUES (?, ?, ?, ?, ?)`,
-              [row.id, row.name, now.toISOString(), row.file_path, archivePath]
-            ).pipe(
-              Effect.mapError((error) =>
-                new StorageError({
-                  message: "Failed to insert archived prompt record",
-                  cause: error,
-                })
+                [row.id, row.name, now.toISOString(), row.file_path, archivePath]
               )
-            );
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new StorageError({
+                      message: "Failed to insert archived prompt record",
+                      cause: error,
+                    })
+                )
+              );
 
             // Remove from FTS index
             yield* sql.run("DELETE FROM prompts_fts WHERE prompt_id = ?", [row.id]).pipe(
-              Effect.mapError((error) =>
-                new StorageError({
-                  message: "Failed to delete from FTS index",
-                  cause: error,
-                })
+              Effect.mapError(
+                (error) =>
+                  new StorageError({
+                    message: "Failed to delete from FTS index",
+                    cause: error,
+                  })
               )
             );
 
             // Remove from prompts table and related tables
             yield* sql.run("DELETE FROM prompts WHERE id = ?", [row.id]).pipe(
-              Effect.mapError((error) =>
-                new StorageError({
-                  message: "Failed to delete prompt",
-                  cause: error,
-                })
+              Effect.mapError(
+                (error) =>
+                  new StorageError({
+                    message: "Failed to delete prompt",
+                    cause: error,
+                  })
               )
             );
 
@@ -244,16 +247,17 @@ export const ArchiveServiceLive = Layer.effect(
       list: () =>
         Effect.gen(function* () {
           // Query all archived prompts
-          const rows = yield* sql.query<ArchivedPromptRow>(
-            "SELECT * FROM archived_prompts ORDER BY archived_at DESC"
-          ).pipe(
-            Effect.mapError((error) =>
-              new StorageError({
-                message: "Failed to query archived prompts",
-                cause: error,
-              })
-            )
-          );
+          const rows = yield* sql
+            .query<ArchivedPromptRow>("SELECT * FROM archived_prompts ORDER BY archived_at DESC")
+            .pipe(
+              Effect.mapError(
+                (error) =>
+                  new StorageError({
+                    message: "Failed to query archived prompts",
+                    cause: error,
+                  })
+              )
+            );
 
           return rows.map(rowToArchivedPrompt);
         }),
@@ -268,22 +272,20 @@ export const ArchiveServiceLive = Layer.effect(
 
           for (const name of promptNames) {
             // Find the archived prompt by name
-            const rows = yield* sql.query<ArchivedPromptRow>(
-              "SELECT * FROM archived_prompts WHERE name = ?",
-              [name]
-            ).pipe(
-              Effect.mapError((error) =>
-                new StorageError({
-                  message: "Failed to query archived prompt",
-                  cause: error,
-                })
-              )
-            );
+            const rows = yield* sql
+              .query<ArchivedPromptRow>("SELECT * FROM archived_prompts WHERE name = ?", [name])
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new StorageError({
+                      message: "Failed to query archived prompt",
+                      cause: error,
+                    })
+                )
+              );
 
             if (rows.length === 0) {
-              return yield* Effect.fail(
-                new PromptNotFoundError({ id: `name:${name}` })
-              );
+              return yield* Effect.fail(new PromptNotFoundError({ id: `name:${name}` }));
             }
 
             const row = rows[0];
@@ -309,83 +311,86 @@ export const ArchiveServiceLive = Layer.effect(
             const contentHash = yield* promptStorage.computeHash(parsed.content);
 
             // Re-insert into prompts table
-            yield* sql.run(
-              `INSERT INTO prompts (id, name, content_hash, file_path, created_at, updated_at, is_template, version)
+            yield* sql
+              .run(
+                `INSERT INTO prompts (id, name, content_hash, file_path, created_at, updated_at, is_template, version)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                row.id,
-                parsed.frontmatter.name,
-                contentHash,
-                restorePath,
-                parsed.frontmatter.created.toISOString(),
-                now.toISOString(),
-                parsed.frontmatter.isTemplate ? 1 : 0,
-                parsed.frontmatter.version ?? 1,
-              ]
-            ).pipe(
-              Effect.mapError((error) =>
-                new StorageError({
-                  message: "Failed to re-insert prompt",
-                  cause: error,
-                })
+                [
+                  row.id,
+                  parsed.frontmatter.name,
+                  contentHash,
+                  restorePath,
+                  parsed.frontmatter.created.toISOString(),
+                  now.toISOString(),
+                  parsed.frontmatter.isTemplate ? 1 : 0,
+                  parsed.frontmatter.version ?? 1,
+                ]
               )
-            );
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new StorageError({
+                      message: "Failed to re-insert prompt",
+                      cause: error,
+                    })
+                )
+              );
 
             // Re-insert tags if they exist
             if (parsed.frontmatter.tags && parsed.frontmatter.tags.length > 0) {
               for (const tagName of parsed.frontmatter.tags) {
                 // Insert or get tag
-                yield* sql.run(
-                  "INSERT OR IGNORE INTO tags (name) VALUES (?)",
-                  [tagName]
-                ).pipe(
-                  Effect.mapError((error) =>
-                    new StorageError({
-                      message: "Failed to insert tag",
-                      cause: error,
-                    })
+                yield* sql.run("INSERT OR IGNORE INTO tags (name) VALUES (?)", [tagName]).pipe(
+                  Effect.mapError(
+                    (error) =>
+                      new StorageError({
+                        message: "Failed to insert tag",
+                        cause: error,
+                      })
                   )
                 );
 
                 // Get tag id
-                const tagRows = yield* sql.query<{ id: number }>(
-                  "SELECT id FROM tags WHERE name = ?",
-                  [tagName]
-                ).pipe(
-                  Effect.mapError((error) =>
-                    new StorageError({
-                      message: "Failed to query tag",
-                      cause: error,
-                    })
-                  )
-                );
+                const tagRows = yield* sql
+                  .query<{ id: number }>("SELECT id FROM tags WHERE name = ?", [tagName])
+                  .pipe(
+                    Effect.mapError(
+                      (error) =>
+                        new StorageError({
+                          message: "Failed to query tag",
+                          cause: error,
+                        })
+                    )
+                  );
 
                 if (tagRows.length > 0) {
                   // Link tag to prompt
-                  yield* sql.run(
-                    "INSERT OR IGNORE INTO prompt_tags (prompt_id, tag_id) VALUES (?, ?)",
-                    [row.id, tagRows[0].id]
-                  ).pipe(
-                    Effect.mapError((error) =>
-                      new StorageError({
-                        message: "Failed to link tag to prompt",
-                        cause: error,
-                      })
-                    )
-                  );
+                  yield* sql
+                    .run("INSERT OR IGNORE INTO prompt_tags (prompt_id, tag_id) VALUES (?, ?)", [
+                      row.id,
+                      tagRows[0].id,
+                    ])
+                    .pipe(
+                      Effect.mapError(
+                        (error) =>
+                          new StorageError({
+                            message: "Failed to link tag to prompt",
+                            cause: error,
+                          })
+                      )
+                    );
                 }
               }
             }
 
             // Remove from archived_prompts table
-            yield* sql.run("DELETE FROM archived_prompts WHERE id = ?", [
-              row.id,
-            ]).pipe(
-              Effect.mapError((error) =>
-                new StorageError({
-                  message: "Failed to delete archived prompt record",
-                  cause: error,
-                })
+            yield* sql.run("DELETE FROM archived_prompts WHERE id = ?", [row.id]).pipe(
+              Effect.mapError(
+                (error) =>
+                  new StorageError({
+                    message: "Failed to delete archived prompt record",
+                    cause: error,
+                  })
               )
             );
 
@@ -401,26 +406,27 @@ export const ArchiveServiceLive = Layer.effect(
           let rows: ArchivedPromptRow[];
 
           if (olderThan) {
-            rows = yield* sql.query<ArchivedPromptRow>(
-              "SELECT * FROM archived_prompts WHERE archived_at < ?",
-              [olderThan.toISOString()]
-            ).pipe(
-              Effect.mapError((error) =>
-                new StorageError({
-                  message: "Failed to query archived prompts",
-                  cause: error,
-                })
-              )
-            );
+            rows = yield* sql
+              .query<ArchivedPromptRow>("SELECT * FROM archived_prompts WHERE archived_at < ?", [
+                olderThan.toISOString(),
+              ])
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new StorageError({
+                      message: "Failed to query archived prompts",
+                      cause: error,
+                    })
+                )
+              );
           } else {
-            rows = yield* sql.query<ArchivedPromptRow>(
-              "SELECT * FROM archived_prompts"
-            ).pipe(
-              Effect.mapError((error) =>
-                new StorageError({
-                  message: "Failed to query archived prompts",
-                  cause: error,
-                })
+            rows = yield* sql.query<ArchivedPromptRow>("SELECT * FROM archived_prompts").pipe(
+              Effect.mapError(
+                (error) =>
+                  new StorageError({
+                    message: "Failed to query archived prompts",
+                    cause: error,
+                  })
               )
             );
           }
@@ -439,14 +445,13 @@ export const ArchiveServiceLive = Layer.effect(
             });
 
             // Remove from archived_prompts table
-            yield* sql.run("DELETE FROM archived_prompts WHERE id = ?", [
-              row.id,
-            ]).pipe(
-              Effect.mapError((error) =>
-                new StorageError({
-                  message: "Failed to delete archived prompt record",
-                  cause: error,
-                })
+            yield* sql.run("DELETE FROM archived_prompts WHERE id = ?", [row.id]).pipe(
+              Effect.mapError(
+                (error) =>
+                  new StorageError({
+                    message: "Failed to delete archived prompt record",
+                    cause: error,
+                  })
               )
             );
 

@@ -22,21 +22,9 @@ const HelpOverlay: React.FC<{ onDismiss: () => void }> = ({ onDismiss }) => {
   });
 
   return (
-    <Box
-      position="absolute"
-      width="100%"
-      height="100%"
-      alignItems="center"
-      justifyContent="center"
-    >
+    <Box position="absolute" width="100%" height="100%" alignItems="center" justifyContent="center">
       {/* Semi-transparent background */}
-      <Box
-        flexDirection="column"
-        borderStyle="round"
-        borderColor="cyan"
-        paddingX={2}
-        paddingY={1}
-      >
+      <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1}>
         <Box marginBottom={1}>
           <Text bold color="cyan">
             Keyboard Shortcuts
@@ -46,23 +34,23 @@ const HelpOverlay: React.FC<{ onDismiss: () => void }> = ({ onDismiss }) => {
         <Box flexDirection="column" gap={0}>
           <Text bold>Global:</Text>
           <Text>
-            <Text color="green">  q    </Text>
+            <Text color="green"> q </Text>
             <Text dimColor>Quit</Text>
           </Text>
           <Text>
-            <Text color="green">  /    </Text>
+            <Text color="green"> / </Text>
             <Text dimColor>Search</Text>
           </Text>
           <Text>
-            <Text color="green">  m    </Text>
+            <Text color="green"> m </Text>
             <Text dimColor>Switch model</Text>
           </Text>
           <Text>
-            <Text color="green">  Esc  </Text>
+            <Text color="green"> Esc </Text>
             <Text dimColor>Back / Cancel</Text>
           </Text>
           <Text>
-            <Text color="green">  ?    </Text>
+            <Text color="green"> ? </Text>
             <Text dimColor>Show this help</Text>
           </Text>
         </Box>
@@ -70,19 +58,19 @@ const HelpOverlay: React.FC<{ onDismiss: () => void }> = ({ onDismiss }) => {
         <Box flexDirection="column" gap={0} marginTop={1}>
           <Text bold>Navigation:</Text>
           <Text>
-            <Text color="green">  j/↓  </Text>
+            <Text color="green"> j/↓ </Text>
             <Text dimColor>Move down</Text>
           </Text>
           <Text>
-            <Text color="green">  k/↑  </Text>
+            <Text color="green"> k/↑ </Text>
             <Text dimColor>Move up</Text>
           </Text>
           <Text>
-            <Text color="green">  Enter</Text>
+            <Text color="green"> Enter</Text>
             <Text dimColor>Select / Confirm</Text>
           </Text>
           <Text>
-            <Text color="green">  Tab  </Text>
+            <Text color="green"> Tab </Text>
             <Text dimColor>Next field</Text>
           </Text>
         </Box>
@@ -107,9 +95,7 @@ const QuitConfirmation: React.FC<{
   onConfirm: () => void;
   onCancel: () => void;
 }> = ({ onConfirm, onCancel }) => {
-  const [selectedAction, setSelectedAction] = useState<"cancel" | "quit">(
-    "cancel"
-  );
+  const [selectedAction, setSelectedAction] = useState<"cancel" | "quit">("cancel");
 
   useInput(
     (input, key) => {
@@ -136,13 +122,7 @@ const QuitConfirmation: React.FC<{
   );
 
   return (
-    <Box
-      position="absolute"
-      width="100%"
-      height="100%"
-      alignItems="center"
-      justifyContent="center"
-    >
+    <Box position="absolute" width="100%" height="100%" alignItems="center" justifyContent="center">
       <Box
         flexDirection="column"
         borderStyle="round"
@@ -288,10 +268,7 @@ const AppInner: React.FC = () => {
 
       {/* Quit confirmation */}
       {showQuitConfirm && (
-        <QuitConfirmation
-          onConfirm={handleQuitConfirm}
-          onCancel={handleQuitCancel}
-        />
+        <QuitConfirmation onConfirm={handleQuitConfirm} onCancel={handleQuitCancel} />
       )}
     </Box>
   );

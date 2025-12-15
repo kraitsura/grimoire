@@ -103,10 +103,7 @@ interface TagServiceImpl {
 /**
  * Tag service tag
  */
-export class TagService extends Context.Tag("TagService")<
-  TagService,
-  TagServiceImpl
->() {}
+export class TagService extends Context.Tag("TagService")<TagService, TagServiceImpl>() {}
 
 /**
  * Tag service implementation
@@ -128,10 +125,9 @@ export const TagServiceLive = Layer.effect(
         const normalizedName = tagName.toLowerCase();
 
         // Try to find existing tag
-        const existing = yield* sql.query<TagRow>(
-          "SELECT id FROM tags WHERE LOWER(name) = ?",
-          [normalizedName]
-        );
+        const existing = yield* sql.query<TagRow>("SELECT id FROM tags WHERE LOWER(name) = ?", [
+          normalizedName,
+        ]);
 
         if (existing.length > 0) {
           return existing[0].id;
@@ -141,10 +137,9 @@ export const TagServiceLive = Layer.effect(
         yield* sql.run("INSERT INTO tags (name) VALUES (?)", [tagName]);
 
         // Get the ID of the newly created tag
-        const created = yield* sql.query<TagRow>(
-          "SELECT id FROM tags WHERE LOWER(name) = ?",
-          [normalizedName]
-        );
+        const created = yield* sql.query<TagRow>("SELECT id FROM tags WHERE LOWER(name) = ?", [
+          normalizedName,
+        ]);
 
         return created[0].id;
       });
@@ -158,10 +153,7 @@ export const TagServiceLive = Layer.effect(
     ): Effect.Effect<void, PromptNotFoundError | SqlError | StorageError> =>
       Effect.gen(function* () {
         // Get prompt file path from database
-        const rows = yield* sql.query<PromptRow>(
-          "SELECT * FROM prompts WHERE id = ?",
-          [promptId]
-        );
+        const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts WHERE id = ?", [promptId]);
 
         if (rows.length === 0) {
           return yield* Effect.fail(new PromptNotFoundError({ id: promptId }));
@@ -180,19 +172,13 @@ export const TagServiceLive = Layer.effect(
         };
 
         // Write updated file
-        yield* promptStorage.writePrompt(
-          row.file_path,
-          updatedFrontmatter,
-          parsed.content
-        );
+        yield* promptStorage.writePrompt(row.file_path, updatedFrontmatter, parsed.content);
       });
 
     /**
      * Get all tags for a prompt from the database
      */
-    const getPromptTags = (
-      promptId: string
-    ): Effect.Effect<string[], SqlError> =>
+    const getPromptTags = (promptId: string): Effect.Effect<string[], SqlError> =>
       Effect.gen(function* () {
         const tagRows = yield* sql.query<TagRow>(
           `SELECT t.name
@@ -213,10 +199,10 @@ export const TagServiceLive = Layer.effect(
           const tagId = yield* getOrCreateTag(tagName);
 
           // Add to junction table (ignore if already exists)
-          yield* sql.run(
-            "INSERT OR IGNORE INTO prompt_tags (prompt_id, tag_id) VALUES (?, ?)",
-            [promptId, tagId]
-          );
+          yield* sql.run("INSERT OR IGNORE INTO prompt_tags (prompt_id, tag_id) VALUES (?, ?)", [
+            promptId,
+            tagId,
+          ]);
 
           // Get updated tags list
           const tags = yield* getPromptTags(promptId);
@@ -312,11 +298,7 @@ export const TagServiceLive = Layer.effect(
                 };
 
                 // Write updated file
-                yield* promptStorage.writePrompt(
-                  row.file_path,
-                  updatedFrontmatter,
-                  parsed.content
-                );
+                yield* promptStorage.writePrompt(row.file_path, updatedFrontmatter, parsed.content);
               }
             })
           );

@@ -52,14 +52,14 @@ export const chainCommand = (args: ParsedArgs) =>
 /**
  * List all available chains
  */
-const listChains = (args: ParsedArgs) =>
+const listChains = (_args: ParsedArgs) =>
   Effect.gen(function* () {
     const chainService = yield* ChainService;
 
     const chains = yield* chainService.listChains().pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error(`Error listing chains: ${error}`);
+          console.error(`Error listing chains: ${String(error)}`);
           return [] as string[];
         })
       )
@@ -125,7 +125,8 @@ const showChain = (args: ParsedArgs) =>
     } else {
       for (const [varName, spec] of varEntries) {
         const required = spec.required ? " (required)" : "";
-        const defaultVal = spec.default !== undefined ? ` [default: ${spec.default}]` : "";
+        const defaultVal =
+          spec.default !== undefined ? ` [default: ${JSON.stringify(spec.default)}]` : "";
         const desc = spec.description ? ` - ${spec.description}` : "";
         console.log(`  ${varName}: ${spec.type}${required}${defaultVal}${desc}`);
       }
@@ -135,9 +136,10 @@ const showChain = (args: ParsedArgs) =>
     console.log(`\nSteps (${chain.steps.length}):`);
     for (let i = 0; i < chain.steps.length; i++) {
       const step = chain.steps[i];
-      const deps = step.dependsOn && step.dependsOn.length > 0
-        ? ` [depends on: ${step.dependsOn.join(", ")}]`
-        : "";
+      const deps =
+        step.dependsOn && step.dependsOn.length > 0
+          ? ` [depends on: ${step.dependsOn.join(", ")}]`
+          : "";
       const model = step.model ? ` (${step.model})` : "";
       console.log(`  ${i + 1}. ${step.id}: ${step.prompt}${model}${deps}`);
       console.log(`     Output: ${step.output}`);
@@ -319,7 +321,7 @@ const deleteChain = (args: ParsedArgs) =>
  */
 const parseVariables = (args: ParsedArgs): Record<string, string> => {
   const variables: Record<string, string> = {};
-  const varFlag = args.flags["var"];
+  const varFlag = args.flags.var;
 
   if (typeof varFlag === "string") {
     // Single --var key=value
@@ -425,11 +427,13 @@ const runChain = (args: ParsedArgs) =>
     const llmService = yield* LLMService;
 
     const name = args.positional[1];
-    const dryRun = args.flags["dry-run"] || args.flags["n"];
-    const verbose = args.flags["verbose"] || args.flags["v"];
+    const dryRun = args.flags["dry-run"] || args.flags.n;
+    const verbose = args.flags.verbose || args.flags.v;
 
     if (!name) {
-      console.log("Usage: grimoire chain run <chain-name> [--var key=value] [--dry-run] [--verbose]");
+      console.log(
+        "Usage: grimoire chain run <chain-name> [--var key=value] [--dry-run] [--verbose]"
+      );
       return;
     }
 
@@ -466,7 +470,7 @@ const runChain = (args: ParsedArgs) =>
     for (const [varName, spec] of Object.entries(chain.variables)) {
       if (spec.required && !inputVars[varName]) {
         if (spec.default !== undefined) {
-          inputVars[varName] = String(spec.default);
+          inputVars[varName] = JSON.stringify(spec.default);
         } else {
           console.error(`Missing required variable: ${varName}`);
           console.error(`Use: --var ${varName}=value`);
@@ -500,7 +504,7 @@ const runChain = (args: ParsedArgs) =>
         const step = executionPlan[i];
         console.log(`Step ${i + 1}/${executionPlan.length}: ${step.id}`);
         console.log(`  Prompt: ${step.prompt}`);
-        console.log(`  Model: ${step.model || "default"}`);
+        console.log(`  Model: ${step.model ?? "default"}`);
         console.log(`  Variables:`);
         for (const [key, value] of Object.entries(step.variables)) {
           const substituted = substituteVariables(value, inputVars, {});
@@ -518,7 +522,7 @@ const runChain = (args: ParsedArgs) =>
     // Execute steps
     const stepOutputs: Record<string, string> = {};
     const startTime = Date.now();
-    let totalTokens = 0;
+    const _totalTokens = 0;
 
     for (let i = 0; i < executionPlan.length; i++) {
       const step = executionPlan[i];
@@ -530,7 +534,7 @@ const runChain = (args: ParsedArgs) =>
       const prompt = yield* storageService.getByName(step.prompt).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
-            console.error(`Error loading prompt '${step.prompt}': ${error}`);
+            console.error(`Error loading prompt '${step.prompt}': ${String(error)}`);
             process.exit(1);
           })
         )
@@ -555,7 +559,7 @@ const runChain = (args: ParsedArgs) =>
 
       // Create LLM request
       const llmRequest: LLMRequest = {
-        model: step.model || "claude-sonnet-4",
+        model: step.model ?? "claude-sonnet-4",
         messages: [
           {
             role: "user",
@@ -570,19 +574,17 @@ const runChain = (args: ParsedArgs) =>
 
       console.log("  ");
 
-      yield* Stream.runForEach(
-        llmService.stream(llmRequest),
-        (chunk) =>
-          Effect.sync(() => {
-            if (!chunk.done) {
-              process.stdout.write(chunk.content);
-              stepOutput += chunk.content;
-            }
-          })
+      yield* Stream.runForEach(llmService.stream(llmRequest), (chunk) =>
+        Effect.sync(() => {
+          if (!chunk.done) {
+            process.stdout.write(chunk.content);
+            stepOutput += chunk.content;
+          }
+        })
       ).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
-            console.error(`\n  Error: ${error}`);
+            console.error(`\n  Error: ${String(error)}`);
             process.exit(1);
           })
         )

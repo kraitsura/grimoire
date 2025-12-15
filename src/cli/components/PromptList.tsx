@@ -29,7 +29,10 @@ export const PromptList: React.FC<Props> = ({ prompts, onSelect }) => {
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color="gray">{"NAME".padEnd(25)}{"TAGS".padEnd(20)}UPDATED</Text>
+        <Text color="gray">
+          {"NAME".padEnd(25)}
+          {"TAGS".padEnd(20)}UPDATED
+        </Text>
       </Box>
       {prompts.map((prompt, i) => (
         <Box key={prompt.id}>

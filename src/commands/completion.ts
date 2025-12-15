@@ -8,16 +8,16 @@ import type { ParsedArgs } from "../cli/parser";
 /**
  * Generate shell completion scripts
  */
-export const completionCommand = (args: ParsedArgs) =>
-  Effect.gen(function* () {
+export const completionCommand = (args: ParsedArgs): Effect.Effect<void> =>
+  Effect.sync(() => {
     const shell = args.positional[0];
 
     if (!shell) {
       console.log("Usage: grimoire completion <bash|zsh|fish>");
       console.log("\nGenerate shell completion scripts.");
       console.log("\nTo install:");
-      console.log("  bash: eval \"$(grimoire completion bash)\"");
-      console.log("  zsh:  eval \"$(grimoire completion zsh)\"");
+      console.log('  bash: eval "$(grimoire completion bash)"');
+      console.log('  zsh:  eval "$(grimoire completion zsh)"');
       console.log("  fish: grimoire completion fish | source");
       console.log("\nAdd the eval line to your shell's rc file for persistence.");
       return;
@@ -52,43 +52,43 @@ _grimoire() {
 
   local commands="list add show edit rm copy test cost search reindex stats tag templates export import history versions rollback archive branch alias chain compare favorite pin format sync completion config"
 
-  case "\$prev" in
+  case "$prev" in
     grimoire)
-      COMPREPLY=($(compgen -W "\$commands" -- "\$cur"))
+      COMPREPLY=($(compgen -W "$commands" -- "$cur"))
       return 0
       ;;
     templates)
-      COMPREPLY=($(compgen -W "list show vars create apply" -- "\$cur"))
+      COMPREPLY=($(compgen -W "list show vars create apply" -- "$cur"))
       return 0
       ;;
     chain)
-      COMPREPLY=($(compgen -W "list show create run delete" -- "\$cur"))
+      COMPREPLY=($(compgen -W "list show create run delete" -- "$cur"))
       return 0
       ;;
     config)
-      COMPREPLY=($(compgen -W "llm" -- "\$cur"))
+      COMPREPLY=($(compgen -W "llm" -- "$cur"))
       return 0
       ;;
     llm)
-      if [[ "\$cmd" == "config" ]]; then
-        COMPREPLY=($(compgen -W "list add test remove" -- "\$cur"))
+      if [[ "$cmd" == "config" ]]; then
+        COMPREPLY=($(compgen -W "list add test remove" -- "$cur"))
         return 0
       fi
       ;;
     completion)
-      COMPREPLY=($(compgen -W "bash zsh fish" -- "\$cur"))
+      COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
       return 0
       ;;
     archive)
-      COMPREPLY=($(compgen -W "list show restore delete" -- "\$cur"))
+      COMPREPLY=($(compgen -W "list show restore delete" -- "$cur"))
       return 0
       ;;
     branch)
-      COMPREPLY=($(compgen -W "list create switch merge delete" -- "\$cur"))
+      COMPREPLY=($(compgen -W "list create switch merge delete" -- "$cur"))
       return 0
       ;;
     favorite|pin)
-      COMPREPLY=($(compgen -W "list add remove" -- "\$cur"))
+      COMPREPLY=($(compgen -W "list add remove" -- "$cur"))
       return 0
       ;;
   esac
@@ -151,18 +151,18 @@ _grimoire() {
     '1: :->command' \\
     '*:: :->args'
 
-  case \$state in
+  case $state in
     command)
       _describe 'commands' commands
       ;;
     args)
-      case \$words[1] in
+      case $words[1] in
         templates) _describe 'subcommands' templates_cmds ;;
         chain) _describe 'subcommands' chain_cmds ;;
         config)
           if (( CURRENT == 2 )); then
             _describe 'subcommands' config_cmds
-          elif [[ \$words[2] == "llm" ]] && (( CURRENT == 3 )); then
+          elif [[ $words[2] == "llm" ]] && (( CURRENT == 3 )); then
             _describe 'subcommands' config_llm_cmds
           fi
           ;;

@@ -95,7 +95,9 @@ export interface AliasServiceImpl {
    * Resolve an alias (expand it to the full command)
    * Handles nested aliases with depth limiting
    */
-  readonly resolveAlias: (input: string[]) => Effect.Effect<string[], CircularAliasError | AliasError>;
+  readonly resolveAlias: (
+    input: string[]
+  ) => Effect.Effect<string[], CircularAliasError | AliasError>;
 
   /**
    * Get a single alias by name
@@ -106,10 +108,7 @@ export interface AliasServiceImpl {
 /**
  * Alias service tag
  */
-export class AliasService extends Context.Tag("AliasService")<
-  AliasService,
-  AliasServiceImpl
->() {}
+export class AliasService extends Context.Tag("AliasService")<AliasService, AliasServiceImpl>() {}
 
 /**
  * Get path to aliases.json file
@@ -133,79 +132,76 @@ const BUILTIN_ALIASES: Record<string, { command: string; args: string[]; descrip
 const MAX_RESOLUTION_DEPTH = 5;
 
 /**
- * Alias service implementation
+ * Type for alias storage records
  */
-export const AliasServiceLive = Layer.effect(
-  AliasService,
-  Effect.gen(function* () {
-    /**
-     * Load aliases from file
-     * Creates the file with built-in aliases if it doesn't exist
-     */
-    const loadAliases = (): Effect.Effect<
-      Record<string, { command: string; args: string[]; description?: string }>,
-      AliasError
-    > =>
-      Effect.gen(function* () {
-        const aliasesPath = getAliasesPath();
+type AliasRecord = Record<string, { command: string; args: string[]; description?: string }>;
 
-        // If file doesn't exist, create it with built-in aliases
-        if (!existsSync(aliasesPath)) {
-          yield* saveAliases(BUILTIN_ALIASES);
+/**
+ * Save aliases to file
+ */
+const saveAliases = (aliases: AliasRecord): Effect.Effect<void, AliasError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const aliasesPath = getAliasesPath();
+
+      // Filter out built-in aliases before saving (they're always available)
+      const customAliases: AliasRecord = {};
+      for (const [name, alias] of Object.entries(aliases)) {
+        if (!(name in BUILTIN_ALIASES)) {
+          customAliases[name] = alias;
+        }
+      }
+
+      await Bun.write(aliasesPath, JSON.stringify(customAliases, null, 2));
+    },
+    catch: (error) =>
+      new AliasError({
+        message: `Failed to save aliases: ${error instanceof Error ? error.message : String(error)}`,
+        cause: error,
+      }),
+  });
+
+/**
+ * Load aliases from file
+ * Creates the file with built-in aliases if it doesn't exist
+ */
+const loadAliases = (): Effect.Effect<AliasRecord, AliasError> =>
+  Effect.gen(function* () {
+    const aliasesPath = getAliasesPath();
+
+    // If file doesn't exist, create it with built-in aliases
+    if (!existsSync(aliasesPath)) {
+      yield* saveAliases(BUILTIN_ALIASES);
+      return BUILTIN_ALIASES;
+    }
+
+    // Read and parse file
+    return yield* Effect.tryPromise({
+      try: async () => {
+        const file = Bun.file(aliasesPath);
+        const text = await file.text();
+
+        if (!text.trim()) {
           return BUILTIN_ALIASES;
         }
 
-        // Read and parse file
-        return yield* Effect.tryPromise({
-          try: async () => {
-            const file = Bun.file(aliasesPath);
-            const text = await file.text();
+        const parsed = JSON.parse(text) as AliasRecord;
+        return { ...BUILTIN_ALIASES, ...parsed };
+      },
+      catch: (error) =>
+        new AliasError({
+          message: `Failed to load aliases: ${error instanceof Error ? error.message : String(error)}`,
+          cause: error,
+        }),
+    });
+  });
 
-            if (!text.trim()) {
-              return BUILTIN_ALIASES;
-            }
-
-            const parsed = JSON.parse(text);
-            return { ...BUILTIN_ALIASES, ...parsed };
-          },
-          catch: (error) =>
-            new AliasError({
-              message: `Failed to load aliases: ${error instanceof Error ? error.message : String(error)}`,
-              cause: error,
-            }),
-        });
-      });
-
-    /**
-     * Save aliases to file
-     */
-    const saveAliases = (
-      aliases: Record<string, { command: string; args: string[]; description?: string }>
-    ): Effect.Effect<void, AliasError> =>
-      Effect.gen(function* () {
-        const aliasesPath = getAliasesPath();
-
-        // Filter out built-in aliases before saving (they're always available)
-        const customAliases: Record<string, { command: string; args: string[]; description?: string }> = {};
-        for (const [name, alias] of Object.entries(aliases)) {
-          if (!(name in BUILTIN_ALIASES)) {
-            customAliases[name] = alias;
-          }
-        }
-
-        yield* Effect.tryPromise({
-          try: async () => {
-            await Bun.write(aliasesPath, JSON.stringify(customAliases, null, 2));
-          },
-          catch: (error) =>
-            new AliasError({
-              message: `Failed to save aliases: ${error instanceof Error ? error.message : String(error)}`,
-              cause: error,
-            }),
-        });
-      });
-
-    return AliasService.of({
+/**
+ * Alias service implementation
+ */
+export const AliasServiceLive = Layer.succeed(
+  AliasService,
+  AliasService.of({
       createAlias: (name: string, command: string, args: string[], description?: string) =>
         Effect.gen(function* () {
           const aliases = yield* loadAliases();
@@ -325,6 +321,5 @@ export const AliasServiceLive = Layer.effect(
             description: alias.description,
           };
         }),
-    });
   })
 );

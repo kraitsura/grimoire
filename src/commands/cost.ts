@@ -9,15 +9,12 @@ import type { ParsedArgs } from "../cli/parser";
 /**
  * Model pricing information (per 1M tokens)
  */
-const MODEL_PRICING: Record<
-  string,
-  { input: number; output: number; contextWindow?: number }
-> = {
+const MODEL_PRICING: Record<string, { input: number; output: number; contextWindow?: number }> = {
   "gpt-4o": { input: 2.5, output: 10.0, contextWindow: 128000 },
   "gpt-4o-mini": { input: 0.15, output: 0.6, contextWindow: 128000 },
   "claude-sonnet-4": { input: 3.0, output: 15.0, contextWindow: 200000 },
   "claude-3.5-haiku": { input: 0.8, output: 4.0, contextWindow: 200000 },
-  "o1": { input: 15.0, output: 60.0, contextWindow: 200000 },
+  o1: { input: 15.0, output: 60.0, contextWindow: 200000 },
   "o1-mini": { input: 3.0, output: 12.0, contextWindow: 128000 },
 };
 
@@ -51,17 +48,13 @@ export const costCommand = (args: ParsedArgs) =>
     }
 
     // Parse flags
-    const modelFlag = (args.flags["model"] || args.flags["m"]) as
-      | string
-      | undefined;
+    const modelFlag = (args.flags.model || args.flags.m) as string | undefined;
     const allModelsFlag = args.flags["all-models"] as boolean | undefined;
-    const batchFlag = args.flags["batch"] as string | undefined;
+    const batchFlag = args.flags.batch as string | undefined;
     const outputTokensFlag = args.flags["output-tokens"] as string | undefined;
 
-    const selectedModel = modelFlag || DEFAULT_MODEL;
-    const outputTokens = outputTokensFlag
-      ? parseInt(outputTokensFlag, 10)
-      : DEFAULT_OUTPUT_TOKENS;
+    const selectedModel = modelFlag ?? DEFAULT_MODEL;
+    const outputTokens = outputTokensFlag ? parseInt(outputTokensFlag, 10) : DEFAULT_OUTPUT_TOKENS;
     const batchSize = batchFlag ? parseInt(batchFlag, 10) : null;
 
     // Validate model
@@ -73,9 +66,9 @@ export const costCommand = (args: ParsedArgs) =>
     }
 
     // Find prompt
-    const prompt = yield* storage.getById(nameOrId).pipe(
-      Effect.catchTag("PromptNotFoundError", () => storage.getByName(nameOrId))
-    );
+    const prompt = yield* storage
+      .getById(nameOrId)
+      .pipe(Effect.catchTag("PromptNotFoundError", () => storage.getByName(nameOrId)));
 
     // Count tokens - use gpt-4o for consistent counting across all models
     const tokenCount = yield* tokenCounter.count(prompt.content, "gpt-4o");
@@ -99,19 +92,11 @@ export const costCommand = (args: ParsedArgs) =>
     // Calculate costs
     if (allModelsFlag) {
       // Show all models
-      displayCostTable(
-        Object.keys(MODEL_PRICING),
-        tokenCount,
-        outputTokens,
-        MODEL_PRICING
-      );
+      displayCostTable(Object.keys(MODEL_PRICING), tokenCount, outputTokens, MODEL_PRICING);
 
       // Show context window warnings for models that exceed
       const exceededModels = Object.entries(MODEL_PRICING)
-        .filter(
-          ([, pricing]) =>
-            pricing.contextWindow && tokenCount > pricing.contextWindow
-        )
+        .filter(([, pricing]) => pricing.contextWindow && tokenCount > pricing.contextWindow)
         .map(([model]) => model);
 
       if (exceededModels.length > 0) {
@@ -121,12 +106,7 @@ export const costCommand = (args: ParsedArgs) =>
       }
     } else {
       // Show single model
-      displayCostTable(
-        [selectedModel],
-        tokenCount,
-        outputTokens,
-        MODEL_PRICING
-      );
+      displayCostTable([selectedModel], tokenCount, outputTokens, MODEL_PRICING);
     }
 
     // Show batch estimate if requested
@@ -134,8 +114,7 @@ export const costCommand = (args: ParsedArgs) =>
       console.log();
       const pricing = MODEL_PRICING[selectedModel];
       const costPerRun =
-        (tokenCount / 1_000_000) * pricing.input +
-        (outputTokens / 1_000_000) * pricing.output;
+        (tokenCount / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output;
       const batchCost = costPerRun * batchSize;
 
       console.log(
@@ -154,10 +133,7 @@ function displayCostTable(
   pricing: Record<string, { input: number; output: number }>
 ): void {
   // Calculate column widths
-  const modelColWidth = Math.max(
-    ...models.map((m) => m.length),
-    "Model".length
-  );
+  const modelColWidth = Math.max(...models.map((m) => m.length), "Model".length);
   const costColWidth = 10;
 
   // Header
@@ -173,8 +149,7 @@ function displayCostTable(
   console.log(rowSeparator);
 
   // Rows
-  for (let i = 0; i < models.length; i++) {
-    const model = models[i];
+  for (const model of models) {
     const modelPricing = pricing[model];
 
     const inputCost = (inputTokens / 1_000_000) * modelPricing.input;

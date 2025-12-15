@@ -45,26 +45,19 @@ interface RateLimiterServiceImpl {
    * Acquire a permit to make a request to the provider
    * Blocks until the rate limit is cleared if currently limited
    */
-  readonly acquire: (
-    provider: string
-  ) => Effect.Effect<void, RateLimitError>;
+  readonly acquire: (provider: string) => Effect.Effect<void, RateLimitError>;
 
   /**
    * Set retry-after time for a provider (typically from response headers)
    * @param provider - The API provider name
    * @param ms - Milliseconds to wait before retrying
    */
-  readonly setRetryAfter: (
-    provider: string,
-    ms: number
-  ) => Effect.Effect<void, never>;
+  readonly setRetryAfter: (provider: string, ms: number) => Effect.Effect<void, never>;
 
   /**
    * Get current rate limit status for a provider
    */
-  readonly getStatus: (
-    provider: string
-  ) => Effect.Effect<RateLimitStatus, never>;
+  readonly getStatus: (provider: string) => Effect.Effect<RateLimitStatus, never>;
 
   /**
    * Release a permit after request completes
@@ -87,16 +80,12 @@ export const RateLimiterServiceLive = Layer.effect(
   RateLimiterService,
   Effect.gen(function* () {
     // Ref to store provider states
-    const statesRef = yield* Ref.make(
-      new Map<string, ProviderState>()
-    );
+    const statesRef = yield* Ref.make(new Map<string, ProviderState>());
 
     /**
      * Get or create provider state
      */
-    const getOrCreateState = (
-      provider: string
-    ): Effect.Effect<ProviderState, never> =>
+    const getOrCreateState = (provider: string): Effect.Effect<ProviderState, never> =>
       Effect.gen(function* () {
         const states = yield* Ref.get(statesRef);
         const existing = states.get(provider);
@@ -116,9 +105,7 @@ export const RateLimiterServiceLive = Layer.effect(
         };
 
         // Store the new state
-        yield* Ref.update(statesRef, (states) =>
-          new Map(states).set(provider, newState)
-        );
+        yield* Ref.update(statesRef, (states) => new Map(states).set(provider, newState));
 
         return newState;
       });
@@ -184,10 +171,7 @@ export const RateLimiterServiceLive = Layer.effect(
           // Update remaining count
           yield* updateState(provider, (s) => ({
             ...s,
-            requestsRemaining: Math.max(
-              0,
-              (s.requestsRemaining ?? s.requestsLimit) - 1
-            ),
+            requestsRemaining: Math.max(0, (s.requestsRemaining ?? s.requestsLimit) - 1),
           }));
         }),
 
@@ -219,8 +203,7 @@ export const RateLimiterServiceLive = Layer.effect(
 
           const now = new Date();
           const isLimited =
-            state.retryAfter !== undefined &&
-            state.retryAfter.getTime() > now.getTime();
+            state.retryAfter !== undefined && state.retryAfter.getTime() > now.getTime();
 
           return {
             isLimited,
@@ -246,10 +229,7 @@ export const RateLimiterServiceLive = Layer.effect(
           // Update remaining count
           yield* updateState(provider, (s) => ({
             ...s,
-            requestsRemaining: Math.min(
-              s.requestsLimit,
-              (s.requestsRemaining ?? 0) + 1
-            ),
+            requestsRemaining: Math.min(s.requestsLimit, (s.requestsRemaining ?? 0) + 1),
           }));
         }),
     });

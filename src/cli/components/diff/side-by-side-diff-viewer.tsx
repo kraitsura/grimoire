@@ -77,8 +77,8 @@ export const SideBySideDiffViewer: React.FC<SideBySideDiffViewerProps> = ({
           const rightContent = diff.right[lineIdx];
           const info = diff.lineInfo[lineIdx];
 
-          const leftLineNum = info.leftLine?.toString().padStart(4) || "    ";
-          const rightLineNum = info.rightLine?.toString().padStart(4) || "    ";
+          const leftLineNum = info.leftLine?.toString().padStart(4) ?? "    ";
+          const rightLineNum = info.rightLine?.toString().padStart(4) ?? "    ";
 
           const leftText = formatColumn(leftContent, columnWidth);
           const rightText = formatColumn(rightContent, columnWidth);
@@ -122,8 +122,7 @@ export const SideBySideDiffViewer: React.FC<SideBySideDiffViewerProps> = ({
         <Box marginTop={1}>
           <Text color="gray" dimColor>
             {canScrollUp && "↑ "}
-            {scrollOffset + 1}-{Math.min(scrollOffset + height, totalLines)} of{" "}
-            {totalLines}
+            {scrollOffset + 1}-{Math.min(scrollOffset + height, totalLines)} of {totalLines}
             {canScrollDown && " ↓"}
           </Text>
           <Text dimColor> | j/k: scroll | g/G: top/bottom</Text>

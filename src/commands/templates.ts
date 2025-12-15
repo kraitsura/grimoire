@@ -36,16 +36,9 @@ export const templatesCommand = (args: ParsedArgs) =>
 
         for (const t of templates) {
           const vars = extractVariables(t.content);
-          const varsStr =
-            vars.join(", ").slice(0, 22) +
-            (vars.join(", ").length > 22 ? "..." : "");
-          const name =
-            t.name.slice(0, 22) + (t.name.length > 22 ? "..." : "");
-          console.log(
-            name.padEnd(25) +
-              varsStr.padEnd(25) +
-              t.updated.toISOString().split("T")[0]
-          );
+          const varsStr = vars.join(", ").slice(0, 22) + (vars.join(", ").length > 22 ? "..." : "");
+          const name = t.name.slice(0, 22) + (t.name.length > 22 ? "..." : "");
+          console.log(name.padEnd(25) + varsStr.padEnd(25) + t.updated.toISOString().split("T")[0]);
         }
         break;
       }
@@ -56,11 +49,9 @@ export const templatesCommand = (args: ParsedArgs) =>
           return;
         }
 
-        const template = yield* storage.getById(targetArg).pipe(
-          Effect.catchTag("PromptNotFoundError", () =>
-            storage.getByName(targetArg)
-          )
-        );
+        const template = yield* storage
+          .getById(targetArg)
+          .pipe(Effect.catchTag("PromptNotFoundError", () => storage.getByName(targetArg)));
 
         if (!template.isTemplate) {
           console.log("Error: Not a template");
@@ -71,8 +62,7 @@ export const templatesCommand = (args: ParsedArgs) =>
         console.log(`Template: ${template.name}\n`);
         const highlighted = template.content.replace(
           /\{\{(\w+)(?::([^}]*))?\}\}/g,
-          (_, name, def) =>
-            `\x1b[33m{{${name}${def ? `:${def}` : ""}}}\x1b[0m`
+          (_, name, def) => `\x1b[33m{{${name}${def ? `:${def}` : ""}}}\x1b[0m`
         );
         console.log(highlighted);
         break;
@@ -85,10 +75,7 @@ export const templatesCommand = (args: ParsedArgs) =>
           return;
         }
 
-        const content = yield* editor.open(
-          "# Your template\n\nHello {{name}}!",
-          `${name}.md`
-        );
+        const content = yield* editor.open("# Your template\n\nHello {{name}}!", `${name}.md`);
 
         const template = yield* storage.create({
           name,
@@ -106,11 +93,9 @@ export const templatesCommand = (args: ParsedArgs) =>
           return;
         }
 
-        const template = yield* storage.getById(targetArg).pipe(
-          Effect.catchTag("PromptNotFoundError", () =>
-            storage.getByName(targetArg)
-          )
-        );
+        const template = yield* storage
+          .getById(targetArg)
+          .pipe(Effect.catchTag("PromptNotFoundError", () => storage.getByName(targetArg)));
 
         if (!template.isTemplate) {
           console.log("Error: Not a template");
@@ -144,20 +129,16 @@ export const templatesCommand = (args: ParsedArgs) =>
           return;
         }
 
-        const template = yield* storage.getById(targetArg).pipe(
-          Effect.catchTag("PromptNotFoundError", () =>
-            storage.getByName(targetArg)
-          )
-        );
+        const template = yield* storage
+          .getById(targetArg)
+          .pipe(Effect.catchTag("PromptNotFoundError", () => storage.getByName(targetArg)));
 
         const outputName =
-          typeof args.flags.output === "string"
-            ? args.flags.output
-            : `from-${template.name}`;
+          typeof args.flags.output === "string" ? args.flags.output : `from-${template.name}`;
 
         // Parse CLI variable overrides from --var flags
         const cliVars: Record<string, string> = {};
-        const varFlags = args.flags["var"];
+        const varFlags = args.flags.var;
         if (typeof varFlags === "string") {
           const eqIndex = varFlags.indexOf("=");
           if (eqIndex > 0) {
@@ -186,10 +167,7 @@ export const templatesCommand = (args: ParsedArgs) =>
             console.error(`Use --var ${varName}=value to provide it`);
             return;
           }
-          content = content.replace(
-            new RegExp(`\\{\\{${varName}(?::[^}]*)?\\}\\}`, "g"),
-            value
-          );
+          content = content.replace(new RegExp(`\\{\\{${varName}(?::[^}]*)?\\}\\}`, "g"), value);
         }
 
         const prompt = yield* storage.create({
@@ -198,9 +176,7 @@ export const templatesCommand = (args: ParsedArgs) =>
           isTemplate: false,
         });
 
-        console.log(
-          `Created prompt: ${prompt.name} from template ${template.name}`
-        );
+        console.log(`Created prompt: ${prompt.name} from template ${template.name}`);
         break;
       }
 
@@ -214,9 +190,7 @@ function extractVariables(content: string): string[] {
   return [...new Set([...matches].map((m) => m[1]))];
 }
 
-function extractVariablesWithDefaults(
-  content: string
-): Record<string, string> {
+function extractVariablesWithDefaults(content: string): Record<string, string> {
   const result: Record<string, string> = {};
   const matches = content.matchAll(/\{\{(\w+)(?::([^}]*))?\}\}/g);
   for (const match of matches) {

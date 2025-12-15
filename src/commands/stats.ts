@@ -18,7 +18,7 @@ export const statsCommand = (args: ParsedArgs) =>
     const storage = yield* StorageService;
 
     const promptName = args.positional[0];
-    const jsonFlag = args.flags["json"];
+    const jsonFlag = args.flags.json;
 
     if (promptName) {
       // Show stats for a specific prompt
@@ -44,7 +44,7 @@ export const statsCommand = (args: ParsedArgs) =>
                 tests: promptStats.testCount,
                 views: promptStats.viewCount,
                 edits: promptStats.editCount,
-                lastUsed: promptStats.lastUsed?.toISOString() || null,
+                lastUsed: promptStats.lastUsed?.toISOString() ?? null,
               },
             },
             null,
@@ -122,9 +122,7 @@ export const statsCommand = (args: ParsedArgs) =>
           // Sort by count descending
           const sortedTags = tagEntries.sort((a, b) => b[1] - a[1]);
           for (const [tag, count] of sortedTags) {
-            console.log(
-              `  ${tag}: ${formatNumber(count)} ${count === 1 ? "prompt" : "prompts"}`
-            );
+            console.log(`  ${tag}: ${formatNumber(count)} ${count === 1 ? "prompt" : "prompts"}`);
           }
         }
 
@@ -133,9 +131,7 @@ export const statsCommand = (args: ParsedArgs) =>
           const displayCount = Math.min(5, collectionStats.recentlyEdited.length);
           for (let i = 0; i < displayCount; i++) {
             const item = collectionStats.recentlyEdited[i];
-            console.log(
-              `  - ${item.name} (${formatRelativeDate(item.editedAt)})`
-            );
+            console.log(`  - ${item.name} (${formatRelativeDate(item.editedAt)})`);
           }
         }
       }

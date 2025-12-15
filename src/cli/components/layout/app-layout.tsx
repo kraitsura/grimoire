@@ -1,20 +1,20 @@
-import React from "react"
-import { Box } from "ink"
-import { Breadcrumb } from "./breadcrumb.js"
-import { StatusBar } from "./status-bar.js"
-import { ActionBar } from "./action-bar.js"
+import React from "react";
+import { Box } from "ink";
+import { Breadcrumb } from "./breadcrumb.js";
+import { StatusBar } from "./status-bar.js";
+import { ActionBar } from "./action-bar.js";
 
 interface Action {
-  key: string
-  label: string
+  key: string;
+  label: string;
 }
 
 interface AppLayoutProps {
-  breadcrumbs: string[]
-  actions: Action[]
-  statusMessage?: string
-  statusHints?: string[]
-  children: React.ReactNode
+  breadcrumbs: string[];
+  actions: Action[];
+  statusMessage?: string;
+  statusHints?: string[];
+  children: React.ReactNode;
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
@@ -41,4 +41,4 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       <StatusBar message={statusMessage} hints={statusHints} />
     </Box>
   </Box>
-)
+);

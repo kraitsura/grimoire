@@ -9,7 +9,7 @@ import type { ParsedArgs } from "../cli/parser";
 /**
  * Helper to format relative time
  */
-function formatRelativeTime(date: Date): string {
+function _formatRelativeTime(date: Date): string {
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   const hours = Math.floor(diff / (1000 * 60 * 60));
@@ -52,10 +52,10 @@ export const syncCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const syncService = yield* RemoteSyncService;
 
-    const statusFlag = args.flags["status"];
-    const setupFlag = args.flags["setup"];
-    const pushFlag = args.flags["push"];
-    const pullFlag = args.flags["pull"];
+    const statusFlag = args.flags.status;
+    const setupFlag = args.flags.setup;
+    const pushFlag = args.flags.push;
+    const pullFlag = args.flags.pull;
 
     // --setup: Configure remote sync
     if (setupFlag) {
@@ -68,18 +68,20 @@ export const syncCommand = (args: ParsedArgs) =>
         process.exit(1);
       }
 
-      yield* syncService.configure({
-        provider: "git",
-        remote: remoteUrl,
-        branch: "main",
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.log(`\nError: ${error.message}`);
-            process.exit(1);
-          })
-        )
-      );
+      yield* syncService
+        .configure({
+          provider: "git",
+          remote: remoteUrl,
+          branch: "main",
+        })
+        .pipe(
+          Effect.catchAll((error) =>
+            Effect.sync(() => {
+              console.log(`\nError: ${error.message}`);
+              process.exit(1);
+            })
+          )
+        );
 
       console.log("\nSync configured successfully!");
       console.log(`Remote: ${remoteUrl}`);

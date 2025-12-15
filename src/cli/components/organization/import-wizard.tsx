@@ -13,7 +13,7 @@ import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { Effect } from "effect";
 import { useEffectCallback } from "../../context";
-import { ImportService, type ConflictStrategy, type ImportPreview, type ConflictInfo } from "../../../services";
+import { ImportService, type ConflictStrategy, type ImportPreview } from "../../../services";
 import { TextInput } from "../input/text-input";
 import { ScrollableBox } from "../input/scrollable-box";
 
@@ -33,7 +33,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onExit, onComplete }
   const [selectedConflictIndex, setSelectedConflictIndex] = useState(0);
 
   // Preview import mutation
-  const { execute: previewImport, loading: previewing } = useEffectCallback(() =>
+  const { execute: previewImport, loading: _previewing } = useEffectCallback(() =>
     Effect.gen(function* () {
       if (!source.trim()) {
         return null;
@@ -44,7 +44,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onExit, onComplete }
   );
 
   // Perform import mutation
-  const { execute: performImport, loading: importing } = useEffectCallback(() =>
+  const { execute: performImport, loading: _importing } = useEffectCallback(() =>
     Effect.gen(function* () {
       const importService = yield* ImportService;
       return yield* importService.import(source.trim(), strategy);
@@ -203,14 +203,10 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onExit, onComplete }
                     {conflict.name}
                   </Text>
                   <Box paddingLeft={2}>
-                    <Text color="gray">
-                      Existing ID: {conflict.existingId}
-                    </Text>
+                    <Text color="gray">Existing ID: {conflict.existingId}</Text>
                   </Box>
                   <Box paddingLeft={2}>
-                    <Text color="gray">
-                      Incoming ID: {conflict.incomingId}
-                    </Text>
+                    <Text color="gray">Incoming ID: {conflict.incomingId}</Text>
                   </Box>
                   <Box paddingLeft={2}>
                     <Text color={conflict.contentDiffers ? "yellow" : "gray"}>

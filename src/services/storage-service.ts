@@ -10,12 +10,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdir, rename, appendFile } from "node:fs/promises";
 import type { Prompt, Frontmatter } from "../models";
-import {
-  StorageError,
-  PromptNotFoundError,
-  DuplicateNameError,
-  SqlError,
-} from "../models";
+import { StorageError, PromptNotFoundError, DuplicateNameError, SqlError } from "../models";
 import { SqlService } from "./sql-service";
 import { PromptStorageService } from "./prompt-storage-service";
 import { SyncService } from "./sync-service";
@@ -27,14 +22,53 @@ import { sanitizeFtsQuery } from "./search-service";
 const getErrorLogPath = (): string => join(homedir(), ".grimoire", "errors.log");
 
 /**
+ * Patterns that look like API keys - used for sanitization
+ */
+const API_KEY_PATTERNS = [
+  /sk-[a-zA-Z0-9_-]{20,}/g, // OpenAI keys
+  /sk-ant-[a-zA-Z0-9_-]{20,}/g, // Anthropic keys
+  /AIza[a-zA-Z0-9_-]{30,}/g, // Google API keys
+  /[a-zA-Z0-9_-]{32,}/g, // Generic long tokens (fallback)
+];
+
+/**
+ * Sanitize a string by redacting potential API keys and secrets
+ * This prevents accidental logging of sensitive data
+ */
+const sanitizeForLog = (message: string): string => {
+  let sanitized = message;
+
+  // Redact known API key patterns
+  for (const pattern of API_KEY_PATTERNS) {
+    sanitized = sanitized.replace(pattern, (match) => {
+      // Keep first 4 and last 4 chars for debugging, redact the rest
+      if (match.length > 12) {
+        return `${match.slice(0, 4)}...[REDACTED]...${match.slice(-4)}`;
+      }
+      return "[REDACTED]";
+    });
+  }
+
+  // Also redact anything that looks like it might be in an API key context
+  sanitized = sanitized.replace(
+    /(?:api[_-]?key|secret|token|password|credential)s?\s*[:=]\s*["']?([^"'\s]+)["']?/gi,
+    (match: string, value: string) => match.replace(value, "[REDACTED]")
+  );
+
+  return sanitized;
+};
+
+/**
  * Log an error to the errors.log file
  * Fails silently if logging itself fails (we don't want logging to break the app)
+ * Sanitizes error messages to prevent API key leakage
  */
 const logError = (context: string, id: string, error: unknown): Effect.Effect<void, never> =>
   Effect.tryPromise({
     try: async () => {
       const timestamp = new Date().toISOString();
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = sanitizeForLog(rawMessage);
       const logLine = `${timestamp} | ${context} | ${id} | ${errorMessage}\n`;
       await appendFile(getErrorLogPath(), logLine);
     },
@@ -162,11 +196,7 @@ const ensureArchiveDirectory = (): Effect.Effect<void, StorageError> =>
 /**
  * Convert database row to Prompt object
  */
-const rowToPrompt = (
-  row: PromptRow,
-  content: string,
-  tags?: string[]
-): Prompt => ({
+const rowToPrompt = (row: PromptRow, content: string, tags?: string[]): Prompt => ({
   id: row.id,
   name: row.name,
   created: new Date(row.created_at),
@@ -196,9 +226,7 @@ export const StorageServiceLive = Layer.effect(
     return StorageService.of({
       getAll: Effect.gen(function* () {
         // Query database for all prompts
-        const rows = yield* sql.query<PromptRow>(
-          "SELECT * FROM prompts ORDER BY updated_at DESC"
-        );
+        const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts ORDER BY updated_at DESC");
 
         // Process each row, logging failures and converting to None
         const processRow = (row: PromptRow) =>
@@ -226,10 +254,7 @@ export const StorageServiceLive = Layer.effect(
       getById: (id: string) =>
         Effect.gen(function* () {
           // Query database
-          const rows = yield* sql.query<PromptRow>(
-            "SELECT * FROM prompts WHERE id = ?",
-            [id]
-          );
+          const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts WHERE id = ?", [id]);
 
           if (rows.length === 0) {
             return yield* Effect.fail(new PromptNotFoundError({ id }));
@@ -256,15 +281,10 @@ export const StorageServiceLive = Layer.effect(
       getByName: (name: string) =>
         Effect.gen(function* () {
           // Query database
-          const rows = yield* sql.query<PromptRow>(
-            "SELECT * FROM prompts WHERE name = ?",
-            [name]
-          );
+          const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts WHERE name = ?", [name]);
 
           if (rows.length === 0) {
-            return yield* Effect.fail(
-              new PromptNotFoundError({ id: `name:${name}` })
-            );
+            return yield* Effect.fail(new PromptNotFoundError({ id: `name:${name}` }));
           }
 
           const row = rows[0];
@@ -288,15 +308,12 @@ export const StorageServiceLive = Layer.effect(
       create: (input: CreatePromptInput) =>
         Effect.gen(function* () {
           // Check if name already exists
-          const existing = yield* sql.query<PromptRow>(
-            "SELECT id FROM prompts WHERE name = ?",
-            [input.name]
-          );
+          const existing = yield* sql.query<PromptRow>("SELECT id FROM prompts WHERE name = ?", [
+            input.name,
+          ]);
 
           if (existing.length > 0) {
-            return yield* Effect.fail(
-              new DuplicateNameError({ name: input.name })
-            );
+            return yield* Effect.fail(new DuplicateNameError({ name: input.name }));
           }
 
           // Generate UUID
@@ -346,10 +363,7 @@ export const StorageServiceLive = Layer.effect(
       update: (id: string, input: UpdatePromptInput) =>
         Effect.gen(function* () {
           // Find existing prompt
-          const rows = yield* sql.query<PromptRow>(
-            "SELECT * FROM prompts WHERE id = ?",
-            [id]
-          );
+          const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts WHERE id = ?", [id]);
 
           if (rows.length === 0) {
             return yield* Effect.fail(new PromptNotFoundError({ id }));
@@ -381,36 +395,17 @@ export const StorageServiceLive = Layer.effect(
             tags: input.tags ?? currentTags,
             updated: now,
             version: (parsed.frontmatter.version ?? 1) + 1,
-            isTemplate:
-              input.isTemplate !== undefined
-                ? input.isTemplate
-                : parsed.frontmatter.isTemplate ?? false,
-            isFavorite:
-              input.isFavorite !== undefined
-                ? input.isFavorite
-                : parsed.frontmatter.isFavorite,
-            favoriteOrder:
-              input.favoriteOrder !== undefined
-                ? input.favoriteOrder
-                : parsed.frontmatter.favoriteOrder,
-            isPinned:
-              input.isPinned !== undefined
-                ? input.isPinned
-                : parsed.frontmatter.isPinned,
-            pinOrder:
-              input.pinOrder !== undefined
-                ? input.pinOrder
-                : parsed.frontmatter.pinOrder,
+            isTemplate: input.isTemplate ?? parsed.frontmatter.isTemplate ?? false,
+            isFavorite: input.isFavorite ?? parsed.frontmatter.isFavorite,
+            favoriteOrder: input.favoriteOrder ?? parsed.frontmatter.favoriteOrder,
+            isPinned: input.isPinned ?? parsed.frontmatter.isPinned,
+            pinOrder: input.pinOrder ?? parsed.frontmatter.pinOrder,
           };
 
           const updatedContent = input.content ?? parsed.content;
 
           // Write updated file
-          yield* promptStorage.writePrompt(
-            row.file_path,
-            updatedFrontmatter,
-            updatedContent
-          );
+          yield* promptStorage.writePrompt(row.file_path, updatedFrontmatter, updatedContent);
 
           // Sync file to database
           yield* sync.syncFile(row.file_path);
@@ -433,13 +428,10 @@ export const StorageServiceLive = Layer.effect(
           };
         }),
 
-      delete: (id: string, hard: boolean = false) =>
+      delete: (id: string, hard = false) =>
         Effect.gen(function* () {
           // Find existing prompt
-          const rows = yield* sql.query<PromptRow>(
-            "SELECT * FROM prompts WHERE id = ?",
-            [id]
-          );
+          const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts WHERE id = ?", [id]);
 
           if (rows.length === 0) {
             return yield* Effect.fail(new PromptNotFoundError({ id }));
@@ -485,10 +477,7 @@ export const StorageServiceLive = Layer.effect(
             yield* sql.run("DELETE FROM prompts_fts WHERE prompt_id = ?", [id]);
 
             // Update database record to point to archive
-            yield* sql.run(
-              "UPDATE prompts SET file_path = ? WHERE id = ?",
-              [archivePath, id]
-            );
+            yield* sql.run("UPDATE prompts SET file_path = ? WHERE id = ?", [archivePath, id]);
           }
         }),
 

@@ -86,26 +86,16 @@ type ExportedPrompt = Schema.Schema.Type<typeof ExportedPromptSchema>;
 interface ImportServiceImpl {
   readonly preview: (
     source: string
-  ) => Effect.Effect<
-    ImportPreview,
-    ValidationError | StorageError | SqlError,
-    never
-  >;
+  ) => Effect.Effect<ImportPreview, ValidationError | StorageError | SqlError, never>;
   readonly import: (
     source: string,
     strategy: ConflictStrategy
   ) => Effect.Effect<
     ImportResult,
-    | ValidationError
-    | StorageError
-    | SqlError
-    | DuplicateNameError
-    | PromptNotFoundError,
+    ValidationError | StorageError | SqlError | DuplicateNameError | PromptNotFoundError,
     never
   >;
-  readonly validate: (
-    data: unknown
-  ) => Effect.Effect<ExportBundle, ValidationError, never>;
+  readonly validate: (data: unknown) => Effect.Effect<ExportBundle, ValidationError, never>;
 }
 
 /**
@@ -130,9 +120,7 @@ const loadSource = (source: string): Effect.Effect<string, StorageError> =>
         try: async () => {
           const response = await fetch(source);
           if (!response.ok) {
-            throw new Error(
-              `HTTP ${response.status}: ${response.statusText}`
-            );
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }
           return await response.text();
         },
@@ -169,11 +157,11 @@ const parseData = (content: string): Effect.Effect<unknown, ValidationError> =>
     // Try JSON first
     try {
       return JSON.parse(content);
-    } catch (jsonError) {
+    } catch {
       // If JSON fails, try YAML
       try {
         return yaml.load(content);
-      } catch (yamlError) {
+      } catch {
         return yield* Effect.fail(
           new ValidationError({
             field: "content",
@@ -187,16 +175,14 @@ const parseData = (content: string): Effect.Effect<unknown, ValidationError> =>
 /**
  * Validate parsed data against ExportBundle schema
  */
-const validateBundle = (
-  data: unknown
-): Effect.Effect<ExportBundle, ValidationError> =>
+const validateBundle = (data: unknown): Effect.Effect<ExportBundle, ValidationError> =>
   Effect.gen(function* () {
     const decoded = yield* Schema.decodeUnknown(ExportBundleSchema)(data).pipe(
       Effect.mapError(
         (error) =>
           new ValidationError({
             field: "bundle",
-            message: `Invalid export bundle format: ${error}`,
+            message: `Invalid export bundle format: ${String(error)}`,
           })
       )
     );
@@ -214,9 +200,7 @@ const detectConflicts = (
 
   // Create lookup maps for existing prompts
   const byId = new Map(existingPrompts.map((p) => [p.id, p]));
-  const byNameLower = new Map(
-    existingPrompts.map((p) => [p.name.toLowerCase(), p])
-  );
+  const byNameLower = new Map(existingPrompts.map((p) => [p.name.toLowerCase(), p]));
 
   for (const incoming of incomingPrompts) {
     // Check for ID conflict
@@ -249,10 +233,7 @@ const detectConflicts = (
 /**
  * Generate a unique name by appending a number
  */
-const generateUniqueName = (
-  baseName: string,
-  existingNames: Set<string>
-): string => {
+const generateUniqueName = (baseName: string, existingNames: Set<string>): string => {
   if (!existingNames.has(baseName.toLowerCase())) {
     return baseName;
   }
@@ -319,9 +300,7 @@ export const ImportServiceLive = Layer.effect(
           const existingByNameLower = new Map(
             existingPrompts.map((p) => [p.name.toLowerCase(), p])
           );
-          const existingNamesLower = new Set(
-            existingPrompts.map((p) => p.name.toLowerCase())
-          );
+          const existingNamesLower = new Set(existingPrompts.map((p) => p.name.toLowerCase()));
 
           // Track results
           let imported = 0;
@@ -335,9 +314,7 @@ export const ImportServiceLive = Layer.effect(
             try {
               // Check for conflicts
               const hasIdConflict = existingById.has(incoming.id);
-              const hasNameConflict = existingByNameLower.has(
-                incoming.name.toLowerCase()
-              );
+              const hasNameConflict = existingByNameLower.has(incoming.name.toLowerCase());
 
               if (hasIdConflict || hasNameConflict) {
                 // Handle conflict based on strategy
@@ -346,10 +323,7 @@ export const ImportServiceLive = Layer.effect(
                   continue;
                 } else if (strategy === "rename") {
                   // Generate unique name
-                  const uniqueName = generateUniqueName(
-                    incoming.name,
-                    existingNamesLower
-                  );
+                  const uniqueName = generateUniqueName(incoming.name, existingNamesLower);
 
                   // Create with new name and new ID to avoid ID conflicts
                   const input: CreatePromptInput = {
@@ -366,7 +340,7 @@ export const ImportServiceLive = Layer.effect(
                 } else if (strategy === "overwrite") {
                   // Find the existing prompt to update
                   const existing =
-                    existingById.get(incoming.id) ||
+                    existingById.get(incoming.id) ??
                     existingByNameLower.get(incoming.name.toLowerCase());
 
                   if (existing) {

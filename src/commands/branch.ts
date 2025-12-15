@@ -63,7 +63,7 @@ export const branchCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const storage = yield* StorageService;
     const branchService = yield* BranchService;
-    const versionService = yield* VersionService;
+    const _versionService = yield* VersionService;
 
     const promptName = args.positional[0];
     const subcommand = args.positional[1];
@@ -129,14 +129,9 @@ export const branchCommand = (args: ParsedArgs) =>
         return;
       }
 
-      const switchedBranch = yield* branchService.switchBranch(
-        prompt.id,
-        branchName
-      );
+      const switchedBranch = yield* branchService.switchBranch(prompt.id, branchName);
 
-      console.log(
-        `${COLORS.green}Switched to branch '${switchedBranch.name}'${COLORS.reset}`
-      );
+      console.log(`${COLORS.green}Switched to branch '${switchedBranch.name}'${COLORS.reset}`);
       return;
     }
 
@@ -146,23 +141,23 @@ export const branchCommand = (args: ParsedArgs) =>
       const branchB = args.positional[3];
 
       if (!branchA || !branchB) {
-        console.log(
-          "Usage: grimoire branch <prompt-name> compare <branch-a> <branch-b>"
-        );
+        console.log("Usage: grimoire branch <prompt-name> compare <branch-a> <branch-b>");
         return;
       }
 
-      const comparison = yield* branchService.compareBranches(
-        prompt.id,
-        branchA,
-        branchB
-      );
+      const comparison = yield* branchService.compareBranches(prompt.id, branchA, branchB);
 
       console.log("");
-      console.log(`Comparing ${COLORS.cyan}${branchA}${COLORS.reset} with ${COLORS.cyan}${branchB}${COLORS.reset}`);
+      console.log(
+        `Comparing ${COLORS.cyan}${branchA}${COLORS.reset} with ${COLORS.cyan}${branchB}${COLORS.reset}`
+      );
       console.log("");
-      console.log(`  ${COLORS.green}${branchA}${COLORS.reset} is ${comparison.ahead} version(s) ahead`);
-      console.log(`  ${COLORS.green}${branchA}${COLORS.reset} is ${comparison.behind} version(s) behind`);
+      console.log(
+        `  ${COLORS.green}${branchA}${COLORS.reset} is ${comparison.ahead} version(s) ahead`
+      );
+      console.log(
+        `  ${COLORS.green}${branchA}${COLORS.reset} is ${comparison.behind} version(s) behind`
+      );
       console.log("");
 
       if (comparison.canMerge) {
@@ -180,9 +175,7 @@ export const branchCommand = (args: ParsedArgs) =>
       const targetBranch = args.positional[3] || "main";
 
       if (!sourceBranch) {
-        console.log(
-          "Usage: grimoire branch <prompt-name> merge <source> [target]"
-        );
+        console.log("Usage: grimoire branch <prompt-name> merge <source> [target]");
         return;
       }
 
@@ -200,13 +193,9 @@ export const branchCommand = (args: ParsedArgs) =>
 
         // Handle MergeConflictError
         if (error._tag === "MergeConflictError") {
-          console.log(
-            `${COLORS.red}Merge conflict:${COLORS.reset} ${error.message}`
-          );
+          console.log(`${COLORS.red}Merge conflict:${COLORS.reset} ${error.message}`);
           console.log("");
-          console.log(
-            `Cannot automatically merge '${sourceBranch}' into '${targetBranch}'.`
-          );
+          console.log(`Cannot automatically merge '${sourceBranch}' into '${targetBranch}'.`);
           console.log("Manual conflict resolution is required.");
           return;
         }
@@ -233,9 +222,7 @@ export const branchCommand = (args: ParsedArgs) =>
       }
 
       // Attempt to delete
-      const deleteResult = yield* Effect.either(
-        branchService.deleteBranch(prompt.id, branchName)
-      );
+      const deleteResult = yield* Effect.either(branchService.deleteBranch(prompt.id, branchName));
 
       if (deleteResult._tag === "Left") {
         const error = deleteResult.left;
@@ -251,9 +238,7 @@ export const branchCommand = (args: ParsedArgs) =>
         return;
       }
 
-      console.log(
-        `${COLORS.green}Deleted branch '${branchName}'${COLORS.reset}`
-      );
+      console.log(`${COLORS.green}Deleted branch '${branchName}'${COLORS.reset}`);
       return;
     }
 

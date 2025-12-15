@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 
 export interface ModelPricing {
@@ -31,7 +31,12 @@ export const CostCalculator: React.FC<CostCalculatorProps> = ({
   useInput((input, key) => {
     // Tab to switch fields
     if (key.tab) {
-      const fields: Array<"model" | "input" | "output" | "batch"> = ["model", "input", "output", "batch"];
+      const fields: ("model" | "input" | "output" | "batch")[] = [
+        "model",
+        "input",
+        "output",
+        "batch",
+      ];
       const currentIndex = fields.indexOf(activeField);
       const nextIndex = (currentIndex + 1) % fields.length;
       setActiveField(fields[nextIndex]);
@@ -83,7 +88,7 @@ export const CostCalculator: React.FC<CostCalculatorProps> = ({
 
   const totalCost = calculateCost();
 
-  const renderSlider = (value: number, max: number, width: number = 30): string => {
+  const renderSlider = (value: number, max: number, width = 30): string => {
     const filled = Math.round((value / max) * width);
     return "█".repeat(filled) + "░".repeat(width - filled);
   };
@@ -96,9 +101,7 @@ export const CostCalculator: React.FC<CostCalculatorProps> = ({
 
       {/* Model Selector */}
       <Box flexDirection="column" marginBottom={1}>
-        <Text>
-          Model: {activeField === "model" && <Text color="cyan">← (use ↑↓)</Text>}
-        </Text>
+        <Text>Model: {activeField === "model" && <Text color="cyan">← (use ↑↓)</Text>}</Text>
         {models.map((model, index) => (
           <Box key={index} marginLeft={2}>
             <Text color={selectedModelIndex === index ? "green" : undefined}>

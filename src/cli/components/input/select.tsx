@@ -14,12 +14,7 @@ export interface SelectProps {
   focused?: boolean;
 }
 
-export const Select: React.FC<SelectProps> = ({
-  options,
-  value,
-  onChange,
-  focused = false,
-}) => {
+export const Select: React.FC<SelectProps> = ({ options, value, onChange, focused = false }) => {
   const [filterText, setFilterText] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -27,6 +22,7 @@ export const Select: React.FC<SelectProps> = ({
     option.label.toLowerCase().includes(filterText.toLowerCase())
   );
 
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional: boundary adjustment and sync with controlled value */
   // Update selected index when filter changes
   useEffect(() => {
     if (selectedIndex >= filteredOptions.length) {
@@ -43,17 +39,14 @@ export const Select: React.FC<SelectProps> = ({
       }
     }
   }, [value, filteredOptions]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useInput(
     (input, key) => {
       if (key.upArrow) {
-        setSelectedIndex(
-          selectedIndex <= 0 ? filteredOptions.length - 1 : selectedIndex - 1
-        );
+        setSelectedIndex(selectedIndex <= 0 ? filteredOptions.length - 1 : selectedIndex - 1);
       } else if (key.downArrow) {
-        setSelectedIndex(
-          selectedIndex >= filteredOptions.length - 1 ? 0 : selectedIndex + 1
-        );
+        setSelectedIndex(selectedIndex >= filteredOptions.length - 1 ? 0 : selectedIndex + 1);
       } else if (key.return) {
         if (filteredOptions[selectedIndex]) {
           onChange(filteredOptions[selectedIndex].value);

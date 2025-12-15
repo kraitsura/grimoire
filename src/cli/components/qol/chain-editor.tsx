@@ -1,10 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import type {
-  ChainDefinition,
-  ChainStep,
-  ValidationResult,
-} from "../../../services/chain-service";
+import type { ChainDefinition, ChainStep, ValidationResult } from "../../../services/chain-service";
 import { ScrollableBox } from "../input/scrollable-box";
 
 export interface ChainEditorProps {
@@ -31,18 +27,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
   height = 15,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [view, setView] = useState<"steps" | "variables" | "validation">(
-    "steps"
-  );
+  const [view, setView] = useState<"steps" | "variables" | "validation">("steps");
 
   useInput((input, key) => {
     // Navigation
     if (input === "j" || key.downArrow) {
       setCurrentIndex((prev) =>
-        Math.min(
-          view === "steps" ? chain.steps.length - 1 : chain.steps.length,
-          prev + 1
-        )
+        Math.min(view === "steps" ? chain.steps.length - 1 : chain.steps.length, prev + 1)
       );
     }
     if (input === "k" || key.upArrow) {
@@ -97,8 +88,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
 
   const renderStep = (step: ChainStep, index: number) => {
     const isCurrent = index === currentIndex;
-    const hasErrors =
-      validation?.errors.some((err) => err.includes(step.id)) || false;
+    const hasErrors = validation?.errors.some((err) => err.includes(step.id)) ?? false;
 
     return (
       <Box key={step.id} flexDirection="column" marginBottom={1}>
@@ -157,14 +147,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
               </Text>
               {spec.default !== undefined && (
                 <Text color="gray">
-                  Default: <Text color="green">{String(spec.default)}</Text>
+                  Default:{" "}
+                  <Text color="green">{JSON.stringify(spec.default)}</Text>
                 </Text>
               )}
-              {spec.description && (
-                <Text color="gray">
-                  Description: {spec.description}
-                </Text>
-              )}
+              {spec.description && <Text color="gray">Description: {spec.description}</Text>}
             </Box>
           </Box>
         ))}
@@ -211,9 +198,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
 
         {validation.isValid && (
           <Box marginTop={1}>
-            <Text color="green">
-              All checks passed! Chain is ready to execute.
-            </Text>
+            <Text color="green">All checks passed! Chain is ready to execute.</Text>
           </Box>
         )}
       </Box>
@@ -226,30 +211,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
         <Text bold color="cyan">
           Chain Editor: {chain.name}
         </Text>
-        {chain.description && (
-          <Text color="gray">{chain.description}</Text>
-        )}
+        {chain.description && <Text color="gray">{chain.description}</Text>}
         <Box marginTop={1}>
-          <Text
-            inverse={view === "steps"}
-            color={view === "steps" ? "cyan" : "gray"}
-          >
+          <Text inverse={view === "steps"} color={view === "steps" ? "cyan" : "gray"}>
             {" "}
             1. Steps ({chain.steps.length}){" "}
           </Text>
           <Text> </Text>
-          <Text
-            inverse={view === "variables"}
-            color={view === "variables" ? "cyan" : "gray"}
-          >
+          <Text inverse={view === "variables"} color={view === "variables" ? "cyan" : "gray"}>
             {" "}
             2. Variables ({Object.keys(chain.variables).length}){" "}
           </Text>
           <Text> </Text>
-          <Text
-            inverse={view === "validation"}
-            color={view === "validation" ? "cyan" : "gray"}
-          >
+          <Text inverse={view === "validation"} color={view === "validation" ? "cyan" : "gray"}>
             {" "}
             3. Validation{" "}
           </Text>
@@ -262,8 +236,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
     return (
       <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
         <Text color="gray">
-          1/2/3: switch view | j/k: navigate | a: add step | d: delete step |
-          Enter: edit | p: preview | s: save | q: quit
+          1/2/3: switch view | j/k: navigate | a: add step | d: delete step | Enter: edit | p:
+          preview | s: save | q: quit
         </Text>
       </Box>
     );
@@ -276,7 +250,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
       <ScrollableBox height={height} focused={true} showScrollIndicator={true}>
         {view === "steps" &&
           (chain.steps.length === 0 ? (
-            <Text color="gray">No steps defined. Press 'a' to add one.</Text>
+            <Text color="gray">No steps defined. Press {`'a'`} to add one.</Text>
           ) : (
             <Box flexDirection="column">
               {chain.steps.map((step, idx) => renderStep(step, idx))}

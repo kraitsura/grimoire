@@ -192,9 +192,7 @@ export const callLLMWithCache = (request: LLMRequest) =>
  */
 export const runExamples = async () => {
   // Run any example with the AppLayer
-  const result = await Effect.runPromise(
-    exampleBasicCaching.pipe(Effect.provide(AppLayer))
-  );
+  const result = await Effect.runPromise(exampleBasicCaching.pipe(Effect.provide(AppLayer)));
 
   console.log("Result:", result);
 };

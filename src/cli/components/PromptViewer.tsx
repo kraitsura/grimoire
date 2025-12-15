@@ -17,9 +17,7 @@ export const PromptViewer: React.FC<Props> = ({ prompt, onClose }) => {
       setScrollOffset((prev) => Math.max(0, prev - 1));
     }
     if (key.downArrow || input === "j") {
-      setScrollOffset((prev) =>
-        Math.min(Math.max(0, lines.length - visibleLines), prev + 1)
-      );
+      setScrollOffset((prev) => Math.min(Math.max(0, lines.length - visibleLines), prev + 1));
     }
     if (input === "q" && onClose) {
       onClose();

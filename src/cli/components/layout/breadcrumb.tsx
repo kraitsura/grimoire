@@ -1,8 +1,8 @@
-import React from "react"
-import { Box, Text } from "ink"
+import React from "react";
+import { Box, Text } from "ink";
 
 interface BreadcrumbProps {
-  items: string[]
+  items: string[];
 }
 
 export const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => (
@@ -14,4 +14,4 @@ export const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => (
       </React.Fragment>
     ))}
   </Box>
-)
+);

@@ -2,7 +2,7 @@
  * Compare Command - A/B test prompts
  */
 
-import { Effect, pipe } from "effect";
+import { Effect } from "effect";
 import { StorageService } from "../services";
 import { LLMService } from "../services/llm-service";
 import { TokenCounterService } from "../services/token-counter-service";
@@ -53,11 +53,11 @@ EXAMPLES:
     }
 
     // Get options from flags
-    const model = (args.flags["model"] as string) || (args.flags["m"] as string) || "gpt-4o";
-    const parallel = args.flags["parallel"] !== "false" && args.flags["parallel"] !== false;
-    const format = (args.flags["format"] as string) || "table";
-    const varsJson = args.flags["vars"] as string | undefined;
-    const interactive = args.flags["i"] === true || args.flags["interactive"] === true;
+    const model = (args.flags.model as string) || (args.flags.m as string) || "gpt-4o";
+    const parallel = args.flags.parallel !== "false" && args.flags.parallel !== false;
+    const format = (args.flags.format as string) || "table";
+    const varsJson = args.flags.vars as string | undefined;
+    const interactive = args.flags.i === true || args.flags.interactive === true;
 
     // Parse variables if provided
     let variables: Record<string, string> = {};
@@ -75,9 +75,7 @@ EXAMPLES:
     const prompts = yield* Effect.all(
       promptNames.map((name) =>
         storage.getByName(name).pipe(
-          Effect.catchTag("PromptNotFoundError", () =>
-            storage.getById(name)
-          ),
+          Effect.catchTag("PromptNotFoundError", () => storage.getById(name)),
           Effect.map((prompt) => ({ name, prompt }))
         )
       ),
@@ -176,15 +174,17 @@ EXAMPLES:
       console.log("Based on metrics, consider:");
 
       // Simple recommendations
-      const lowestCost = results.reduce((min, r) => r.cost < min.cost ? r : min);
-      const fastest = results.reduce((min, r) => r.duration < min.duration ? r : min);
+      const lowestCost = results.reduce((min, r) => (r.cost < min.cost ? r : min));
+      const fastest = results.reduce((min, r) => (r.duration < min.duration ? r : min));
       const shortestOutput = results.reduce((min, r) =>
         r.response.usage.outputTokens < min.response.usage.outputTokens ? r : min
       );
 
       console.log(`  - Lowest cost: ${lowestCost.promptName} ($${lowestCost.cost.toFixed(4)})`);
       console.log(`  - Fastest: ${fastest.promptName} (${fastest.duration.toFixed(1)}s)`);
-      console.log(`  - Most concise: ${shortestOutput.promptName} (${shortestOutput.response.usage.outputTokens} tokens)`);
+      console.log(
+        `  - Most concise: ${shortestOutput.promptName} (${shortestOutput.response.usage.outputTokens} tokens)`
+      );
     }
   });
 
@@ -193,13 +193,15 @@ EXAMPLES:
  */
 function displaySideBySide(results: ComparisonResult[]): void {
   const columnWidth = 40;
-  const numColumns = results.length;
+  const _numColumns = results.length;
 
   // Create header
-  const headerLine = results.map((r) => {
-    const name = r.promptName.substring(0, columnWidth - 2);
-    return ` ${name.padEnd(columnWidth - 2)} `;
-  }).join("│");
+  const headerLine = results
+    .map((r) => {
+      const name = r.promptName.substring(0, columnWidth - 2);
+      return ` ${name.padEnd(columnWidth - 2)} `;
+    })
+    .join("│");
 
   const topBorder = results.map(() => "─".repeat(columnWidth)).join("┬");
   const midBorder = results.map(() => "─".repeat(columnWidth)).join("┼");
@@ -210,10 +212,12 @@ function displaySideBySide(results: ComparisonResult[]): void {
   console.log("├" + midBorder + "┤");
 
   // Display response content (line by line)
-  const maxLines = Math.max(...results.map((r) => {
-    const lines = r.response.content.split("\n");
-    return Math.min(lines.length, 10); // Limit to 10 lines per response
-  }));
+  const maxLines = Math.max(
+    ...results.map((r) => {
+      const lines = r.response.content.split("\n");
+      return Math.min(lines.length, 10); // Limit to 10 lines per response
+    })
+  );
 
   const responsesLines = results.map((r) => {
     const lines = r.response.content.split("\n");
@@ -227,18 +231,22 @@ function displaySideBySide(results: ComparisonResult[]): void {
   });
 
   for (let i = 0; i < maxLines; i++) {
-    const line = results.map((r, idx) => {
-      const text = responsesLines[idx][i] || "";
-      return ` ${text.padEnd(columnWidth - 2)} `;
-    }).join("│");
+    const line = results
+      .map((r, idx) => {
+        const text = responsesLines[idx][i] || "";
+        return ` ${text.padEnd(columnWidth - 2)} `;
+      })
+      .join("│");
     console.log("│" + line + "│");
   }
 
   // Add ellipsis if responses were truncated
   if (results.some((r) => r.response.content.split("\n").length > 10)) {
-    const ellipsisLine = results.map(() => {
-      return " ...".padEnd(columnWidth);
-    }).join("│");
+    const ellipsisLine = results
+      .map(() => {
+        return " ...".padEnd(columnWidth);
+      })
+      .join("│");
     console.log("│" + ellipsisLine + "│");
   }
 
@@ -248,7 +256,9 @@ function displaySideBySide(results: ComparisonResult[]): void {
   const statsLines = [
     results.map((r) => {
       const totalTokens = r.response.usage.inputTokens + r.response.usage.outputTokens;
-      return ` Tokens: ${totalTokens} (${r.response.usage.inputTokens} in / ${r.response.usage.outputTokens} out)`.padEnd(columnWidth);
+      return ` Tokens: ${totalTokens} (${r.response.usage.inputTokens} in / ${r.response.usage.outputTokens} out)`.padEnd(
+        columnWidth
+      );
     }),
     results.map((r) => ` Time: ${r.duration.toFixed(1)}s`.padEnd(columnWidth)),
     results.map((r) => ` Cost: $${r.cost.toFixed(4)}`.padEnd(columnWidth)),

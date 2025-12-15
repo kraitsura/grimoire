@@ -13,15 +13,9 @@ interface Props {
   onCancel?: () => void;
 }
 
-export const VariableFiller: React.FC<Props> = ({
-  variables,
-  onComplete,
-  onCancel,
-}) => {
+export const VariableFiller: React.FC<Props> = ({ variables, onComplete, onCancel }) => {
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      variables.map((v) => [v.name, v.defaultValue ?? ""])
-    )
+    Object.fromEntries(variables.map((v) => [v.name, v.defaultValue ?? ""]))
   );
   const [focusIndex, setFocusIndex] = useState(0);
 
@@ -46,9 +40,7 @@ export const VariableFiller: React.FC<Props> = ({
           <Text color={i === focusIndex ? "cyan" : "white"}>{v.name}: </Text>
           <TextInput
             value={values[v.name] || ""}
-            onChange={(val) =>
-              setValues((prev) => ({ ...prev, [v.name]: val }))
-            }
+            onChange={(val) => setValues((prev) => ({ ...prev, [v.name]: val }))}
             focus={i === focusIndex}
           />
         </Box>

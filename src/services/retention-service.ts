@@ -8,8 +8,7 @@
 import { Context, Effect, Layer } from "effect";
 import { Schema } from "@effect/schema";
 import { SqlService } from "./sql-service";
-import { VersionService } from "./version-service";
-import { SqlError, StorageError, ConfigError } from "../models";
+import { SqlError, ConfigError } from "../models";
 
 /**
  * Retention strategy types
@@ -52,7 +51,7 @@ export const RetentionConfigSchema = Schema.Struct({
 export interface CleanupResult {
   totalVersionsDeleted: number;
   promptsAffected: number;
-  deletedVersions: Array<{ promptId: string; version: number }>;
+  deletedVersions: { promptId: string; version: number }[];
 }
 
 /**
@@ -61,12 +60,12 @@ export interface CleanupResult {
 export interface CleanupPreview {
   totalVersionsToDelete: number;
   promptsAffected: number;
-  versionsToDelete: Array<{
+  versionsToDelete: {
     promptId: string;
     version: number;
     createdAt: Date;
     reason: string;
-  }>;
+  }[];
 }
 
 /**
@@ -110,27 +109,19 @@ interface RetentionServiceImpl {
    * @param promptId - Prompt identifier
    * @returns Effect that succeeds with number of versions deleted or fails with SqlError
    */
-  readonly cleanupVersions: (
-    promptId: string
-  ) => Effect.Effect<number, SqlError | ConfigError>;
+  readonly cleanupVersions: (promptId: string) => Effect.Effect<number, SqlError | ConfigError>;
 
   /**
    * Clean up versions for all prompts based on policy
    * @returns Effect that succeeds with CleanupResult or fails with SqlError
    */
-  readonly cleanupAll: () => Effect.Effect<
-    CleanupResult,
-    SqlError | ConfigError
-  >;
+  readonly cleanupAll: () => Effect.Effect<CleanupResult, SqlError | ConfigError>;
 
   /**
    * Preview what would be deleted without actually deleting
    * @returns Effect that succeeds with CleanupPreview or fails with SqlError
    */
-  readonly previewCleanup: () => Effect.Effect<
-    CleanupPreview,
-    SqlError | ConfigError
-  >;
+  readonly previewCleanup: () => Effect.Effect<CleanupPreview, SqlError | ConfigError>;
 
   /**
    * Tag a specific version to preserve it
@@ -151,19 +142,14 @@ interface RetentionServiceImpl {
    * @param version - Version number
    * @returns Effect that succeeds or fails with SqlError
    */
-  readonly untagVersion: (
-    promptId: string,
-    version: number
-  ) => Effect.Effect<void, SqlError>;
+  readonly untagVersion: (promptId: string, version: number) => Effect.Effect<void, SqlError>;
 
   /**
    * Get all tagged versions for a prompt
    * @param promptId - Prompt identifier
    * @returns Effect that succeeds with array of VersionTag or fails with SqlError
    */
-  readonly getTaggedVersions: (
-    promptId: string
-  ) => Effect.Effect<VersionTag[], SqlError>;
+  readonly getTaggedVersions: (promptId: string) => Effect.Effect<VersionTag[], SqlError>;
 
   /**
    * Get current retention configuration
@@ -176,9 +162,7 @@ interface RetentionServiceImpl {
    * @param config - New retention configuration
    * @returns Effect that succeeds or fails with SqlError
    */
-  readonly setConfig: (
-    config: RetentionConfig
-  ) => Effect.Effect<void, SqlError | ConfigError>;
+  readonly setConfig: (config: RetentionConfig) => Effect.Effect<void, SqlError | ConfigError>;
 }
 
 /**
@@ -196,7 +180,7 @@ const getVersionsToDelete = (
   sql: Context.Tag.Service<SqlService>,
   promptId: string,
   config: RetentionConfig,
-  branch: string = "main"
+  branch = "main"
 ): Effect.Effect<number[], SqlError, never> =>
   Effect.gen(function* () {
     // Get all versions with tag information
@@ -242,9 +226,7 @@ const getVersionsToDelete = (
           (row: VersionWithTagRow) => !protectedVersions.has(row.version)
         );
         if (unprotectedVersions.length > config.maxVersionsPerPrompt) {
-          const toDelete = unprotectedVersions.slice(
-            config.maxVersionsPerPrompt
-          );
+          const toDelete = unprotectedVersions.slice(config.maxVersionsPerPrompt);
           versionsToDelete.push(...toDelete.map((row: VersionWithTagRow) => row.version));
         }
         break;
@@ -281,9 +263,7 @@ const getVersionsToDelete = (
 
         // Add versions beyond count limit
         if (unprotectedVersions.length > config.maxVersionsPerPrompt) {
-          const excessVersions = unprotectedVersions.slice(
-            config.maxVersionsPerPrompt
-          );
+          const excessVersions = unprotectedVersions.slice(config.maxVersionsPerPrompt);
           excessVersions.forEach((row: VersionWithTagRow) => toDeleteSet.add(row.version));
         }
 
@@ -365,11 +345,7 @@ export const RetentionServiceLive = Layer.effect(
           const config = yield* getConfigInternal();
 
           // Get versions to delete
-          const versionsToDelete = yield* getVersionsToDelete(
-            sql,
-            promptId,
-            config
-          );
+          const versionsToDelete = yield* getVersionsToDelete(sql, promptId, config);
 
           if (versionsToDelete.length === 0) {
             return 0;
@@ -396,17 +372,12 @@ export const RetentionServiceLive = Layer.effect(
             `SELECT DISTINCT prompt_id FROM prompt_versions`
           );
 
-          const deletedVersions: Array<{ promptId: string; version: number }> =
-            [];
+          const deletedVersions: { promptId: string; version: number }[] = [];
           const promptsAffected = new Set<string>();
 
           // Clean up each prompt
           for (const row of promptRows) {
-            const versionsToDelete = yield* getVersionsToDelete(
-              sql,
-              row.prompt_id,
-              config
-            );
+            const versionsToDelete = yield* getVersionsToDelete(sql, row.prompt_id, config);
 
             if (versionsToDelete.length > 0) {
               promptsAffected.add(row.prompt_id);
@@ -443,21 +414,17 @@ export const RetentionServiceLive = Layer.effect(
             `SELECT DISTINCT prompt_id FROM prompt_versions`
           );
 
-          const versionsToDelete: Array<{
+          const versionsToDelete: {
             promptId: string;
             version: number;
             createdAt: Date;
             reason: string;
-          }> = [];
+          }[] = [];
           const promptsAffected = new Set<string>();
 
           // Preview cleanup for each prompt
           for (const row of promptRows) {
-            const toDelete = yield* getVersionsToDelete(
-              sql,
-              row.prompt_id,
-              config
-            );
+            const toDelete = yield* getVersionsToDelete(sql, row.prompt_id, config);
 
             if (toDelete.length > 0) {
               promptsAffected.add(row.prompt_id);
@@ -477,9 +444,7 @@ export const RetentionServiceLive = Layer.effect(
               detailRows.forEach((detail) => {
                 let reason = "";
                 const createdAt = new Date(detail.created_at);
-                const age = Math.floor(
-                  (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24)
-                );
+                const age = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
 
                 if (config.strategy === "count") {
                   reason = `Exceeds max versions (${config.maxVersionsPerPrompt})`;
@@ -533,10 +498,10 @@ export const RetentionServiceLive = Layer.effect(
 
       untagVersion: (promptId: string, version: number) =>
         Effect.gen(function* () {
-          yield* sql.run(
-            `DELETE FROM version_tags WHERE prompt_id = ? AND version = ?`,
-            [promptId, version]
-          );
+          yield* sql.run(`DELETE FROM version_tags WHERE prompt_id = ? AND version = ?`, [
+            promptId,
+            version,
+          ]);
         }),
 
       getTaggedVersions: (promptId: string) =>
@@ -559,7 +524,7 @@ export const RetentionServiceLive = Layer.effect(
           // Validate config
           yield* Effect.try({
             try: () => Schema.decodeSync(RetentionConfigSchema)(config),
-            catch: (error) =>
+            catch: (_error) =>
               new ConfigError({
                 message: "Invalid retention configuration",
                 key: "retention",
@@ -567,14 +532,11 @@ export const RetentionServiceLive = Layer.effect(
           });
 
           // Store each config value
-          const configEntries: Array<[string, unknown]> = [
+          const configEntries: [string, unknown][] = [
             ["retention.maxVersionsPerPrompt", config.maxVersionsPerPrompt],
             ["retention.retentionDays", config.retentionDays],
             ["retention.strategy", config.strategy],
-            [
-              "retention.preserveTaggedVersions",
-              config.preserveTaggedVersions,
-            ],
+            ["retention.preserveTaggedVersions", config.preserveTaggedVersions],
           ];
 
           for (const [key, value] of configEntries) {

@@ -33,7 +33,7 @@ function formatRelativeDate(date: Date): string {
 function parseOlderThan(value: string | boolean): Date | null {
   if (typeof value !== "string") return null;
 
-  const match = value.match(/^(\d+)([dwmy])$/);
+  const match = /^(\d+)([dwmy])$/.exec(value);
   if (!match) {
     console.log(`Invalid --older-than format: ${value}`);
     console.log('Expected format: <number><unit> (e.g., "30d", "2w", "3m", "1y")');
@@ -88,7 +88,7 @@ const archiveAddCommand = (args: ParsedArgs) =>
     }
 
     // Archive prompts
-    const count = yield* archive.archive(promptNames);
+    const _count = yield* archive.archive(promptNames);
 
     // Print confirmation for each
     for (const name of promptNames) {
@@ -116,8 +116,7 @@ const archiveListCommand = (_args: ParsedArgs) =>
     console.log("-".repeat(50));
 
     for (const prompt of archived) {
-      const name =
-        prompt.name.slice(0, 27) + (prompt.name.length > 27 ? "..." : "");
+      const name = prompt.name.slice(0, 27) + (prompt.name.length > 27 ? "..." : "");
       const archivedDate = formatRelativeDate(prompt.archivedAt);
       console.log(name.padEnd(30) + archivedDate);
     }
@@ -138,7 +137,7 @@ const archiveRestoreCommand = (args: ParsedArgs) =>
     }
 
     // Restore prompts
-    const count = yield* archive.restore(promptNames);
+    const _count = yield* archive.restore(promptNames);
 
     // Print confirmation for each
     for (const name of promptNames) {
@@ -167,7 +166,7 @@ const archivePurgeCommand = (args: ParsedArgs) =>
     }
 
     // Check for --yes flag
-    const yesFlag = args.flags["yes"] || args.flags["y"];
+    const yesFlag = args.flags.yes || args.flags.y;
 
     // Require confirmation unless --yes
     if (!yesFlag) {

@@ -8,7 +8,7 @@
 
 import { Context, Effect, Layer } from "effect";
 import { getEncoding, encodingForModel } from "js-tiktoken";
-import type { Tiktoken } from "js-tiktoken";
+import type { Tiktoken, TiktokenModel, TiktokenEncoding } from "js-tiktoken";
 
 /**
  * Message structure for chat-based token counting
@@ -30,7 +30,7 @@ export class TokenCounterError {
  * Model to encoding mapping
  * Maps model names to their tiktoken encoding schemes
  */
-const MODEL_TO_ENCODING: Record<string, string> = {
+const MODEL_TO_ENCODING: Record<string, TiktokenEncoding> = {
   "gpt-4o": "o200k_base",
   "gpt-4o-mini": "o200k_base",
   "gpt-4-turbo": "cl100k_base",
@@ -50,10 +50,7 @@ const MODEL_TO_ENCODING: Record<string, string> = {
  * Model pricing information (per 1M tokens)
  * Used for cost estimation
  */
-const MODEL_PRICING: Record<
-  string,
-  { inputPer1M: number; outputPer1M: number }
-> = {
+const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: number }> = {
   "gpt-4o": { inputPer1M: 2.5, outputPer1M: 10.0 },
   "gpt-4o-mini": { inputPer1M: 0.15, outputPer1M: 0.6 },
   "gpt-4-turbo": { inputPer1M: 10.0, outputPer1M: 30.0 },
@@ -62,9 +59,9 @@ const MODEL_PRICING: Record<
   "claude-3-opus-20240229": { inputPer1M: 15.0, outputPer1M: 75.0 },
   // Gemini models pricing (per 1M tokens)
   "gemini-2.5-pro": { inputPer1M: 1.25, outputPer1M: 5.0 },
-  "gemini-2.5-flash": { inputPer1M: 0.075, outputPer1M: 0.30 },
-  "gemini-2.0-flash": { inputPer1M: 0.10, outputPer1M: 0.40 },
-  "gemini-2.0-flash-lite": { inputPer1M: 0.075, outputPer1M: 0.30 },
+  "gemini-2.5-flash": { inputPer1M: 0.075, outputPer1M: 0.3 },
+  "gemini-2.0-flash": { inputPer1M: 0.1, outputPer1M: 0.4 },
+  "gemini-2.0-flash-lite": { inputPer1M: 0.075, outputPer1M: 0.3 },
 };
 
 /**
@@ -94,10 +91,7 @@ interface TokenCounterServiceImpl {
   /**
    * Count tokens in a text string
    */
-  readonly count: (
-    text: string,
-    model: string
-  ) => Effect.Effect<number, TokenCounterError>;
+  readonly count: (text: string, model: string) => Effect.Effect<number, TokenCounterError>;
 
   /**
    * Count tokens in a message array (chat format)
@@ -130,18 +124,16 @@ export class TokenCounterService extends Context.Tag("TokenCounterService")<
 /**
  * Get the encoding for a model
  */
-const getEncodingForModel = (
-  model: string
-): Effect.Effect<Tiktoken, TokenCounterError> =>
-  Effect.gen(function* () {
+const getEncodingForModel = (model: string): Effect.Effect<Tiktoken, TokenCounterError> =>
+  Effect.suspend(() => {
     try {
-      // Try to get encoding by model name directly
-      return encodingForModel(model as any);
+      // Try to get encoding by model name directly (for known OpenAI models)
+      return Effect.succeed(encodingForModel(model as TiktokenModel));
     } catch {
       // Fall back to explicit encoding mapping
       const encodingName = MODEL_TO_ENCODING[model];
       if (!encodingName) {
-        return yield* Effect.fail(
+        return Effect.fail(
           new TokenCounterError(
             `Unknown model: ${model}. Supported models: ${Object.keys(MODEL_TO_ENCODING).join(", ")}`
           )
@@ -149,9 +141,9 @@ const getEncodingForModel = (
       }
 
       try {
-        return getEncoding(encodingName as any);
+        return Effect.succeed(getEncoding(encodingName));
       } catch (error) {
-        return yield* Effect.fail(
+        return Effect.fail(
           new TokenCounterError(
             `Failed to load encoding ${encodingName}: ${error instanceof Error ? error.message : String(error)}`
           )

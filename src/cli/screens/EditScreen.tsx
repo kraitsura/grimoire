@@ -27,7 +27,7 @@ export interface EditScreenProps {
 type FocusedField = "name" | "content" | "tags";
 
 export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
-  const { state, actions } = useAppState();
+  const { actions } = useAppState();
 
   // Field values
   const [name, setName] = useState("");
@@ -41,7 +41,11 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
   const [isSaving, setIsSaving] = useState(false);
 
   // Load existing prompt if editing
-  const { result: existingPrompt, loading, error } = useEffectRun(
+  const {
+    result: existingPrompt,
+    loading,
+    error,
+  } = useEffectRun(
     promptId
       ? Effect.gen(function* () {
           const storage = yield* StorageService;
@@ -170,7 +174,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
 
       // Global shortcuts
       if (key.ctrl && input === "s") {
-        handleSave();
+        void handleSave();
         return;
       }
 
@@ -228,12 +232,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
   // Exit warning modal
   if (showExitWarning) {
     return (
-      <Box
-        flexDirection="column"
-        padding={1}
-        borderStyle="round"
-        borderColor="yellow"
-      >
+      <Box flexDirection="column" padding={1} borderStyle="round" borderColor="yellow">
         <Text bold color="yellow">
           Unsaved Changes
         </Text>
@@ -269,10 +268,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
 
       {/* Name field */}
       <Box flexDirection="column" marginBottom={1}>
-        <Text
-          color={focusedField === "name" ? "green" : "gray"}
-          bold={focusedField === "name"}
-        >
+        <Text color={focusedField === "name" ? "green" : "gray"} bold={focusedField === "name"}>
           Name:
         </Text>
         <Box marginLeft={2}>
@@ -306,18 +302,11 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
 
       {/* Tags field */}
       <Box flexDirection="column" marginBottom={1}>
-        <Text
-          color={focusedField === "tags" ? "green" : "gray"}
-          bold={focusedField === "tags"}
-        >
+        <Text color={focusedField === "tags" ? "green" : "gray"} bold={focusedField === "tags"}>
           Tags:
         </Text>
         <Box marginLeft={2}>
-          <TagEditor
-            tags={tags}
-            onChange={handleTagsChange}
-            focused={focusedField === "tags"}
-          />
+          <TagEditor tags={tags} onChange={handleTagsChange} focused={focusedField === "tags"} />
         </Box>
       </Box>
 

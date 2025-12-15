@@ -22,7 +22,6 @@
 import { Effect } from "effect";
 import { StorageService, RetentionService } from "../services";
 import type { ParsedArgs } from "../cli/parser";
-import type { RetentionConfig } from "../services/retention-service";
 
 /**
  * ANSI color codes
@@ -65,13 +64,11 @@ const cleanupSubcommand = (args: ParsedArgs) =>
     const retention = yield* RetentionService;
 
     const promptName = args.positional[1]; // versions cleanup <prompt-name>
-    const previewMode = args.flags["preview"] === true;
+    const previewMode = args.flags.preview === true;
 
     if (previewMode) {
       // Preview mode - show what would be deleted
-      console.log(
-        `${COLORS.cyan}${COLORS.bold}Version Cleanup Preview${COLORS.reset}\n`
-      );
+      console.log(`${COLORS.cyan}${COLORS.bold}Version Cleanup Preview${COLORS.reset}\n`);
 
       const preview = yield* retention.previewCleanup();
 
@@ -86,14 +83,12 @@ const cleanupSubcommand = (args: ParsedArgs) =>
       console.log(
         `Would delete: ${formatCount(preview.totalVersionsToDelete, COLORS.red)} version(s)`
       );
-      console.log(
-        `Prompts affected: ${formatCount(preview.promptsAffected, COLORS.yellow)}\n`
-      );
+      console.log(`Prompts affected: ${formatCount(preview.promptsAffected, COLORS.yellow)}\n`);
 
       // Group by prompt
       const byPrompt = new Map<
         string,
-        Array<{ version: number; createdAt: Date; reason: string }>
+        { version: number; createdAt: Date; reason: string }[]
       >();
 
       for (const v of preview.versionsToDelete) {
@@ -121,33 +116,25 @@ const cleanupSubcommand = (args: ParsedArgs) =>
         }
 
         console.log(`${COLORS.cyan}${promptName}${COLORS.reset}`);
-        console.log(
-          `  ${formatCount(versions.length, COLORS.red)} version(s) to delete:\n`
-        );
+        console.log(`  ${formatCount(versions.length, COLORS.red)} version(s) to delete:\n`);
 
         versions.sort((a, b) => a.version - b.version);
 
         for (const v of versions) {
-          console.log(
-            `  ${COLORS.red}- v${v.version}${COLORS.reset} (${formatDate(v.createdAt)})`
-          );
+          console.log(`  ${COLORS.red}- v${v.version}${COLORS.reset} (${formatDate(v.createdAt)})`);
           console.log(`    ${COLORS.dim}${v.reason}${COLORS.reset}`);
         }
         console.log();
       }
 
-      console.log(
-        `${COLORS.yellow}Run without --preview to delete these versions${COLORS.reset}`
-      );
+      console.log(`${COLORS.yellow}Run without --preview to delete these versions${COLORS.reset}`);
     } else if (promptName) {
       // Clean up specific prompt
       const prompt = yield* storage.getByName(promptName);
       const deleted = yield* retention.cleanupVersions(prompt.id);
 
       if (deleted === 0) {
-        console.log(
-          `${COLORS.green}No versions to clean up for: ${promptName}${COLORS.reset}`
-        );
+        console.log(`${COLORS.green}No versions to clean up for: ${promptName}${COLORS.reset}`);
       } else {
         console.log(
           `${COLORS.green}Deleted ${formatCount(deleted, COLORS.red)} version(s) from: ${promptName}${COLORS.reset}`
@@ -155,9 +142,7 @@ const cleanupSubcommand = (args: ParsedArgs) =>
       }
     } else {
       // Clean up all prompts
-      console.log(
-        `${COLORS.cyan}${COLORS.bold}Running Version Cleanup${COLORS.reset}\n`
-      );
+      console.log(`${COLORS.cyan}${COLORS.bold}Running Version Cleanup${COLORS.reset}\n`);
 
       const result = yield* retention.cleanupAll();
 
@@ -166,15 +151,11 @@ const cleanupSubcommand = (args: ParsedArgs) =>
           `${COLORS.green}No versions to clean up. All versions are within retention policy.${COLORS.reset}`
         );
       } else {
-        console.log(
-          `${COLORS.green}Cleanup complete:${COLORS.reset}`
-        );
+        console.log(`${COLORS.green}Cleanup complete:${COLORS.reset}`);
         console.log(
           `  Deleted: ${formatCount(result.totalVersionsDeleted, COLORS.red)} version(s)`
         );
-        console.log(
-          `  Prompts affected: ${formatCount(result.promptsAffected, COLORS.yellow)}`
-        );
+        console.log(`  Prompts affected: ${formatCount(result.promptsAffected, COLORS.yellow)}`);
       }
     }
   });
@@ -193,9 +174,7 @@ const tagSubcommand = (args: ParsedArgs) =>
 
     if (!promptName || !versionStr || !tag) {
       console.error("Error: Missing arguments");
-      console.error(
-        "Usage: grimoire versions tag <prompt-name> <version> <tag>"
-      );
+      console.error("Usage: grimoire versions tag <prompt-name> <version> <tag>");
       return;
     }
 
@@ -285,13 +264,11 @@ const configSubcommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const retention = yield* RetentionService;
 
-    const setMode = args.flags["set"] === true;
+    const setMode = args.flags.set === true;
 
     if (setMode) {
       // Interactive config update
-      console.log(
-        `${COLORS.cyan}${COLORS.bold}Update Retention Configuration${COLORS.reset}\n`
-      );
+      console.log(`${COLORS.cyan}${COLORS.bold}Update Retention Configuration${COLORS.reset}\n`);
 
       // Get current config
       const currentConfig = yield* retention.getConfig();
@@ -320,9 +297,7 @@ const configSubcommand = (args: ParsedArgs) =>
       // Show current config
       const config = yield* retention.getConfig();
 
-      console.log(
-        `${COLORS.cyan}${COLORS.bold}Retention Configuration${COLORS.reset}\n`
-      );
+      console.log(`${COLORS.cyan}${COLORS.bold}Retention Configuration${COLORS.reset}\n`);
 
       console.log(
         `${COLORS.dim}Strategy:${COLORS.reset} ${COLORS.yellow}${config.strategy}${COLORS.reset}`
@@ -330,35 +305,21 @@ const configSubcommand = (args: ParsedArgs) =>
       console.log(
         `${COLORS.dim}Max versions per prompt:${COLORS.reset} ${config.maxVersionsPerPrompt}`
       );
-      console.log(
-        `${COLORS.dim}Retention days:${COLORS.reset} ${config.retentionDays}`
-      );
+      console.log(`${COLORS.dim}Retention days:${COLORS.reset} ${config.retentionDays}`);
       console.log(
         `${COLORS.dim}Preserve tagged versions:${COLORS.reset} ${config.preserveTaggedVersions ? COLORS.green + "yes" + COLORS.reset : COLORS.red + "no" + COLORS.reset}`
       );
 
       console.log(`\n${COLORS.dim}Strategy meanings:${COLORS.reset}`);
-      console.log(
-        `  ${COLORS.yellow}count${COLORS.reset} - Keep only the last N versions`
-      );
-      console.log(
-        `  ${COLORS.yellow}days${COLORS.reset} - Delete versions older than N days`
-      );
-      console.log(
-        `  ${COLORS.yellow}both${COLORS.reset} - Delete if either limit is exceeded`
-      );
+      console.log(`  ${COLORS.yellow}count${COLORS.reset} - Keep only the last N versions`);
+      console.log(`  ${COLORS.yellow}days${COLORS.reset} - Delete versions older than N days`);
+      console.log(`  ${COLORS.yellow}both${COLORS.reset} - Delete if either limit is exceeded`);
 
       console.log(`\n${COLORS.dim}Protected versions:${COLORS.reset}`);
-      console.log(
-        `  - Version 1 (initial) is always kept`
-      );
-      console.log(
-        `  - HEAD (latest) is always kept`
-      );
+      console.log(`  - Version 1 (initial) is always kept`);
+      console.log(`  - HEAD (latest) is always kept`);
       if (config.preserveTaggedVersions) {
-        console.log(
-          `  - Tagged versions are preserved`
-        );
+        console.log(`  - Tagged versions are preserved`);
       }
     }
   });

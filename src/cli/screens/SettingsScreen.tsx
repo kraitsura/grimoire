@@ -80,7 +80,7 @@ export const SettingsScreen: React.FC = () => {
     },
     defaults: {
       model: "gpt-4o",
-      editor: process.env.EDITOR || "vim",
+      editor: process.env.EDITOR ?? "vim",
     },
     versioning: {
       maxVersions: 10,
@@ -92,7 +92,7 @@ export const SettingsScreen: React.FC = () => {
 
   // Load settings data on mount
   useEffect(() => {
-    loadSettings();
+    void loadSettings();
   }, []);
 
   /**
@@ -132,7 +132,7 @@ export const SettingsScreen: React.FC = () => {
         apiKeys: result.apiKeys,
         storage: result.storage,
       }));
-    } catch (error) {
+    } catch {
       // Handle error silently, keep default values
     } finally {
       setLoading(false);
@@ -237,7 +237,7 @@ export const SettingsScreen: React.FC = () => {
     } catch (error) {
       actions.showNotification({
         type: "error",
-        message: `Failed to save: ${error}`,
+        message: `Failed to save: ${error instanceof Error ? error.message : String(error)}`,
       });
     } finally {
       setEditing(null);
@@ -268,7 +268,7 @@ export const SettingsScreen: React.FC = () => {
       // If editing, handle input in TextInput component
       if (editing) {
         if (key.return) {
-          saveEdit();
+          void saveEdit();
         } else if (key.escape) {
           cancelEdit();
         }
@@ -298,7 +298,7 @@ export const SettingsScreen: React.FC = () => {
       } else if (input === "e" && selectedSection !== "storage") {
         // Start editing first editable field in selected section
         if (selectedSection === "api-keys") {
-          startEditing("api-keys", "openai", settings.apiKeys.openai || "");
+          startEditing("api-keys", "openai", settings.apiKeys.openai ?? "");
         } else if (selectedSection === "defaults") {
           startEditing("defaults", "model", settings.defaults.model);
         } else if (selectedSection === "versioning") {
@@ -409,7 +409,9 @@ export const SettingsScreen: React.FC = () => {
                 />
               ) : (
                 <Text>
-                  {process.env.EDITOR ? `$EDITOR (${settings.defaults.editor})` : settings.defaults.editor}
+                  {process.env.EDITOR
+                    ? `$EDITOR (${settings.defaults.editor})`
+                    : settings.defaults.editor}
                 </Text>
               )}
             </Box>

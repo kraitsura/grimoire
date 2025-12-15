@@ -13,7 +13,7 @@ import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { Effect } from "effect";
 import { useEffectRun, useEffectCallback } from "../../context";
-import { ExportService, TagService, StorageService, type ExportOptions } from "../../../services";
+import { ExportService, TagService, type ExportOptions } from "../../../services";
 import { TextInput } from "../input/text-input";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -30,9 +30,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({ onExit, onComplete }
   const [format, setFormat] = useState<"json" | "yaml">("json");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [includeHistory, setIncludeHistory] = useState(false);
-  const [outputPath, setOutputPath] = useState(
-    join(homedir(), "grimoire-export.json")
-  );
+  const [outputPath, setOutputPath] = useState(join(homedir(), "grimoire-export.json"));
   const [tagSelectionIndex, setTagSelectionIndex] = useState(0);
   const [previewData, setPreviewData] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -101,7 +99,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({ onExit, onComplete }
   // Generate preview when entering preview step
   useEffect(() => {
     if (step === "preview") {
-      generatePreview().then((content) => {
+      void generatePreview().then((content) => {
         // Show first 500 characters of preview
         setPreviewData(content.slice(0, 500));
       });
@@ -110,9 +108,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({ onExit, onComplete }
 
   const toggleTag = (tagName: string) => {
     setSelectedTags((prev) =>
-      prev.includes(tagName)
-        ? prev.filter((t) => t !== tagName)
-        : [...prev, tagName]
+      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
     );
   };
 
@@ -133,9 +129,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({ onExit, onComplete }
         if (key.upArrow || input === "k") {
           setTagSelectionIndex((prev) => Math.max(0, prev - 1));
         } else if (key.downArrow || input === "j") {
-          setTagSelectionIndex((prev) =>
-            Math.min((availableTags?.length ?? 1) - 1, prev + 1)
-          );
+          setTagSelectionIndex((prev) => Math.min((availableTags?.length ?? 1) - 1, prev + 1));
         } else if (input === " ") {
           const tag = availableTags?.[tagSelectionIndex];
           if (tag) {
@@ -242,12 +236,8 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({ onExit, onComplete }
               const isCursor = index === tagSelectionIndex;
               return (
                 <Box key={tag.name}>
-                  <Text
-                    color={isCursor ? "green" : undefined}
-                    bold={isCursor}
-                  >
-                    {isCursor ? "> " : "  "}
-                    [{isSelected ? "x" : " "}] {tag.name} ({tag.count})
+                  <Text color={isCursor ? "green" : undefined} bold={isCursor}>
+                    {isCursor ? "> " : "  "}[{isSelected ? "x" : " "}] {tag.name} ({tag.count})
                   </Text>
                 </Box>
               );
@@ -279,11 +269,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({ onExit, onComplete }
             <Text bold>Output file path:</Text>
           </Box>
           <Box marginBottom={1}>
-            <TextInput
-              value={outputPath}
-              onChange={setOutputPath}
-              focused={true}
-            />
+            <TextInput value={outputPath} onChange={setOutputPath} focused={true} />
           </Box>
           <Text color="gray">Enter next</Text>
         </Box>

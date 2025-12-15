@@ -36,18 +36,8 @@ export interface CollectionStats {
   totalPrompts: number;
   totalTemplates: number;
   tagDistribution: Record<string, number>;
-  mostUsed: Array<{ promptId: string; name: string; count: number }>;
-  recentlyEdited: Array<{ promptId: string; name: string; editedAt: Date }>;
-}
-
-/**
- * Database row structure for usage logs
- */
-interface UsageLogRow {
-  id: number;
-  prompt_id: string;
-  action: string;
-  timestamp: string;
+  mostUsed: { promptId: string; name: string; count: number }[];
+  recentlyEdited: { promptId: string; name: string; editedAt: Date }[];
 }
 
 /**
@@ -123,19 +113,13 @@ interface StatsServiceImpl {
    * Record a usage action for a prompt
    * Creates a log entry in the usage_logs table
    */
-  readonly recordUsage: (
-    promptId: string,
-    action: UsageAction
-  ) => Effect.Effect<void, SqlError>;
+  readonly recordUsage: (promptId: string, action: UsageAction) => Effect.Effect<void, SqlError>;
 }
 
 /**
  * Stats service tag
  */
-export class StatsService extends Context.Tag("StatsService")<
-  StatsService,
-  StatsServiceImpl
->() {}
+export class StatsService extends Context.Tag("StatsService")<StatsService, StatsServiceImpl>() {}
 
 /**
  * Calculate word count from text
@@ -170,10 +154,10 @@ export const StatsServiceLive = Layer.effect(
       recordUsage: (promptId: string, action: UsageAction) =>
         Effect.gen(function* () {
           // Insert log entry
-          yield* sql.run(
-            "INSERT INTO usage_logs (prompt_id, action) VALUES (?, ?)",
-            [promptId, action]
-          );
+          yield* sql.run("INSERT INTO usage_logs (prompt_id, action) VALUES (?, ?)", [
+            promptId,
+            action,
+          ]);
         }),
 
       getPromptStats: (promptId: string) =>
@@ -187,9 +171,7 @@ export const StatsServiceLive = Layer.effect(
           // Read content from file
           let content = "";
           if (promptRows.length > 0) {
-            const parsed = yield* promptStorage.readPrompt(
-              promptRows[0].file_path
-            );
+            const parsed = yield* promptStorage.readPrompt(promptRows[0].file_path);
             content = parsed.content;
           }
 
@@ -229,10 +211,7 @@ export const StatsServiceLive = Layer.effect(
             [promptId]
           );
 
-          const lastUsed =
-            lastUsageRows.length > 0
-              ? new Date(lastUsageRows[0].timestamp)
-              : null;
+          const lastUsed = lastUsageRows.length > 0 ? new Date(lastUsageRows[0].timestamp) : null;
 
           return {
             characterCount,

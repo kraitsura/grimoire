@@ -76,9 +76,7 @@ export interface ExportOptions {
  * Export service interface
  */
 interface ExportServiceImpl {
-  readonly exportAll: (
-    options: ExportOptions
-  ) => Effect.Effect<string, StorageError | SqlError>;
+  readonly exportAll: (options: ExportOptions) => Effect.Effect<string, StorageError | SqlError>;
   readonly exportByTags: (
     tags: string[],
     options: ExportOptions
@@ -87,10 +85,7 @@ interface ExportServiceImpl {
     ids: string[],
     options: ExportOptions
   ) => Effect.Effect<string, StorageError | PromptNotFoundError | SqlError>;
-  readonly writeToFile: (
-    content: string,
-    path: string
-  ) => Effect.Effect<void, StorageError>;
+  readonly writeToFile: (content: string, path: string) => Effect.Effect<void, StorageError>;
 }
 
 /**
@@ -104,10 +99,7 @@ export class ExportService extends Context.Tag("ExportService")<
 /**
  * Convert a Prompt to ExportedPrompt format
  */
-const promptToExported = (
-  prompt: Prompt,
-  includeHistory: boolean = false
-): ExportedPrompt => {
+const promptToExported = (prompt: Prompt, includeHistory = false): ExportedPrompt => {
   // Include history if requested and available
   // Note: Currently we don't track history in the storage layer,
   // so this will be empty for now. Future versions can populate this.
@@ -127,10 +119,7 @@ const promptToExported = (
 /**
  * Create an export bundle from prompts
  */
-const createExportBundle = (
-  prompts: Prompt[],
-  includeHistory: boolean = false
-): ExportBundle => {
+const createExportBundle = (prompts: Prompt[], includeHistory = false): ExportBundle => {
   return {
     version: "1.0",
     exportedAt: new Date().toISOString(),
@@ -145,14 +134,12 @@ const createExportBundle = (
 const serializeBundle = (
   bundle: ExportBundle,
   format: "json" | "yaml",
-  prettyPrint: boolean = true
+  prettyPrint = true
 ): Effect.Effect<string, StorageError> => {
   return Effect.try({
     try: () => {
       if (format === "json") {
-        return prettyPrint
-          ? JSON.stringify(bundle, null, 2)
-          : JSON.stringify(bundle);
+        return prettyPrint ? JSON.stringify(bundle, null, 2) : JSON.stringify(bundle);
       } else {
         // YAML format
         return yaml.dump(bundle, {
@@ -186,10 +173,7 @@ export const ExportServiceLive = Layer.effect(
           const prompts = yield* storage.getAll;
 
           // Create export bundle
-          const bundle = createExportBundle(
-            prompts,
-            options.includeHistory ?? false
-          );
+          const bundle = createExportBundle(prompts, options.includeHistory ?? false);
 
           // Serialize to requested format
           const prettyPrint = options.prettyPrint ?? true;
@@ -202,10 +186,7 @@ export const ExportServiceLive = Layer.effect(
           const prompts = yield* storage.findByTags(tags);
 
           // Create export bundle
-          const bundle = createExportBundle(
-            prompts,
-            options.includeHistory ?? false
-          );
+          const bundle = createExportBundle(prompts, options.includeHistory ?? false);
 
           // Serialize to requested format
           const prettyPrint = options.prettyPrint ?? true;
@@ -222,10 +203,7 @@ export const ExportServiceLive = Layer.effect(
           }
 
           // Create export bundle
-          const bundle = createExportBundle(
-            prompts,
-            options.includeHistory ?? false
-          );
+          const bundle = createExportBundle(prompts, options.includeHistory ?? false);
 
           // Serialize to requested format
           const prettyPrint = options.prettyPrint ?? true;

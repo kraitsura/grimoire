@@ -20,17 +20,14 @@ export const TagEditor: React.FC<TagEditorProps> = ({
 
   const filteredSuggestions = suggestions.filter(
     (suggestion) =>
-      !tags.includes(suggestion) &&
-      suggestion.toLowerCase().includes(currentInput.toLowerCase())
+      !tags.includes(suggestion) && suggestion.toLowerCase().includes(currentInput.toLowerCase())
   );
 
   useInput(
     (input, key) => {
       if (key.return) {
         const tagToAdd =
-          selectedIndex >= 0
-            ? filteredSuggestions[selectedIndex]
-            : currentInput.trim();
+          selectedIndex >= 0 ? filteredSuggestions[selectedIndex] : currentInput.trim();
 
         if (tagToAdd && !tags.includes(tagToAdd)) {
           onChange([...tags, tagToAdd]);
@@ -46,25 +43,15 @@ export const TagEditor: React.FC<TagEditorProps> = ({
         }
       } else if (key.upArrow) {
         if (filteredSuggestions.length > 0) {
-          setSelectedIndex(
-            selectedIndex <= 0
-              ? filteredSuggestions.length - 1
-              : selectedIndex - 1
-          );
+          setSelectedIndex(selectedIndex <= 0 ? filteredSuggestions.length - 1 : selectedIndex - 1);
         }
       } else if (key.downArrow) {
         if (filteredSuggestions.length > 0) {
-          setSelectedIndex(
-            selectedIndex >= filteredSuggestions.length - 1
-              ? 0
-              : selectedIndex + 1
-          );
+          setSelectedIndex(selectedIndex >= filteredSuggestions.length - 1 ? 0 : selectedIndex + 1);
         }
       } else if (key.tab) {
         if (filteredSuggestions.length > 0) {
-          setSelectedIndex(
-            (selectedIndex + 1) % filteredSuggestions.length
-          );
+          setSelectedIndex((selectedIndex + 1) % filteredSuggestions.length);
         }
       } else if (input && !key.ctrl && !key.meta) {
         setCurrentInput(currentInput + input);
@@ -74,25 +61,14 @@ export const TagEditor: React.FC<TagEditorProps> = ({
     { isActive: focused }
   );
 
-  const tagColors = [
-    "cyan",
-    "magenta",
-    "yellow",
-    "green",
-    "blue",
-    "red",
-  ] as const;
+  const tagColors = ["cyan", "magenta", "yellow", "green", "blue", "red"] as const;
 
   return (
     <Box flexDirection="column">
       <Box flexWrap="wrap" gap={1}>
         {tags.map((tag, index) => (
           <Box key={index} marginRight={1}>
-            <Text
-              color={tagColors[index % tagColors.length]}
-              backgroundColor="black"
-              bold
-            >
+            <Text color={tagColors[index % tagColors.length]} backgroundColor="black" bold>
               {" "}
               {tag}{" "}
             </Text>

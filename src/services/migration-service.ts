@@ -263,10 +263,10 @@ export const MigrationLive = Layer.effect(
           for (const statement of migration.up) {
             yield* sql.run(statement);
           }
-          yield* sql.run(
-            "INSERT INTO schema_versions (version, description) VALUES (?, ?)",
-            [migration.version, migration.description]
-          );
+          yield* sql.run("INSERT INTO schema_versions (version, description) VALUES (?, ?)", [
+            migration.version,
+            migration.description,
+          ]);
         })
       );
     }
@@ -320,10 +320,10 @@ export const MigrationLive = Layer.effect(
                 }
 
                 // Record that this migration was applied
-                yield* sql.run(
-                  "INSERT INTO schema_versions (version, description) VALUES (?, ?)",
-                  [migration.version, migration.description]
-                );
+                yield* sql.run("INSERT INTO schema_versions (version, description) VALUES (?, ?)", [
+                  migration.version,
+                  migration.description,
+                ]);
 
                 appliedVersions.push(migration.version);
               })

@@ -22,12 +22,14 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
   const totalLines = childrenArray.length;
   const maxScroll = Math.max(0, totalLines - height);
 
-  // Ensure scroll offset is within bounds
+  // Ensure scroll offset is within bounds when content size changes
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional: boundary adjustment */
   useEffect(() => {
     if (scrollOffset > maxScroll) {
       setScrollOffset(maxScroll);
     }
   }, [scrollOffset, maxScroll]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useInput(
     (input, key) => {
@@ -48,13 +50,9 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
     { isActive: focused }
   );
 
-  const visibleChildren = childrenArray.slice(
-    scrollOffset,
-    scrollOffset + height
-  );
+  const visibleChildren = childrenArray.slice(scrollOffset, scrollOffset + height);
 
-  const scrollPercentage =
-    maxScroll === 0 ? 100 : Math.round((scrollOffset / maxScroll) * 100);
+  const scrollPercentage = maxScroll === 0 ? 100 : Math.round((scrollOffset / maxScroll) * 100);
 
   const canScrollUp = scrollOffset > 0;
   const canScrollDown = scrollOffset < maxScroll;
@@ -66,8 +64,8 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
         <Box marginTop={1}>
           <Text color="gray" dimColor>
             {canScrollUp && "↑ "}
-            {scrollOffset + 1}-{Math.min(scrollOffset + height, totalLines)} of{" "}
-            {totalLines} ({scrollPercentage}%)
+            {scrollOffset + 1}-{Math.min(scrollOffset + height, totalLines)} of {totalLines} (
+            {scrollPercentage}%)
             {canScrollDown && " ↓"}
           </Text>
         </Box>

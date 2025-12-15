@@ -20,8 +20,8 @@ export const aliasCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const aliasService = yield* AliasService;
 
-    const listFlag = args.flags["list"];
-    const removeFlag = args.flags["remove"];
+    const listFlag = args.flags.list;
+    const removeFlag = args.flags.remove;
 
     // List aliases
     if (listFlag) {

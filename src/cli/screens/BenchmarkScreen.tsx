@@ -240,7 +240,7 @@ export const BenchmarkScreen: React.FC = () => {
         <Box flexDirection="column" gap={1}>
           <Box>
             <Text color={focusedField === 0 ? "cyan" : undefined}>
-              Model:    [{config.model.padEnd(20)}]
+              Model: [{config.model.padEnd(20)}]
             </Text>
             {focusedField === 0 && <Text dimColor> (left/right to change)</Text>}
           </Box>

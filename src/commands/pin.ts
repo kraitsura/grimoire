@@ -30,9 +30,9 @@ export const pinCommand = (args: ParsedArgs) =>
     const storage = yield* StorageService;
     const sql = yield* SqlService;
 
-    const listFlag = args.flags["list"] || args.flags["l"];
-    const addFlag = args.flags["add"];
-    const removeFlag = args.flags["remove"];
+    const listFlag = args.flags.list || args.flags.l;
+    const addFlag = args.flags.add;
+    const removeFlag = args.flags.remove;
 
     // Handle --list flag
     if (listFlag) {

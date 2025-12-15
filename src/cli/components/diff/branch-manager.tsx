@@ -107,10 +107,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({
     { isActive: focused }
   );
 
-  const visibleBranches = branches.slice(
-    scrollOffset,
-    scrollOffset + height
-  );
+  const visibleBranches = branches.slice(scrollOffset, scrollOffset + height);
 
   const canScrollUp = scrollOffset > 0;
   const canScrollDown = scrollOffset < maxScroll;
@@ -162,9 +159,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({
         <Text bold>Branches</Text>
         <Text dimColor> ({totalBranches} total)</Text>
         <Box marginLeft={2}>
-          <Text color="green">
-            Current: {activeBranch.name}
-          </Text>
+          <Text color="green">Current: {activeBranch.name}</Text>
         </Box>
       </Box>
 
@@ -179,9 +174,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({
           return (
             <Box key={branch.id}>
               {/* Selection indicator */}
-              <Text color={isSelected ? "blue" : undefined}>
-                {isSelected ? "▶ " : "  "}
-              </Text>
+              <Text color={isSelected ? "blue" : undefined}>{isSelected ? "▶ " : "  "}</Text>
 
               {/* Active indicator */}
               <Text color={isActive ? "green" : undefined} bold={isActive}>
@@ -205,15 +198,9 @@ export const BranchManager: React.FC<BranchManagerProps> = ({
 
                 {comparison && !isActive && (
                   <Box marginLeft={1}>
-                    {comparison.ahead > 0 && (
-                      <Text color="green">↑{comparison.ahead}</Text>
-                    )}
-                    {comparison.behind > 0 && (
-                      <Text color="red"> ↓{comparison.behind}</Text>
-                    )}
-                    {!comparison.canMerge && (
-                      <Text color="yellow"> ⚠</Text>
-                    )}
+                    {comparison.ahead > 0 && <Text color="green">↑{comparison.ahead}</Text>}
+                    {comparison.behind > 0 && <Text color="red"> ↓{comparison.behind}</Text>}
+                    {!comparison.canMerge && <Text color="yellow"> ⚠</Text>}
                   </Box>
                 )}
               </Box>
@@ -228,8 +215,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({
         {(canScrollUp || canScrollDown) && (
           <Text color="gray" dimColor>
             {canScrollUp && "↑ "}
-            {scrollOffset + 1}-{Math.min(scrollOffset + height, totalBranches)}{" "}
-            of {totalBranches}
+            {scrollOffset + 1}-{Math.min(scrollOffset + height, totalBranches)} of {totalBranches}
             {canScrollDown && " ↓"}
           </Text>
         )}

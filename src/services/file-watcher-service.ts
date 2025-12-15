@@ -66,9 +66,7 @@ export const FileWatcherLive = Layer.effect(
 
     // Refs for mutable state
     const watcherRef = yield* Ref.make<FSWatcher | null>(null);
-    const debouncersRef = yield* Ref.make<Map<string, NodeJS.Timeout>>(
-      new Map()
-    );
+    const debouncersRef = yield* Ref.make<Map<string, NodeJS.Timeout>>(new Map());
 
     /**
      * Handle a file change event with debouncing
@@ -135,39 +133,35 @@ export const FileWatcherLive = Layer.effect(
           // Create the watcher
           const watcher = yield* Effect.try({
             try: () =>
-              watch(
-                promptsDir,
-                { recursive: true },
-                (eventType, filename) => {
-                  if (filename === null || !filename.endsWith(".md")) {
-                    return; // Only watch .md files
-                  }
-
-                  const fullPath = join(promptsDir, filename);
-
-                  // Map fs.watch event types to our event types
-                  // 'rename' can mean add or delete, 'change' is modification
-                  // We'll treat 'rename' as both add and potentially unlink
-                  let changeType: "add" | "change" | "unlink";
-
-                  if (eventType === "change") {
-                    changeType = "change";
-                  } else if (eventType === "rename") {
-                    // For 'rename' events, we need to check if the file exists
-                    // If it doesn't exist, it was deleted
-                    // If it exists, it was added or renamed
-                    // We'll use a simple heuristic: treat all renames as potential adds
-                    // and let the sync service handle it
-                    // Deletions will be caught by periodic full syncs or explicit checks
-                    changeType = "add";
-                  } else {
-                    return; // Unknown event type
-                  }
-
-                  // Handle the change asynchronously
-                  void Effect.runPromise(handleFileChange(fullPath, changeType));
+              watch(promptsDir, { recursive: true }, (eventType, filename) => {
+                if (!filename?.endsWith(".md")) {
+                  return; // Only watch .md files
                 }
-              ),
+
+                const fullPath = join(promptsDir, filename);
+
+                // Map fs.watch event types to our event types
+                // 'rename' can mean add or delete, 'change' is modification
+                // We'll treat 'rename' as both add and potentially unlink
+                let changeType: "add" | "change" | "unlink";
+
+                if (eventType === "change") {
+                  changeType = "change";
+                } else if (eventType === "rename") {
+                  // For 'rename' events, we need to check if the file exists
+                  // If it doesn't exist, it was deleted
+                  // If it exists, it was added or renamed
+                  // We'll use a simple heuristic: treat all renames as potential adds
+                  // and let the sync service handle it
+                  // Deletions will be caught by periodic full syncs or explicit checks
+                  changeType = "add";
+                } else {
+                  return; // Unknown event type
+                }
+
+                // Handle the change asynchronously
+                void Effect.runPromise(handleFileChange(fullPath, changeType));
+              }),
             catch: (error) =>
               new StorageError({
                 message: `Failed to start file watcher for ${promptsDir}`,

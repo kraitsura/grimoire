@@ -23,7 +23,8 @@ export const MultiLineInput: React.FC<MultiLineInputProps> = ({
 
   const lines = value.split("\n");
 
-  // Ensure cursor is within bounds
+  // Ensure cursor is within bounds when value changes
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional: adjusting cursor/scroll when value changes externally */
   useEffect(() => {
     if (cursorLine >= lines.length) {
       setCursorLine(Math.max(0, lines.length - 1));
@@ -32,7 +33,7 @@ export const MultiLineInput: React.FC<MultiLineInputProps> = ({
     if (cursorColumn > currentLineLength) {
       setCursorColumn(currentLineLength);
     }
-  }, [value]);
+  }, [value, cursorLine, cursorColumn, lines]);
 
   // Auto-scroll to keep cursor visible
   useEffect(() => {
@@ -41,7 +42,8 @@ export const MultiLineInput: React.FC<MultiLineInputProps> = ({
     } else if (cursorLine >= scrollOffset + height) {
       setScrollOffset(cursorLine - height + 1);
     }
-  }, [cursorLine, height]);
+  }, [cursorLine, height, scrollOffset]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useInput(
     (input, key) => {
@@ -84,9 +86,7 @@ export const MultiLineInput: React.FC<MultiLineInputProps> = ({
         setCursorColumn(0);
       } else if (key.backspace || key.delete) {
         if (cursorColumn > 0) {
-          const newLine =
-            currentLine.slice(0, cursorColumn - 1) +
-            currentLine.slice(cursorColumn);
+          const newLine = currentLine.slice(0, cursorColumn - 1) + currentLine.slice(cursorColumn);
           const newLines = [...lines];
           newLines[cursorLine] = newLine;
           onChange(newLines.join("\n"));
@@ -103,9 +103,7 @@ export const MultiLineInput: React.FC<MultiLineInputProps> = ({
         }
       } else if (input && !key.ctrl && !key.meta) {
         const newLine =
-          currentLine.slice(0, cursorColumn) +
-          input +
-          currentLine.slice(cursorColumn);
+          currentLine.slice(0, cursorColumn) + input + currentLine.slice(cursorColumn);
         const newLines = [...lines];
         newLines[cursorLine] = newLine;
         onChange(newLines.join("\n"));
@@ -116,9 +114,7 @@ export const MultiLineInput: React.FC<MultiLineInputProps> = ({
   );
 
   const visibleLines = lines.slice(scrollOffset, scrollOffset + height);
-  const lineNumberWidth = showLineNumbers
-    ? String(lines.length).length + 1
-    : 0;
+  const lineNumberWidth = showLineNumbers ? String(lines.length).length + 1 : 0;
 
   return (
     <Box flexDirection="column">
@@ -150,9 +146,7 @@ export const MultiLineInput: React.FC<MultiLineInputProps> = ({
       })}
       {scrollOffset + height < lines.length && (
         <Box>
-          <Text color="gray">
-            ... ({lines.length - (scrollOffset + height)} more lines)
-          </Text>
+          <Text color="gray">... ({lines.length - (scrollOffset + height)} more lines)</Text>
         </Box>
       )}
     </Box>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { CollectionStats } from "../../../services/stats-service";
 
@@ -8,14 +8,10 @@ export interface StatsDashboardProps {
   onExit?: () => void;
 }
 
-export const StatsDashboard: React.FC<StatsDashboardProps> = ({
-  stats,
-  onRefresh,
-  onExit,
-}) => {
+export const StatsDashboard: React.FC<StatsDashboardProps> = ({ stats, onRefresh, onExit }) => {
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
-  useInput((input, key) => {
+  useInput((input, _key) => {
     if (input === "r" && onRefresh) {
       onRefresh();
       setLastRefresh(new Date());
@@ -26,7 +22,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   });
 
   // Create a simple text-based bar chart for most used prompts
-  const renderBarChart = (items: Array<{ name: string; count: number }>) => {
+  const renderBarChart = (items: { name: string; count: number }[]) => {
     if (items.length === 0) {
       return <Text color="gray">No usage data yet</Text>;
     }
@@ -37,10 +33,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
     return (
       <Box flexDirection="column">
         {items.slice(0, 10).map((item, idx) => {
-          const barWidth = Math.max(
-            1,
-            Math.round((item.count / maxCount) * maxBarWidth)
-          );
+          const barWidth = Math.max(1, Math.round((item.count / maxCount) * maxBarWidth));
           const bar = "█".repeat(barWidth);
 
           return (
@@ -126,14 +119,10 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             Templates: <Text color="cyan">{stats.totalTemplates}</Text>
           </Text>
           <Text>
-            Regular Prompts:{" "}
-            <Text color="cyan">
-              {stats.totalPrompts - stats.totalTemplates}
-            </Text>
+            Regular Prompts: <Text color="cyan">{stats.totalPrompts - stats.totalTemplates}</Text>
           </Text>
           <Text>
-            Last Refreshed:{" "}
-            <Text color="gray">{lastRefresh.toLocaleTimeString()}</Text>
+            Last Refreshed: <Text color="gray">{lastRefresh.toLocaleTimeString()}</Text>
           </Text>
         </Box>
       </Box>
@@ -166,9 +155,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
       </Box>
 
       <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
-        <Text color="gray">
-          r: refresh | q: quit
-        </Text>
+        <Text color="gray">r: refresh | q: quit</Text>
       </Box>
     </Box>
   );

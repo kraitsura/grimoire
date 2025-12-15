@@ -58,13 +58,13 @@ export function parseArgs(args: string[]): ParsedArgs {
           flags[flag] = true;
           // Map common short flags to long forms
           if (flag === "i") {
-            flags["interactive"] = true;
+            flags.interactive = true;
           }
           if (flag === "h") {
-            flags["help"] = true;
+            flags.help = true;
           }
           if (flag === "v") {
-            flags["version"] = true;
+            flags.version = true;
           }
         }
       }

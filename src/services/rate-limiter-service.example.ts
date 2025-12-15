@@ -34,10 +34,7 @@ export const basicUsageExample = Effect.gen(function* () {
  * When you receive a 429 (Too Many Requests) response with a Retry-After header,
  * you should update the rate limiter accordingly.
  */
-export const handleRateLimitResponse = (
-  provider: string,
-  retryAfterMs: number
-) =>
+export const handleRateLimitResponse = (provider: string, retryAfterMs: number) =>
   Effect.gen(function* () {
     const rateLimiter = yield* RateLimiterService;
 
@@ -63,13 +60,9 @@ export const checkStatusExample = Effect.gen(function* () {
   const status = yield* rateLimiter.getStatus("anthropic");
 
   if (status.isLimited) {
-    console.log(
-      `Rate limited until ${status.retryAfter?.toISOString()}`
-    );
+    console.log(`Rate limited until ${status.retryAfter?.toISOString()}`);
   } else {
-    console.log(
-      `${status.requestsRemaining}/${status.requestsLimit} requests remaining`
-    );
+    console.log(`${status.requestsRemaining}/${status.requestsLimit} requests remaining`);
   }
 });
 
@@ -122,12 +115,13 @@ export const createRateLimitedApiClient = (provider: string) => ({
           typeof result === "object" &&
           result !== null &&
           "status" in result &&
-          (result as any).status === 429
+          (result as { status: number }).status === 429
         ) {
           // Extract Retry-After header (in seconds or as a date)
-          const retryAfter = "headers" in result
-            ? ((result as any).headers as Record<string, string>)["retry-after"]
-            : undefined;
+          const retryAfter =
+            "headers" in result
+              ? ((result as { headers: Record<string, string> }).headers)["retry-after"]
+              : undefined;
 
           if (retryAfter) {
             const retryMs = Number.isNaN(Number(retryAfter))

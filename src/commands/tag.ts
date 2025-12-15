@@ -23,7 +23,7 @@ export const tagCommand = (args: ParsedArgs) =>
     const subcommand = args.positional[0];
 
     // Handle interactive mode (stubbed for now)
-    if (args.flags["interactive"] || args.flags["i"]) {
+    if (args.flags.interactive || args.flags.i) {
       console.log("Interactive tag manager is not yet implemented.");
       console.log("Use subcommands instead: add, remove, list, rename");
       return;
@@ -54,11 +54,9 @@ export const tagCommand = (args: ParsedArgs) =>
       }
 
       // Find prompt by ID or name
-      const prompt = yield* storage.getById(promptNameOrId).pipe(
-        Effect.catchTag("PromptNotFoundError", () =>
-          storage.getByName(promptNameOrId)
-        )
-      );
+      const prompt = yield* storage
+        .getById(promptNameOrId)
+        .pipe(Effect.catchTag("PromptNotFoundError", () => storage.getByName(promptNameOrId)));
 
       // Add tag to prompt
       yield* tagService.addTag(prompt.id, tagName);
@@ -78,11 +76,9 @@ export const tagCommand = (args: ParsedArgs) =>
       }
 
       // Find prompt by ID or name
-      const prompt = yield* storage.getById(promptNameOrId).pipe(
-        Effect.catchTag("PromptNotFoundError", () =>
-          storage.getByName(promptNameOrId)
-        )
-      );
+      const prompt = yield* storage
+        .getById(promptNameOrId)
+        .pipe(Effect.catchTag("PromptNotFoundError", () => storage.getByName(promptNameOrId)));
 
       // Remove tag from prompt
       yield* tagService.removeTag(prompt.id, tagName);

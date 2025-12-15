@@ -22,7 +22,7 @@ export const StreamingOutput: React.FC<StreamingOutputProps> = ({
     let fullText = "";
     let isCancelled = false;
 
-    (async () => {
+    void (async () => {
       try {
         for await (const chunk of stream) {
           if (isCancelled) break;

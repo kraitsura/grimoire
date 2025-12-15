@@ -83,9 +83,7 @@ interface ChainServiceImpl {
   /**
    * Save a chain to YAML file
    */
-  readonly saveChain: (
-    chain: ChainDefinition
-  ) => Effect.Effect<void, StorageError, never>;
+  readonly saveChain: (chain: ChainDefinition) => Effect.Effect<void, StorageError, never>;
 
   /**
    * List all available chains
@@ -110,10 +108,7 @@ interface ChainServiceImpl {
 /**
  * Chain service tag
  */
-export class ChainService extends Context.Tag("ChainService")<
-  ChainService,
-  ChainServiceImpl
->() {}
+export class ChainService extends Context.Tag("ChainService")<ChainService, ChainServiceImpl>() {}
 
 /**
  * Get the chains directory path
@@ -163,9 +158,7 @@ const detectCycles = (steps: ChainStep[]): string[] => {
 
   const hasCycle = (stepId: string, path: string[]): boolean => {
     if (recursionStack.has(stepId)) {
-      errors.push(
-        `Circular dependency detected: ${[...path, stepId].join(" -> ")}`
-      );
+      errors.push(`Circular dependency detected: ${[...path, stepId].join(" -> ")}`);
       return true;
     }
 
@@ -181,9 +174,7 @@ const detectCycles = (steps: ChainStep[]): string[] => {
     if (step?.dependsOn) {
       for (const depId of step.dependsOn) {
         if (!stepMap.has(depId)) {
-          errors.push(
-            `Step "${stepId}" depends on non-existent step "${depId}"`
-          );
+          errors.push(`Step "${stepId}" depends on non-existent step "${depId}"`);
         } else if (hasCycle(depId, [...path])) {
           return true;
         }
@@ -221,9 +212,9 @@ const validateVariableReferences = (
 
   // Check variable references in each step
   for (const step of chain.steps) {
-    for (const [varName, varValue] of Object.entries(step.variables)) {
+    for (const [_varName, varValue] of Object.entries(step.variables)) {
       // Find all {{...}} references
-      const refs = varValue.match(/\{\{([^}]+)\}\}/g) || [];
+      const refs = varValue.match(/\{\{([^}]+)\}\}/g) ?? [];
 
       for (const ref of refs) {
         const refContent = ref.slice(2, -2).trim();
@@ -232,16 +223,12 @@ const validateVariableReferences = (
         if (refContent.startsWith("input.")) {
           const inputVar = refContent.slice(6);
           if (!chain.variables[inputVar]) {
-            errors.push(
-              `Step "${step.id}" references undefined input variable: ${inputVar}`
-            );
+            errors.push(`Step "${step.id}" references undefined input variable: ${inputVar}`);
           }
         }
         // Check if it's a step output reference
         else if (!stepOutputs.has(refContent)) {
-          warnings.push(
-            `Step "${step.id}" references unknown output: ${refContent}`
-          );
+          warnings.push(`Step "${step.id}" references unknown output: ${refContent}`);
         }
       }
     }
@@ -420,9 +407,7 @@ export const ChainServiceLive = Layer.effect(
             );
 
             if (promptRows.length === 0) {
-              errors.push(
-                `Step "${step.id}" references non-existent prompt: ${step.prompt}`
-              );
+              errors.push(`Step "${step.id}" references non-existent prompt: ${step.prompt}`);
             }
           }
 

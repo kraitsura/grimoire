@@ -75,7 +75,7 @@ export const FormatPreview: React.FC<FormatPreviewProps> = ({
   const renderDiff = (change: FormatChange) => {
     const beforeLines = change.before.split("\n").slice(0, 3);
     const afterLines = change.after.split("\n").slice(0, 3);
-    const maxLines = Math.max(beforeLines.length, afterLines.length);
+    const _maxLines = Math.max(beforeLines.length, afterLines.length);
 
     return (
       <Box flexDirection="row" marginLeft={2}>
@@ -119,36 +119,24 @@ export const FormatPreview: React.FC<FormatPreviewProps> = ({
         </Text>
         <Box marginLeft={2}>
           <Text>
-            {errorCount > 0 && (
-              <Text color="red">{errorCount} errors </Text>
-            )}
-            {warningCount > 0 && (
-              <Text color="yellow">{warningCount} warnings </Text>
-            )}
+            {errorCount > 0 && <Text color="red">{errorCount} errors </Text>}
+            {warningCount > 0 && <Text color="yellow">{warningCount} warnings </Text>}
             {infoCount > 0 && <Text color="cyan">{infoCount} info</Text>}
           </Text>
         </Box>
         <Box marginLeft={2} flexDirection="column">
           {issues.slice(0, 5).map((issue, idx) => {
             const severityColor =
-              issue.severity === "error"
-                ? "red"
-                : issue.severity === "warning"
-                  ? "yellow"
-                  : "cyan";
+              issue.severity === "error" ? "red" : issue.severity === "warning" ? "yellow" : "cyan";
 
             return (
               <Text key={idx}>
-                <Text color={severityColor}>
-                  [{issue.severity.toUpperCase()}]
-                </Text>{" "}
-                Line {issue.line}: {issue.message}
+                <Text color={severityColor}>[{issue.severity.toUpperCase()}]</Text> Line{" "}
+                {issue.line}: {issue.message}
               </Text>
             );
           })}
-          {issues.length > 5 && (
-            <Text color="gray">... and {issues.length - 5} more</Text>
-          )}
+          {issues.length > 5 && <Text color="gray">... and {issues.length - 5} more</Text>}
         </Box>
       </Box>
     );
@@ -204,8 +192,8 @@ export const FormatPreview: React.FC<FormatPreviewProps> = ({
 
       <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
         <Text color="gray">
-          ↑/k: up | ↓/j: down | Space: toggle | a: select all | s: skip all |
-          Enter: apply | q/Esc: cancel
+          ↑/k: up | ↓/j: down | Space: toggle | a: select all | s: skip all | Enter: apply | q/Esc:
+          cancel
         </Text>
       </Box>
     </Box>

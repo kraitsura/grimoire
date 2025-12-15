@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text } from "ink";
 import { useInput } from "ink";
-import type { DiffResult, Hunk } from "../../../services/diff-service";
+import type { DiffResult } from "../../../services/diff-service";
 
 export interface DiffViewerProps {
   diff: DiffResult;
@@ -19,7 +19,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   const [scrollOffset, setScrollOffset] = useState(0);
 
   // Flatten all hunks into a list of lines
-  const lines: Array<{ type: "header" | "hunk" | "line"; content: string }> = [];
+  const lines: { type: "header" | "hunk" | "line"; content: string }[] = [];
 
   if (showStats) {
     lines.push({ type: "header", content: `--- old` });
@@ -135,8 +135,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
         <Box marginTop={1}>
           <Text color="gray" dimColor>
             {canScrollUp && "↑ "}
-            {scrollOffset + 1}-{Math.min(scrollOffset + height, totalLines)} of{" "}
-            {totalLines}
+            {scrollOffset + 1}-{Math.min(scrollOffset + height, totalLines)} of {totalLines}
             {canScrollDown && " ↓"}
           </Text>
           <Text dimColor> | j/k: scroll | g/G: top/bottom</Text>

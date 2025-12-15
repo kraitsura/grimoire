@@ -34,10 +34,7 @@ const extractVariables = (content: string): string[] => {
 /**
  * Apply variables to template content
  */
-const applyVariables = (
-  content: string,
-  variables: Record<string, string>
-): string => {
+const applyVariables = (content: string, variables: Record<string, string>): string => {
   let result = content;
   for (const [key, value] of Object.entries(variables)) {
     result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value);
@@ -197,10 +194,7 @@ export const TemplatesScreen: React.FC = () => {
 
               return (
                 <Box key={template.id} flexDirection="column">
-                  <Text
-                    inverse={isSelected}
-                    color={isSelected ? "white" : undefined}
-                  >
+                  <Text inverse={isSelected} color={isSelected ? "white" : undefined}>
                     {isSelected ? "> " : "  "}
                     <Text color="yellow">[T] </Text>
                     {template.name}
@@ -254,9 +248,7 @@ export const TemplatesScreen: React.FC = () => {
               {focusedField === index ? (
                 <TextInput
                   value={variables[variable] || ""}
-                  onChange={(v) =>
-                    setVariables((prev) => ({ ...prev, [variable]: v }))
-                  }
+                  onChange={(v) => setVariables((prev) => ({ ...prev, [variable]: v }))}
                   focused={true}
                 />
               ) : (
@@ -268,25 +260,15 @@ export const TemplatesScreen: React.FC = () => {
 
           {/* Output name field */}
           <Box marginTop={1}>
-            <Text
-              color={focusedField === templateVariables.length ? "cyan" : undefined}
-            >
+            <Text color={focusedField === templateVariables.length ? "cyan" : undefined}>
               Output name:{" ".repeat(4)}[
             </Text>
             {focusedField === templateVariables.length ? (
-              <TextInput
-                value={outputName}
-                onChange={setOutputName}
-                focused={true}
-              />
+              <TextInput value={outputName} onChange={setOutputName} focused={true} />
             ) : (
               <Text>{outputName}</Text>
             )}
-            <Text
-              color={focusedField === templateVariables.length ? "cyan" : undefined}
-            >
-              ]
-            </Text>
+            <Text color={focusedField === templateVariables.length ? "cyan" : undefined}>]</Text>
           </Box>
         </Box>
 

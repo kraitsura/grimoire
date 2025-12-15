@@ -79,9 +79,7 @@ const MetadataHeader: React.FC<{ prompt: Prompt }> = ({ prompt }) => {
       <Box gap={2}>
         <Text dimColor>Created: {formatDate(new Date(prompt.created))}</Text>
         <Text dimColor>Updated: {formatDate(new Date(prompt.updated))}</Text>
-        {prompt.version !== undefined && (
-          <Text dimColor>Version: {prompt.version}</Text>
-        )}
+        {prompt.version !== undefined && <Text dimColor>Version: {prompt.version}</Text>}
       </Box>
 
       {/* Special flags */}
@@ -91,9 +89,7 @@ const MetadataHeader: React.FC<{ prompt: Prompt }> = ({ prompt }) => {
             [Template]
           </Text>
         )}
-        {prompt.isFavorite && (
-          <Text color="yellow">★ Favorite</Text>
-        )}
+        {prompt.isFavorite && <Text color="yellow">★ Favorite</Text>}
         {prompt.isPinned && (
           <Text color="blue" dimColor>
             📌 Pinned
@@ -116,7 +112,11 @@ export const ViewerScreen: React.FC<ViewerScreenProps> = ({ promptId }) => {
   const { actions } = useAppState();
 
   // Fetch prompt data
-  const { result: prompt, error, loading } = useEffectRun(
+  const {
+    result: prompt,
+    error,
+    loading,
+  } = useEffectRun(
     Effect.gen(function* () {
       const storage = yield* StorageService;
       return yield* storage.getById(promptId);
@@ -182,24 +182,16 @@ export const ViewerScreen: React.FC<ViewerScreenProps> = ({ promptId }) => {
   if (error || !prompt) {
     return (
       <Box flexDirection="column" padding={1}>
-        <Text color="red">
-          Error: {error ? String(error) : "Prompt not found"}
-        </Text>
+        <Text color="red">Error: {error ? String(error) : "Prompt not found"}</Text>
         <Box marginTop={1}>
-          <ActionBar
-            actions={[
-              { key: "Esc", label: "Back" },
-            ]}
-          />
+          <ActionBar actions={[{ key: "Esc", label: "Back" }]} />
         </Box>
       </Box>
     );
   }
 
   // Split content into lines for scrolling
-  const contentLines = prompt.content.split("\n").map((line, idx) => (
-    <Text key={idx}>{line}</Text>
-  ));
+  const contentLines = prompt.content.split("\n").map((line, idx) => <Text key={idx}>{line}</Text>);
 
   // Calculate available height for content (terminal height - header - actions - padding)
   const contentHeight = 20; // Reasonable default, could be made dynamic
@@ -211,11 +203,7 @@ export const ViewerScreen: React.FC<ViewerScreenProps> = ({ promptId }) => {
 
       {/* Scrollable Content */}
       <Box marginBottom={1}>
-        <ScrollableBox
-          height={contentHeight}
-          focused={true}
-          showScrollIndicator={true}
-        >
+        <ScrollableBox height={contentHeight} focused={true} showScrollIndicator={true}>
           {contentLines}
         </ScrollableBox>
       </Box>

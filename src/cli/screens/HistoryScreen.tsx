@@ -210,10 +210,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ promptId }) => {
             return (
               <Box key={version.id} flexDirection="column" marginBottom={1}>
                 <Box>
-                  <Text
-                    inverse={isSelected}
-                    color={isSelected ? "white" : undefined}
-                  >
+                  <Text inverse={isSelected} color={isSelected ? "white" : undefined}>
                     {isSelected ? "> " : "  "}
                     <Text bold>v{version.version}</Text>
                     {isHead && <Text color="green"> (HEAD)</Text>}
@@ -228,8 +225,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ promptId }) => {
                 {index < versions.length - 1 && (
                   <Text dimColor>
                     {"    "}
-                    <Text color="green">+{Math.floor(Math.random() * 20)}</Text>
-                    {" "}
+                    <Text color="green">+{Math.floor(Math.random() * 20)}</Text>{" "}
                     <Text color="red">-{Math.floor(Math.random() * 10)}</Text>
                     {" lines"}
                   </Text>

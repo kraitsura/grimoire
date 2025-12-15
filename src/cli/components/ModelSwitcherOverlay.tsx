@@ -10,7 +10,10 @@ interface ModelOption {
 }
 
 // Available models per provider
-const PROVIDER_MODELS: Record<string, { label: string; models: Array<{ value: string; label: string }> }> = {
+const PROVIDER_MODELS: Record<
+  string,
+  { label: string; models: { value: string; label: string }[] }
+> = {
   openai: {
     label: "OpenAI",
     models: [
@@ -55,10 +58,7 @@ export interface ModelSwitcherOverlayProps {
   onClose: () => void;
 }
 
-export const ModelSwitcherOverlay: React.FC<ModelSwitcherOverlayProps> = ({
-  visible,
-  onClose,
-}) => {
+export const ModelSwitcherOverlay: React.FC<ModelSwitcherOverlayProps> = ({ visible, onClose }) => {
   const { state, actions } = useAppState();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -82,8 +82,7 @@ export const ModelSwitcherOverlay: React.FC<ModelSwitcherOverlayProps> = ({
   const currentIndex = useMemo(() => {
     return allModels.findIndex(
       (m) =>
-        m.provider === state.llmConfig.currentProvider &&
-        m.model === state.llmConfig.currentModel
+        m.provider === state.llmConfig.currentProvider && m.model === state.llmConfig.currentModel
     );
   }, [allModels, state.llmConfig]);
 
@@ -128,13 +127,7 @@ export const ModelSwitcherOverlay: React.FC<ModelSwitcherOverlayProps> = ({
   let currentProvider = "";
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor="cyan"
-      paddingX={2}
-      paddingY={1}
-    >
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1}>
       <Box marginBottom={1}>
         <Text bold color="cyan">
           Switch Model

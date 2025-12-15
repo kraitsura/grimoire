@@ -79,10 +79,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({
     { isActive: focused }
   );
 
-  const visibleVersions = versions.slice(
-    scrollOffset,
-    scrollOffset + height
-  );
+  const visibleVersions = versions.slice(scrollOffset, scrollOffset + height);
 
   const canScrollUp = scrollOffset > 0;
   const canScrollDown = scrollOffset + height < totalVersions;
@@ -122,16 +119,11 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({
               {/* Version item */}
               <Box>
                 {/* Selection indicator */}
-                <Text color={isSelected ? "blue" : undefined}>
-                  {isSelected ? "▶ " : "  "}
-                </Text>
+                <Text color={isSelected ? "blue" : undefined}>{isSelected ? "▶ " : "  "}</Text>
 
                 {/* Version info */}
                 <Box gap={1}>
-                  <Text
-                    bold={isSelected}
-                    color={isSelected ? "blue" : undefined}
-                  >
+                  <Text bold={isSelected} color={isSelected ? "blue" : undefined}>
                     v{version.version}
                   </Text>
 
@@ -139,9 +131,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({
 
                   <Text dimColor>{formatDate(version.createdAt)}</Text>
 
-                  {version.changeReason && (
-                    <Text color="yellow">- {version.changeReason}</Text>
-                  )}
+                  {version.changeReason && <Text color="yellow">- {version.changeReason}</Text>}
 
                   {version.parentVersion && (
                     <Text dimColor>[parent: v{version.parentVersion}]</Text>
@@ -152,12 +142,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({
               {/* Expanded diff view */}
               {isExpanded && diff && (
                 <Box marginTop={1} marginBottom={1} marginLeft={2}>
-                  <DiffViewer
-                    diff={diff}
-                    focused={false}
-                    height={10}
-                    showStats={true}
-                  />
+                  <DiffViewer diff={diff} focused={false} height={10} showStats={true} />
                 </Box>
               )}
             </Box>
@@ -171,8 +156,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({
         {(canScrollUp || canScrollDown) && (
           <Text color="gray" dimColor>
             {canScrollUp && "↑ "}
-            {scrollOffset + 1}-{Math.min(scrollOffset + height, totalVersions)}{" "}
-            of {totalVersions}
+            {scrollOffset + 1}-{Math.min(scrollOffset + height, totalVersions)} of {totalVersions}
             {canScrollDown && " ↓"}
           </Text>
         )}

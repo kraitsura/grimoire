@@ -280,11 +280,11 @@ export const ChainScreen: React.FC<ChainScreenProps> = ({ chainName }) => {
               </Box>
               <Box>
                 <Text dimColor>{"  "}</Text>
-                <Text dimColor>  prompt: {step.prompt}</Text>
+                <Text dimColor> prompt: {step.prompt}</Text>
               </Box>
               <Box>
                 <Text dimColor>{"  "}</Text>
-                <Text dimColor>  output: {step.output}</Text>
+                <Text dimColor> output: {step.output}</Text>
               </Box>
               {index < selectedChain.steps.length - 1 && (
                 <Box>

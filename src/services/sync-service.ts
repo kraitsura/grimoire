@@ -58,10 +58,7 @@ interface SyncServiceImpl {
 /**
  * Sync service tag
  */
-export class SyncService extends Context.Tag("SyncService")<
-  SyncService,
-  SyncServiceImpl
->() {}
+export class SyncService extends Context.Tag("SyncService")<SyncService, SyncServiceImpl>() {}
 
 /**
  * Database row structure for prompts table
@@ -116,9 +113,7 @@ export const SyncLive = Layer.effect(
           );
 
           // Create a map of file paths to database records for quick lookup
-          const dbPromptsByPath = new Map(
-            dbPrompts.map((p) => [p.file_path, p])
-          );
+          const dbPromptsByPath = new Map(dbPrompts.map((p) => [p.file_path, p]));
 
           // Create a set of file paths that exist on disk
           const filePathSet = new Set(filePaths);
@@ -168,16 +163,12 @@ export const SyncLive = Layer.effect(
                 if (frontmatter.tags && frontmatter.tags.length > 0) {
                   for (const tagName of frontmatter.tags) {
                     // Insert tag if it doesn't exist
-                    yield* sql.run(
-                      `INSERT OR IGNORE INTO tags (name) VALUES (?)`,
-                      [tagName]
-                    );
+                    yield* sql.run(`INSERT OR IGNORE INTO tags (name) VALUES (?)`, [tagName]);
 
                     // Get tag ID
-                    const tagRows = yield* sql.query<TagRow>(
-                      `SELECT id FROM tags WHERE name = ?`,
-                      [tagName]
-                    );
+                    const tagRows = yield* sql.query<TagRow>(`SELECT id FROM tags WHERE name = ?`, [
+                      tagName,
+                    ]);
 
                     if (tagRows.length > 0) {
                       // Link prompt to tag
@@ -215,24 +206,17 @@ export const SyncLive = Layer.effect(
                 );
 
                 // Update tags - remove old ones and add new ones
-                yield* sql.run(
-                  `DELETE FROM prompt_tags WHERE prompt_id = ?`,
-                  [frontmatter.id]
-                );
+                yield* sql.run(`DELETE FROM prompt_tags WHERE prompt_id = ?`, [frontmatter.id]);
 
                 if (frontmatter.tags && frontmatter.tags.length > 0) {
                   for (const tagName of frontmatter.tags) {
                     // Insert tag if it doesn't exist
-                    yield* sql.run(
-                      `INSERT OR IGNORE INTO tags (name) VALUES (?)`,
-                      [tagName]
-                    );
+                    yield* sql.run(`INSERT OR IGNORE INTO tags (name) VALUES (?)`, [tagName]);
 
                     // Get tag ID
-                    const tagRows = yield* sql.query<TagRow>(
-                      `SELECT id FROM tags WHERE name = ?`,
-                      [tagName]
-                    );
+                    const tagRows = yield* sql.query<TagRow>(`SELECT id FROM tags WHERE name = ?`, [
+                      tagName,
+                    ]);
 
                     if (tagRows.length > 0) {
                       // Link prompt to tag
@@ -284,10 +268,9 @@ export const SyncLive = Layer.effect(
           const hash = yield* storage.computeHash(fullContent);
 
           // Check if prompt exists in database
-          const existing = yield* sql.query<PromptRow>(
-            `SELECT id FROM prompts WHERE id = ?`,
-            [frontmatter.id]
-          );
+          const existing = yield* sql.query<PromptRow>(`SELECT id FROM prompts WHERE id = ?`, [
+            frontmatter.id,
+          ]);
 
           if (existing.length === 0) {
             // Insert new record
@@ -343,24 +326,17 @@ export const SyncLive = Layer.effect(
           }
 
           // Update tags
-          yield* sql.run(
-            `DELETE FROM prompt_tags WHERE prompt_id = ?`,
-            [frontmatter.id]
-          );
+          yield* sql.run(`DELETE FROM prompt_tags WHERE prompt_id = ?`, [frontmatter.id]);
 
           if (frontmatter.tags && frontmatter.tags.length > 0) {
             for (const tagName of frontmatter.tags) {
               // Insert tag if it doesn't exist
-              yield* sql.run(
-                `INSERT OR IGNORE INTO tags (name) VALUES (?)`,
-                [tagName]
-              );
+              yield* sql.run(`INSERT OR IGNORE INTO tags (name) VALUES (?)`, [tagName]);
 
               // Get tag ID
-              const tagRows = yield* sql.query<TagRow>(
-                `SELECT id FROM tags WHERE name = ?`,
-                [tagName]
-              );
+              const tagRows = yield* sql.query<TagRow>(`SELECT id FROM tags WHERE name = ?`, [
+                tagName,
+              ]);
 
               if (tagRows.length > 0) {
                 // Link prompt to tag
@@ -392,9 +368,7 @@ export const SyncLive = Layer.effect(
           );
 
           // Create a map for quick lookup
-          const dbPromptsByPath = new Map(
-            dbPrompts.map((p) => [p.file_path, p])
-          );
+          const dbPromptsByPath = new Map(dbPrompts.map((p) => [p.file_path, p]));
 
           // Check for orphaned DB records (DB has record but file doesn't exist)
           for (const dbPrompt of dbPrompts) {
@@ -424,7 +398,7 @@ export const SyncLive = Layer.effect(
                   result.hashMismatches.push(filePath);
                   result.isValid = false;
                 }
-              } catch (error) {
+              } catch {
                 // If we can't read the file, consider it a hash mismatch
                 result.hashMismatches.push(filePath);
                 result.isValid = false;

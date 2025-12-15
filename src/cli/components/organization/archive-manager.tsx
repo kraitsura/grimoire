@@ -12,7 +12,7 @@ import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { Effect } from "effect";
 import { useEffectRun, useEffectCallback } from "../../context";
-import { ArchiveService, type ArchivedPrompt } from "../../../services";
+import { ArchiveService } from "../../../services";
 import { ScrollableBox } from "../input/scrollable-box";
 
 export interface ArchiveManagerProps {
@@ -28,7 +28,11 @@ export const ArchiveManager: React.FC<ArchiveManagerProps> = ({ onExit, onRestor
   const [selectedPrompts, setSelectedPrompts] = useState<Set<string>>(new Set());
 
   // Load archived prompts
-  const { result: archivedPrompts, loading, error } = useEffectRun(
+  const {
+    result: archivedPrompts,
+    loading,
+    error,
+  } = useEffectRun(
     Effect.gen(function* () {
       const archiveService = yield* ArchiveService;
       return yield* archiveService.list();
@@ -99,9 +103,7 @@ export const ArchiveManager: React.FC<ArchiveManagerProps> = ({ onExit, onRestor
         if (key.upArrow || input === "k") {
           setSelectedIndex((prev) => Math.max(0, prev - 1));
         } else if (key.downArrow || input === "j") {
-          setSelectedIndex((prev) =>
-            Math.min((archivedPrompts?.length ?? 1) - 1, prev + 1)
-          );
+          setSelectedIndex((prev) => Math.min((archivedPrompts?.length ?? 1) - 1, prev + 1));
         } else if (input === " ") {
           const selected = archivedPrompts?.[selectedIndex];
           if (selected) {
@@ -201,8 +203,7 @@ export const ArchiveManager: React.FC<ArchiveManagerProps> = ({ onExit, onRestor
                     bold={isSelected}
                     inverse={isSelected}
                   >
-                    {isSelected ? "> " : "  "}
-                    [{isChecked ? "x" : " "}]{" "}
+                    {isSelected ? "> " : "  "}[{isChecked ? "x" : " "}]{" "}
                     {prompt.name.slice(0, 26).padEnd(28)}
                     {archivedDate.padEnd(12)}
                     {prompt.originalPath.slice(0, 40)}
@@ -235,14 +236,15 @@ export const ArchiveManager: React.FC<ArchiveManagerProps> = ({ onExit, onRestor
                 <Box marginBottom={1} flexDirection="column">
                   <Text color="gray">Selected prompts:</Text>
                   {Array.from(selectedPrompts).map((name) => (
-                    <Text key={name} color="gray">  - {name}</Text>
+                    <Text key={name} color="gray">
+                      {" "}
+                      - {name}
+                    </Text>
                   ))}
                 </Box>
               ) : (
                 <Box marginBottom={1}>
-                  <Text color="gray">
-                    Will restore: {archivedPrompts[selectedIndex]?.name}
-                  </Text>
+                  <Text color="gray">Will restore: {archivedPrompts[selectedIndex]?.name}</Text>
                 </Box>
               )}
               <Text color="gray">Press y to confirm, any other key to cancel</Text>
@@ -264,7 +266,8 @@ export const ArchiveManager: React.FC<ArchiveManagerProps> = ({ onExit, onRestor
               </Box>
               <Box marginBottom={1}>
                 <Text color="red">
-                  This will delete {archivedPrompts.length} archived prompt{archivedPrompts.length !== 1 ? "s" : ""}.
+                  This will delete {archivedPrompts.length} archived prompt
+                  {archivedPrompts.length !== 1 ? "s" : ""}.
                 </Text>
               </Box>
               <Box marginBottom={1}>

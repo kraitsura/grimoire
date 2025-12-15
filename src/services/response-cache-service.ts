@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
  */
 export interface LLMRequest {
   model: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: { role: string; content: string }[];
   temperature?: number;
   maxTokens?: number;
 }
@@ -88,18 +88,13 @@ interface ResponseCacheServiceImpl {
    * Get cached response for a request
    * Returns None if not found or expired
    */
-  readonly get: (
-    request: LLMRequest
-  ) => Effect.Effect<Option.Option<LLMResponse>, SqlError>;
+  readonly get: (request: LLMRequest) => Effect.Effect<Option.Option<LLMResponse>, SqlError>;
 
   /**
    * Store a response in the cache
    * Evicts oldest entries if size limit exceeded
    */
-  readonly set: (
-    request: LLMRequest,
-    response: LLMResponse
-  ) => Effect.Effect<void, SqlError>;
+  readonly set: (request: LLMRequest, response: LLMResponse) => Effect.Effect<void, SqlError>;
 
   /**
    * Clear all cached responses
@@ -206,10 +201,7 @@ export const ResponseCacheServiceLive = Layer.effect(
      * Remove expired entries
      */
     const cleanupExpired = (): Effect.Effect<void, SqlError> =>
-      sql.run(
-        "DELETE FROM response_cache WHERE expires_at < ?",
-        [new Date().toISOString()]
-      );
+      sql.run("DELETE FROM response_cache WHERE expires_at < ?", [new Date().toISOString()]);
 
     /**
      * Evict oldest entries until size limit is met

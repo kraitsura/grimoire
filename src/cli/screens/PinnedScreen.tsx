@@ -186,10 +186,7 @@ export const PinnedScreen: React.FC = () => {
 
           return (
             <Box key={prompt.id}>
-              <Text
-                inverse={isSelected}
-                color={isSelected ? "white" : undefined}
-              >
+              <Text inverse={isSelected} color={isSelected ? "white" : undefined}>
                 {isSelected ? "> " : "  "}
                 {reorderMode ? `${index + 1}. ` : ""}
                 <Text color="blue">{"pin "}</Text>

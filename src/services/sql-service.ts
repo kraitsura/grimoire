@@ -19,10 +19,7 @@ interface SqlServiceImpl {
    * @param params - Optional query parameters
    * @returns Effect that succeeds with array of results or fails with SqlError
    */
-  readonly query: <T>(
-    sql: string,
-    params?: SQLQueryBindings[]
-  ) => Effect.Effect<T[], SqlError>;
+  readonly query: <T>(sql: string, params?: SQLQueryBindings[]) => Effect.Effect<T[], SqlError>;
 
   /**
    * Execute a non-SELECT query (INSERT, UPDATE, DELETE, etc.)
@@ -37,18 +34,13 @@ interface SqlServiceImpl {
    * @param effect - Effect to run within transaction
    * @returns Effect that succeeds with result or fails with error or SqlError
    */
-  readonly transaction: <A, E>(
-    effect: Effect.Effect<A, E>
-  ) => Effect.Effect<A, E | SqlError>;
+  readonly transaction: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E | SqlError>;
 }
 
 /**
  * SQL service tag
  */
-export class SqlService extends Context.Tag("SqlService")<
-  SqlService,
-  SqlServiceImpl
->() {}
+export class SqlService extends Context.Tag("SqlService")<SqlService, SqlServiceImpl>() {}
 
 /**
  * Get the database path in the user's home directory

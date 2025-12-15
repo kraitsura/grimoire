@@ -31,12 +31,12 @@ export const formatCommand = (args: ParsedArgs) =>
     const formatService = yield* FormatService;
     const storage = yield* StorageService;
 
-    const checkMode = args.flags["check"];
-    const fixMode = args.flags["fix"] || !checkMode; // default to fix mode
-    const allFlag = args.flags["all"];
+    const checkMode = args.flags.check;
+    const fixMode = args.flags.fix || !checkMode; // default to fix mode
+    const allFlag = args.flags.all;
 
     // Get prompts to format
-    let promptsToFormat: Array<{ id: string; name: string; content: string }>;
+    let promptsToFormat: { id: string; name: string; content: string }[];
 
     if (allFlag) {
       // Format all prompts
@@ -57,15 +57,11 @@ export const formatCommand = (args: ParsedArgs) =>
       }
 
       // Find prompt - try by ID first, then fall back to name
-      const prompt = yield* storage.getById(nameOrId).pipe(
-        Effect.catchTag("PromptNotFoundError", () =>
-          storage.getByName(nameOrId)
-        )
-      );
+      const prompt = yield* storage
+        .getById(nameOrId)
+        .pipe(Effect.catchTag("PromptNotFoundError", () => storage.getByName(nameOrId)));
 
-      promptsToFormat = [
-        { id: prompt.id, name: prompt.name, content: prompt.content },
-      ];
+      promptsToFormat = [{ id: prompt.id, name: prompt.name, content: prompt.content }];
     }
 
     if (checkMode) {
@@ -82,16 +78,13 @@ export const formatCommand = (args: ParsedArgs) =>
  */
 const checkPrompts = (
   formatService: Context.Tag.Service<FormatService>,
-  prompts: Array<{ id: string; name: string; content: string }>
+  prompts: { id: string; name: string; content: string }[]
 ) =>
   Effect.gen(function* () {
     let totalIssues = 0;
 
     for (const prompt of prompts) {
-      const result = yield* formatService.checkPrompt(
-        prompt.content,
-        DEFAULT_CONFIG
-      );
+      const result = yield* formatService.checkPrompt(prompt.content, DEFAULT_CONFIG);
 
       if (result.issues.length > 0) {
         console.log(`\nChecking: ${prompt.name}\n`);
@@ -133,17 +126,14 @@ const checkPrompts = (
 const fixPrompts = (
   formatService: Context.Tag.Service<FormatService>,
   storage: Context.Tag.Service<StorageService>,
-  prompts: Array<{ id: string; name: string; content: string }>
+  prompts: { id: string; name: string; content: string }[]
 ) =>
   Effect.gen(function* () {
     for (const prompt of prompts) {
       console.log(`\nFormatting: ${prompt.name}\n`);
 
       // Format the content
-      const result = yield* formatService.formatPrompt(
-        prompt.content,
-        DEFAULT_CONFIG
-      );
+      const result = yield* formatService.formatPrompt(prompt.content, DEFAULT_CONFIG);
 
       if (result.changes === 0) {
         console.log("No changes needed.\n");
@@ -151,14 +141,8 @@ const fixPrompts = (
       }
 
       // Check what was fixed
-      const checkBefore = yield* formatService.checkPrompt(
-        prompt.content,
-        DEFAULT_CONFIG
-      );
-      const checkAfter = yield* formatService.checkPrompt(
-        result.content,
-        DEFAULT_CONFIG
-      );
+      const checkBefore = yield* formatService.checkPrompt(prompt.content, DEFAULT_CONFIG);
+      const _checkAfter = yield* formatService.checkPrompt(result.content, DEFAULT_CONFIG);
 
       // Display what was fixed
       console.log("Fixed:");
@@ -166,7 +150,7 @@ const fixPrompts = (
       // Count fixes by rule
       const fixesByRule = new Map<string, number>();
       for (const issue of checkBefore.issues) {
-        fixesByRule.set(issue.rule, (fixesByRule.get(issue.rule) || 0) + 1);
+        fixesByRule.set(issue.rule, (fixesByRule.get(issue.rule) ?? 0) + 1);
       }
 
       // Display friendly messages for each fix

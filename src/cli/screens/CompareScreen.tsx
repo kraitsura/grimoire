@@ -279,7 +279,7 @@ export const CompareScreen: React.FC = () => {
         <Box flexDirection="column" gap={1}>
           <Box>
             <Text color={focusedField === 0 ? "cyan" : undefined}>
-              Model:       [{config.model.padEnd(20)}]
+              Model: [{config.model.padEnd(20)}]
             </Text>
             {focusedField === 0 && <Text dimColor> (left/right)</Text>}
           </Box>
@@ -360,20 +360,14 @@ export const CompareScreen: React.FC = () => {
               width="50%"
               borderStyle="single"
               borderColor={
-                winner === result.promptId
-                  ? "green"
-                  : focusedPanel === index
-                    ? "cyan"
-                    : undefined
+                winner === result.promptId ? "green" : focusedPanel === index ? "cyan" : undefined
               }
               paddingX={1}
             >
               <Box marginBottom={1}>
                 <Text bold color={focusedPanel === index ? "cyan" : undefined}>
                   {result.promptName}
-                  {winner === result.promptId && (
-                    <Text color="green"> (winner)</Text>
-                  )}
+                  {winner === result.promptId && <Text color="green"> (winner)</Text>}
                 </Text>
               </Box>
 

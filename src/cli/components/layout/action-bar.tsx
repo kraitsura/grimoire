@@ -1,13 +1,13 @@
-import React from "react"
-import { Box, Text } from "ink"
+import React from "react";
+import { Box, Text } from "ink";
 
 export interface Action {
-  key: string
-  label: string
+  key: string;
+  label: string;
 }
 
 interface ActionBarProps {
-  actions: Action[]
+  actions: Action[];
 }
 
 export const ActionBar: React.FC<ActionBarProps> = ({ actions }) => (
@@ -19,4 +19,4 @@ export const ActionBar: React.FC<ActionBarProps> = ({ actions }) => (
       </Text>
     ))}
   </Box>
-)
+);

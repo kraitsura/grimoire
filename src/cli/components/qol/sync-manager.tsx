@@ -1,10 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import type {
-  SyncStatus,
-  SyncResult,
-  Resolution,
-} from "../../../services/remote-sync-service";
+import type { SyncStatus, SyncResult, Resolution } from "../../../services/remote-sync-service";
 
 export interface SyncManagerProps {
   status: SyncStatus;
@@ -29,9 +25,9 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
 }) => {
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [lastResult, setLastResult] = useState<SyncResult | null>(null);
+  const [lastResult, _setLastResult] = useState<SyncResult | null>(null);
 
-  useInput((input, key) => {
+  useInput((input, _key) => {
     if (syncing) return; // Ignore input while syncing
 
     // Push
@@ -78,7 +74,7 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
         <Box flexDirection="column">
           <Text color="red">✗ Not Configured</Text>
           <Box marginLeft={2}>
-            <Text color="gray">Press 'c' to configure sync</Text>
+            <Text color="gray">Press {`'c'`} to configure sync</Text>
           </Box>
         </Box>
       );
@@ -92,7 +88,7 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
             Remote: <Text color="cyan">{status.remote}</Text>
           </Text>
           <Text color="gray">
-            Branch: <Text color="cyan">{status.branch || "main"}</Text>
+            Branch: <Text color="cyan">{status.branch ?? "main"}</Text>
           </Text>
         </Box>
       </Box>
@@ -123,14 +119,8 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
               ↓ {status.behind} commit{status.behind > 1 ? "s" : ""} behind
             </Text>
           )}
-          {!isAhead && !isBehind && (
-            <Text color="green">✓ In sync with remote</Text>
-          )}
-          {lastSync && (
-            <Text color="gray">
-              Last sync: {lastSync.toLocaleTimeString()}
-            </Text>
-          )}
+          {!isAhead && !isBehind && <Text color="green">✓ In sync with remote</Text>}
+          {lastSync && <Text color="gray">Last sync: {lastSync.toLocaleTimeString()}</Text>}
         </Box>
       </Box>
     );
@@ -153,9 +143,7 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
             </Text>
           ))}
           {pendingChanges.length > 10 && (
-            <Text color="gray">
-              ... and {pendingChanges.length - 10} more
-            </Text>
+            <Text color="gray">... and {pendingChanges.length - 10} more</Text>
           )}
         </Box>
       </Box>
@@ -179,9 +167,7 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
         <Text bold color="red">
           ⚠ Merge Conflicts Detected
         </Text>
-        <Text color="gray">
-          Press 'x' to resolve conflicts or use 'p' to force push
-        </Text>
+        <Text color="gray">Press {`'x'`} to resolve conflicts or use {`'p'`} to force push</Text>
       </Box>
     );
   };
@@ -192,13 +178,7 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
     }
 
     return (
-      <Box
-        marginTop={1}
-        marginBottom={1}
-        borderStyle="single"
-        borderColor="cyan"
-        paddingX={1}
-      >
+      <Box marginTop={1} marginBottom={1} borderStyle="single" borderColor="cyan" paddingX={1}>
         <Text color="cyan">Syncing...</Text>
       </Box>
     );
@@ -214,17 +194,11 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
 
     return (
       <Box marginBottom={1} flexDirection="column">
-        <Text color={resultColor}>
-          {resultIcon} Last Operation
-        </Text>
+        <Text color={resultColor}>{resultIcon} Last Operation</Text>
         <Box marginLeft={2} flexDirection="column">
-          <Text color="gray">
-            Files changed: {lastResult.filesChanged}
-          </Text>
+          <Text color="gray">Files changed: {lastResult.filesChanged}</Text>
           {lastResult.conflicts.length > 0 && (
-            <Text color="red">
-              Conflicts: {lastResult.conflicts.length}
-            </Text>
+            <Text color="red">Conflicts: {lastResult.conflicts.length}</Text>
           )}
         </Box>
       </Box>

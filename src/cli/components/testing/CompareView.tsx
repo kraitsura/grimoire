@@ -24,7 +24,7 @@ export const CompareView: React.FC<CompareViewProps> = ({
 }) => {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
-  useInput((input, key) => {
+  useInput((input, _key) => {
     if (!showVoting) return;
 
     // Number keys for voting (1-9)
@@ -42,7 +42,7 @@ export const CompareView: React.FC<CompareViewProps> = ({
 
   const columnWidth = Math.floor((process.stdout.columns || 80) / results.length) - 2;
 
-  const truncateText = (text: string, maxLines: number = 10): string => {
+  const truncateText = (text: string, maxLines = 10): string => {
     const lines = text.split("\n");
     if (lines.length <= maxLines) return text;
     return lines.slice(0, maxLines).join("\n") + "\n...";
