@@ -207,10 +207,10 @@ const checkAgentMdFile = (
  * Check if all enabled skills have files in skills directory
  */
 const checkEnabledSkillsHaveFiles = (
-  projectPath: string,
-  stateService: typeof SkillStateService.Type
+  projectPath: string
 ): Effect.Effect<DiagnosticIssue[], DoctorError> =>
   Effect.gen(function* () {
+    const stateService = yield* SkillStateService;
     const issues: DiagnosticIssue[] = [];
     const projectState = yield* stateService.getProjectState(projectPath);
 
@@ -254,10 +254,10 @@ const checkEnabledSkillsHaveFiles = (
  * Check for orphaned skill files (files not in state)
  */
 const checkOrphanedSkillFiles = (
-  projectPath: string,
-  stateService: typeof SkillStateService.Type
+  projectPath: string
 ): Effect.Effect<DiagnosticIssue[], DoctorError> =>
   Effect.gen(function* () {
+    const stateService = yield* SkillStateService;
     const issues: DiagnosticIssue[] = [];
     const projectState = yield* stateService.getProjectState(projectPath);
 
@@ -338,11 +338,11 @@ const checkOrphanedSkillFiles = (
  * Check state file consistency
  */
 const checkStateConsistency = (
-  projectPath: string,
-  stateService: typeof SkillStateService.Type,
-  cacheService: typeof SkillCacheService.Type
+  projectPath: string
 ): Effect.Effect<DiagnosticIssue[], DoctorError> =>
   Effect.gen(function* () {
+    const stateService = yield* SkillStateService;
+    const cacheService = yield* SkillCacheService;
     const issues: DiagnosticIssue[] = [];
     const projectState = yield* stateService.getProjectState(projectPath);
 
@@ -389,35 +389,35 @@ export const skillsDoctor = (args: ParsedArgs) =>
     const allIssues: DiagnosticIssue[] = [];
 
     // Run all checks
-    const initIssue = yield* checkProjectInitialized(projectPath, stateService);
+    const initIssue = yield* checkProjectInitialized(projectPath);
     if (initIssue) {
       allIssues.push(initIssue);
     } else {
       console.log(`${colors.green}✓${colors.reset} Project initialized`);
     }
 
-    const mdIssue = yield* checkAgentMdFile(projectPath, stateService);
+    const mdIssue = yield* checkAgentMdFile(projectPath);
     if (mdIssue) {
       allIssues.push(mdIssue);
     } else {
       console.log(`${colors.green}✓${colors.reset} Agent MD file has valid managed section`);
     }
 
-    const enabledIssues = yield* checkEnabledSkillsHaveFiles(projectPath, stateService);
+    const enabledIssues = yield* checkEnabledSkillsHaveFiles(projectPath);
     if (enabledIssues.length === 0) {
       console.log(`${colors.green}✓${colors.reset} All enabled skills have files`);
     } else {
       allIssues.push(...enabledIssues);
     }
 
-    const orphanedIssues = yield* checkOrphanedSkillFiles(projectPath, stateService);
+    const orphanedIssues = yield* checkOrphanedSkillFiles(projectPath);
     if (orphanedIssues.length === 0) {
       console.log(`${colors.green}✓${colors.reset} No orphaned skill files`);
     } else {
       allIssues.push(...orphanedIssues);
     }
 
-    const stateIssues = yield* checkStateConsistency(projectPath, stateService, cacheService);
+    const stateIssues = yield* checkStateConsistency(projectPath);
     if (stateIssues.length === 0) {
       console.log(`${colors.green}✓${colors.reset} State file consistent`);
     } else {

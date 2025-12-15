@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 7
+iteration: 8
 max_iterations: 30
 completion_promise: "Finished feature:grimoire-cli"
 started_at: "2025-12-15T18:42:49Z"
