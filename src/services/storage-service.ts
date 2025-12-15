@@ -5,10 +5,10 @@
  * to provide a unified interface for managing prompts.
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, rename } from "node:fs/promises";
+import { mkdir, rename, appendFile } from "node:fs/promises";
 import type { Prompt, Frontmatter } from "../models";
 import {
   StorageError,
@@ -20,6 +20,26 @@ import { SqlService } from "./sql-service";
 import { PromptStorageService } from "./prompt-storage-service";
 import { SyncService } from "./sync-service";
 import { sanitizeFtsQuery } from "./search-service";
+
+/**
+ * Log file path for error tracking
+ */
+const getErrorLogPath = (): string => join(homedir(), ".grimoire", "errors.log");
+
+/**
+ * Log an error to the errors.log file
+ * Fails silently if logging itself fails (we don't want logging to break the app)
+ */
+const logError = (context: string, id: string, error: unknown): Effect.Effect<void, never> =>
+  Effect.tryPromise({
+    try: async () => {
+      const timestamp = new Date().toISOString();
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const logLine = `${timestamp} | ${context} | ${id} | ${errorMessage}\n`;
+      await appendFile(getErrorLogPath(), logLine);
+    },
+    catch: () => undefined, // Silently ignore logging failures
+  }).pipe(Effect.ignore);
 
 /**
  * Input for creating a new prompt
@@ -180,14 +200,10 @@ export const StorageServiceLive = Layer.effect(
           "SELECT * FROM prompts ORDER BY updated_at DESC"
         );
 
-        // Read content from files and get tags
-        const prompts: Prompt[] = [];
-        for (const row of rows) {
-          try {
-            // Read file content
+        // Process each row, logging failures and converting to None
+        const processRow = (row: PromptRow) =>
+          Effect.gen(function* () {
             const parsed = yield* promptStorage.readPrompt(row.file_path);
-
-            // Get tags for this prompt
             const tagRows = yield* sql.query<TagRow>(
               `SELECT t.name
                FROM tags t
@@ -196,15 +212,15 @@ export const StorageServiceLive = Layer.effect(
               [row.id]
             );
             const tags = tagRows.map((t) => t.name);
+            return rowToPrompt(row, parsed.content, tags);
+          }).pipe(
+            Effect.tapError((error) => logError("getAll", row.id, error)),
+            Effect.option
+          );
 
-            prompts.push(rowToPrompt(row, parsed.content, tags));
-          } catch (error) {
-            // Skip prompts that can't be read
-            continue;
-          }
-        }
-
-        return prompts;
+        // Process all rows and filter out failures (None values)
+        const results = yield* Effect.all(rows.map(processRow));
+        return results.filter(Option.isSome).map((opt) => opt.value);
       }),
 
       getById: (id: string) =>
@@ -495,14 +511,10 @@ export const StorageServiceLive = Layer.effect(
 
           const rows = yield* sql.query<PromptRow>(query, tags);
 
-          // Read content from files and get all tags for each prompt
-          const prompts: Prompt[] = [];
-          for (const row of rows) {
-            try {
-              // Read file content
+          // Process each row, logging failures and converting to None
+          const processRow = (row: PromptRow) =>
+            Effect.gen(function* () {
               const parsed = yield* promptStorage.readPrompt(row.file_path);
-
-              // Get tags for this prompt
               const tagRows = yield* sql.query<TagRow>(
                 `SELECT t.name
                  FROM tags t
@@ -511,15 +523,15 @@ export const StorageServiceLive = Layer.effect(
                 [row.id]
               );
               const promptTags = tagRows.map((t) => t.name);
+              return rowToPrompt(row, parsed.content, promptTags);
+            }).pipe(
+              Effect.tapError((error) => logError("findByTags", row.id, error)),
+              Effect.option
+            );
 
-              prompts.push(rowToPrompt(row, parsed.content, promptTags));
-            } catch (error) {
-              // Skip prompts that can't be read
-              continue;
-            }
-          }
-
-          return prompts;
+          // Process all rows and filter out failures (None values)
+          const results = yield* Effect.all(rows.map(processRow));
+          return results.filter(Option.isSome).map((opt) => opt.value);
         }),
 
       search: (query: string) =>
@@ -540,14 +552,10 @@ export const StorageServiceLive = Layer.effect(
             [sanitized]
           );
 
-          // Read content from files and get tags
-          const prompts: Prompt[] = [];
-          for (const row of rows) {
-            try {
-              // Read file content
+          // Process each row, logging failures and converting to None
+          const processRow = (row: PromptRow) =>
+            Effect.gen(function* () {
               const parsed = yield* promptStorage.readPrompt(row.file_path);
-
-              // Get tags for this prompt
               const tagRows = yield* sql.query<TagRow>(
                 `SELECT t.name
                  FROM tags t
@@ -556,15 +564,15 @@ export const StorageServiceLive = Layer.effect(
                 [row.id]
               );
               const tags = tagRows.map((t) => t.name);
+              return rowToPrompt(row, parsed.content, tags);
+            }).pipe(
+              Effect.tapError((error) => logError("search", row.id, error)),
+              Effect.option
+            );
 
-              prompts.push(rowToPrompt(row, parsed.content, tags));
-            } catch (error) {
-              // Skip prompts that can't be read
-              continue;
-            }
-          }
-
-          return prompts;
+          // Process all rows and filter out failures (None values)
+          const results = yield* Effect.all(rows.map(processRow));
+          return results.filter(Option.isSome).map((opt) => opt.value);
         }),
     });
   })
