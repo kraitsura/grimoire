@@ -227,7 +227,8 @@ export const skillsAdd = (args: ParsedArgs) =>
       }
     }).pipe(
       Effect.catchAll((error) => {
-        if (error instanceof SkillSourceError) {
+        // Use _tag for Effect tagged error discrimination
+        if ("_tag" in error && error._tag === "SkillSourceError") {
           // Check for specific error types
           const errorMsg = error.message.toLowerCase();
 
@@ -246,18 +247,9 @@ export const skillsAdd = (args: ParsedArgs) =>
           return Effect.fail(error);
         }
 
-        if (error instanceof SkillManifestError) {
-          console.log(`Error: Invalid skill manifest - ${error.message}`);
-          if (error.path) {
-            console.log(`Path: ${error.path}`);
-          }
-          return Effect.fail(error);
-        }
-
-        // Unexpected error
-        console.log(
-          `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
-        );
+        // Fallback for any other error
+        const message = "message" in error ? error.message : String(error);
+        console.log(`Error: ${message}`);
         return Effect.fail(error);
       }),
       Effect.either

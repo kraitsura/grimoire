@@ -55,10 +55,12 @@ export class DoctorError extends Data.TaggedError("DoctorError")<{
  */
 const checkProjectInitialized = (
   projectPath: string
-): Effect.Effect<DiagnosticIssue | null, DoctorError> =>
+): Effect.Effect<DiagnosticIssue | null, DoctorError, SkillStateService | AgentAdapterService> =>
   Effect.gen(function* () {
     const stateService = yield* SkillStateService;
-    const isInitialized = yield* stateService.isInitialized(projectPath);
+    const isInitialized = yield* stateService.isInitialized(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
 
     if (!isInitialized) {
       return {
@@ -68,7 +70,9 @@ const checkProjectInitialized = (
     }
 
     // Check if skills directory exists
-    const projectState = yield* stateService.getProjectState(projectPath);
+    const projectState = yield* stateService.getProjectState(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
     if (!projectState) {
       return null;
     }
@@ -121,10 +125,12 @@ const checkProjectInitialized = (
  */
 const checkAgentMdFile = (
   projectPath: string
-): Effect.Effect<DiagnosticIssue | null, DoctorError> =>
+): Effect.Effect<DiagnosticIssue | null, DoctorError, SkillStateService | AgentAdapterService> =>
   Effect.gen(function* () {
     const stateService = yield* SkillStateService;
-    const projectState = yield* stateService.getProjectState(projectPath);
+    const projectState = yield* stateService.getProjectState(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
     if (!projectState) {
       return null;
     }
@@ -208,11 +214,13 @@ const checkAgentMdFile = (
  */
 const checkEnabledSkillsHaveFiles = (
   projectPath: string
-): Effect.Effect<DiagnosticIssue[], DoctorError> =>
+): Effect.Effect<DiagnosticIssue[], DoctorError, SkillStateService | AgentAdapterService> =>
   Effect.gen(function* () {
     const stateService = yield* SkillStateService;
     const issues: DiagnosticIssue[] = [];
-    const projectState = yield* stateService.getProjectState(projectPath);
+    const projectState = yield* stateService.getProjectState(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
 
     if (!projectState) {
       return issues;
@@ -222,7 +230,9 @@ const checkEnabledSkillsHaveFiles = (
     const adapter = adapterService.getAdapter(projectState.agent);
     const skillsDir = adapter.getSkillsDir(projectPath);
 
-    const enabledSkills = yield* stateService.getEnabled(projectPath);
+    const enabledSkills = yield* stateService.getEnabled(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
 
     for (const skillName of enabledSkills) {
       const skillFilePath = join(skillsDir, `${skillName}.md`);
@@ -255,11 +265,13 @@ const checkEnabledSkillsHaveFiles = (
  */
 const checkOrphanedSkillFiles = (
   projectPath: string
-): Effect.Effect<DiagnosticIssue[], DoctorError> =>
+): Effect.Effect<DiagnosticIssue[], DoctorError, SkillStateService | AgentAdapterService> =>
   Effect.gen(function* () {
     const stateService = yield* SkillStateService;
     const issues: DiagnosticIssue[] = [];
-    const projectState = yield* stateService.getProjectState(projectPath);
+    const projectState = yield* stateService.getProjectState(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
 
     if (!projectState) {
       return issues;
@@ -302,7 +314,9 @@ const checkOrphanedSkillFiles = (
         }),
     });
 
-    const enabledSkills = yield* stateService.getEnabled(projectPath);
+    const enabledSkills = yield* stateService.getEnabled(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
     const enabledSet = new Set(enabledSkills);
 
     for (const entry of entries) {
@@ -339,18 +353,22 @@ const checkOrphanedSkillFiles = (
  */
 const checkStateConsistency = (
   projectPath: string
-): Effect.Effect<DiagnosticIssue[], DoctorError> =>
+): Effect.Effect<DiagnosticIssue[], DoctorError, SkillStateService | SkillCacheService> =>
   Effect.gen(function* () {
     const stateService = yield* SkillStateService;
     const cacheService = yield* SkillCacheService;
     const issues: DiagnosticIssue[] = [];
-    const projectState = yield* stateService.getProjectState(projectPath);
+    const projectState = yield* stateService.getProjectState(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
 
     if (!projectState) {
       return issues;
     }
 
-    const enabledSkills = yield* stateService.getEnabled(projectPath);
+    const enabledSkills = yield* stateService.getEnabled(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
 
     for (const skillName of enabledSkills) {
       const isCached = yield* cacheService.isCached(skillName);

@@ -86,7 +86,7 @@ const promptAgentChoice = (
 
     // For now, default to claude_code in non-interactive mode
     // TODO: Add proper prompt library for interactive input
-    return "claude_code";
+    return "claude_code" as AgentType;
   });
 
 /**
@@ -128,14 +128,13 @@ This project uses OpenCode for AI-assisted development.
 
     if (!exists) {
       // Create the config file
-      yield* Effect.promise(() => Bun.write(configPath, configContent)).pipe(
-        Effect.mapError(
-          (error) =>
-            new InitError({
-              message: `Failed to create config file: ${error instanceof Error ? error.message : String(error)}`,
-            })
-        )
-      );
+      yield* Effect.tryPromise({
+        try: () => Bun.write(configPath, configContent),
+        catch: (error) =>
+          new InitError({
+            message: `Failed to create config file: ${error instanceof Error ? error.message : String(error)}`,
+          }),
+      });
       console.log(`Created ${configPath}`);
     } else {
       // File exists - check for markers
@@ -148,14 +147,13 @@ This project uses OpenCode for AI-assisted development.
 <!-- This section is managed by grimoire skills -->
 <!-- skills:managed:end -->
 `;
-        yield* Effect.promise(() => Bun.write(configPath, updatedContent)).pipe(
-          Effect.mapError(
-            (error) =>
-              new InitError({
-                message: `Failed to update config file: ${error instanceof Error ? error.message : String(error)}`,
-              })
-          )
-        );
+        yield* Effect.tryPromise({
+          try: () => Bun.write(configPath, updatedContent),
+          catch: (error) =>
+            new InitError({
+              message: `Failed to update config file: ${error instanceof Error ? error.message : String(error)}`,
+            }),
+        });
         console.log(`Updated ${configPath} with managed section markers`);
       }
     }
@@ -182,28 +180,22 @@ const createSkillsDirectory = (agent: AgentType): Effect.Effect<void, InitError>
     }
 
     // Ensure agent directory exists
-    yield* Effect.promise(() =>
-      import("fs/promises").then((fs) => fs.mkdir(agentDir, { recursive: true }))
-    ).pipe(
-      Effect.mapError(
-        (error) =>
-          new InitError({
-            message: `Failed to create agent directory: ${error instanceof Error ? error.message : String(error)}`,
-          })
-      )
-    );
+    yield* Effect.tryPromise({
+      try: () => import("fs/promises").then((fs) => fs.mkdir(agentDir, { recursive: true })),
+      catch: (error) =>
+        new InitError({
+          message: `Failed to create agent directory: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+    });
 
     // Ensure skills directory exists
-    yield* Effect.promise(() =>
-      import("fs/promises").then((fs) => fs.mkdir(skillsDir, { recursive: true }))
-    ).pipe(
-      Effect.mapError(
-        (error) =>
-          new InitError({
-            message: `Failed to create skills directory: ${error instanceof Error ? error.message : String(error)}`,
-          })
-      )
-    );
+    yield* Effect.tryPromise({
+      try: () => import("fs/promises").then((fs) => fs.mkdir(skillsDir, { recursive: true })),
+      catch: (error) =>
+        new InitError({
+          message: `Failed to create skills directory: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+    });
 
     console.log(`Created skills directory: ${skillsDir}`);
   });

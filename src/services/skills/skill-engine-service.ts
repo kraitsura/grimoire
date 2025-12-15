@@ -11,8 +11,14 @@ import { readFile, writeFile, unlink, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { SkillCacheService, type CachedSkill } from "./skill-cache-service";
 import { SkillStateService } from "./skill-state-service";
-import { AgentAdapterService } from "./agent-adapter";
+import { AgentAdapterService, type AgentAdapter } from "./agent-adapter";
 import { CliInstallerService } from "./cli-installer-service";
+
+// Extract service implementation types from Context Tags
+type SkillCacheServiceImpl = Context.Tag.Service<typeof SkillCacheService>;
+type SkillStateServiceImpl = Context.Tag.Service<typeof SkillStateService>;
+type AgentAdapterServiceImpl = Context.Tag.Service<typeof AgentAdapterService>;
+type CliInstallerServiceImpl = Context.Tag.Service<typeof CliInstallerService>;
 import {
   SkillNotCachedError,
   SkillAlreadyEnabledError,
@@ -20,8 +26,11 @@ import {
   ProjectNotInitializedError,
   CliDependencyError,
   InjectionError,
+  PluginInstallError,
 } from "../../models/skill-errors";
 import { addSkillInjection } from "./injection-utils";
+import { StateFileReadError, StateFileWriteError } from "./skill-state-service";
+import { AgentAdapterError } from "./agent-adapter";
 
 /**
  * Error type for skill operations
@@ -32,7 +41,11 @@ export type SkillError =
   | SkillNotEnabledError
   | ProjectNotInitializedError
   | CliDependencyError
-  | InjectionError;
+  | InjectionError
+  | PluginInstallError
+  | StateFileReadError
+  | StateFileWriteError
+  | AgentAdapterError;
 
 /**
  * Options for enabling a skill
@@ -231,7 +244,7 @@ interface SkillEngineServiceImpl {
   readonly canEnable: (
     projectPath: string,
     skillName: string
-  ) => Effect.Effect<EnableCheck>;
+  ) => Effect.Effect<EnableCheck, SkillError>;
 
   // Rollback a failed enable
   readonly rollback: (
@@ -248,10 +261,10 @@ export class SkillEngineService extends Context.Tag("SkillEngineService")<
 
 // Service implementation factory
 const makeSkillEngineService = (
-  cache: SkillCacheService,
-  state: SkillStateService,
-  adapters: AgentAdapterService,
-  cliInstaller: CliInstallerService
+  cache: SkillCacheServiceImpl,
+  state: SkillStateServiceImpl,
+  adapters: AgentAdapterServiceImpl,
+  cliInstaller: CliInstallerServiceImpl
 ): SkillEngineServiceImpl => ({
   enable: (projectPath: string, skillName: string, options?: EnableOptions) =>
     Effect.gen(function* () {
@@ -270,12 +283,10 @@ const makeSkillEngineService = (
 
       try {
         // 1. Resolve skill from cache
-        const cacheService = yield* SkillCacheService;
-        const skill = yield* cacheService.getCached(skillName);
+        const skill = yield* cache.getCached(skillName);
 
         // 2. Check project is initialized
-        const stateService = yield* SkillStateService;
-        const isInitialized = yield* stateService.isInitialized(projectPath);
+        const isInitialized = yield* state.isInitialized(projectPath);
         if (!isInitialized) {
           return yield* Effect.fail(
             new ProjectNotInitializedError({ path: projectPath })
@@ -283,7 +294,7 @@ const makeSkillEngineService = (
         }
 
         // 3. Check skill not already enabled
-        const enabled = yield* stateService.getEnabled(projectPath);
+        const enabled = yield* state.getEnabled(projectPath);
         if (enabled.includes(skillName)) {
           return yield* Effect.fail(
             new SkillAlreadyEnabledError({ name: skillName })
@@ -292,14 +303,13 @@ const makeSkillEngineService = (
 
         // 4. Install CLI dependencies (if any, unless options.noDeps)
         if (!options?.noDeps && skill.manifest.cli) {
-          const installerService = yield* CliInstallerService;
           const cliInstalled: string[] = [];
 
           for (const [binary, dep] of Object.entries(skill.manifest.cli)) {
-            const isInstalled = yield* installerService.check(binary, dep.check);
+            const isInstalled = yield* cliInstaller.check(binary, dep.check);
 
             if (!isInstalled) {
-              yield* installerService.install(binary, dep);
+              yield* cliInstaller.install(binary, dep);
               cliInstalled.push(binary);
               rollbackState.installedCli.push(binary);
             }
@@ -311,26 +321,30 @@ const makeSkillEngineService = (
         }
 
         // 5. Get agent adapter for project
-        const projectState = yield* stateService.getProjectState(projectPath);
+        const projectState = yield* state.getProjectState(projectPath);
         if (!projectState) {
           return yield* Effect.fail(
             new ProjectNotInitializedError({ path: projectPath })
           );
         }
 
-        const adapterService = yield* AgentAdapterService;
-        const adapter = adapterService.getAdapter(projectState.agent);
+        const adapter = adapters.getAdapter(projectState.agent);
         const skillsDir = adapter.getSkillsDir(projectPath);
         const agentMdPath = adapter.getAgentMdPath(projectPath);
 
         // 6. Delegate to AgentAdapter for agent-specific setup
-        const agentConfig = skill.manifest.agents?.[projectState.agent];
+        const agentConfig = projectState.agent === "generic"
+          ? undefined
+          : skill.manifest.agents?.[projectState.agent];
 
-        // Install plugin (if skill has plugin config)
-        if (agentConfig && "plugin" in agentConfig && agentConfig.plugin && adapter.installPlugin) {
+        // Install plugin (if skill has plugin config - Claude Code only)
+        const claudeConfig = projectState.agent === "claude_code"
+          ? skill.manifest.agents?.claude_code
+          : undefined;
+        if (claudeConfig?.plugin && adapter.installPlugin) {
           yield* adapter.installPlugin(
-            agentConfig.plugin.marketplace,
-            agentConfig.plugin.name
+            claudeConfig.plugin.marketplace,
+            claudeConfig.plugin.name
           );
           result.pluginInstalled = true;
         }
@@ -368,18 +382,18 @@ const makeSkillEngineService = (
 
         // 7. Run init commands (if any, unless options.noInit)
         if (!options?.noInit && skill.manifest.init?.commands) {
-          yield* runInitCommands(projectPath, skill.manifest.init.commands);
+          yield* runInitCommands(projectPath, [...skill.manifest.init.commands]);
           result.initRan = true;
         }
 
         // 8. Update state
-        yield* stateService.addEnabled(projectPath, skillName);
+        yield* state.addEnabled(projectPath, skillName);
         rollbackState.updatedState = true;
 
         return result;
       } catch (error) {
         // Rollback on any error
-        yield* performRollback(rollbackState);
+        yield* performRollbackWithServices(rollbackState, state, adapters);
         throw error;
       }
     }),
@@ -387,8 +401,7 @@ const makeSkillEngineService = (
   disable: (projectPath: string, skillName: string, options?: DisableOptions) =>
     Effect.gen(function* () {
       // 1. Verify skill is enabled
-      const stateService = yield* SkillStateService;
-      const enabled = yield* stateService.getEnabled(projectPath);
+      const enabled = yield* state.getEnabled(projectPath);
       if (!enabled.includes(skillName)) {
         return yield* Effect.fail(
           new SkillNotEnabledError({ name: skillName })
@@ -396,15 +409,14 @@ const makeSkillEngineService = (
       }
 
       // 2. Get agent adapter for project
-      const projectState = yield* stateService.getProjectState(projectPath);
+      const projectState = yield* state.getProjectState(projectPath);
       if (!projectState) {
         return yield* Effect.fail(
           new ProjectNotInitializedError({ path: projectPath })
         );
       }
 
-      const adapterService = yield* AgentAdapterService;
-      const adapter = adapterService.getAdapter(projectState.agent);
+      const adapter = adapters.getAdapter(projectState.agent);
       const skillsDir = adapter.getSkillsDir(projectPath);
 
       // 3. Call adapter.disableSkill()
@@ -417,8 +429,8 @@ const makeSkillEngineService = (
       yield* removeSkillFile(skillName, skillsDir);
 
       // 6. Update state (removeEnabled, recordDisable)
-      yield* stateService.removeEnabled(projectPath, skillName);
-      yield* stateService.recordDisable(projectPath, skillName);
+      yield* state.removeEnabled(projectPath, skillName);
+      yield* state.recordDisable(projectPath, skillName);
     }),
 
   canEnable: (projectPath: string, skillName: string) =>
@@ -429,23 +441,21 @@ const makeSkillEngineService = (
       };
 
       // Check if skill is cached
-      const cacheService = yield* SkillCacheService;
-      const isCached = yield* cacheService.isCached(skillName);
+      const isCached = yield* cache.isCached(skillName);
       if (!isCached) {
         result.reason = `Skill "${skillName}" is not cached. Run: gm skills install ${skillName}`;
         return result;
       }
 
       // Check if project is initialized
-      const stateService = yield* SkillStateService;
-      const isInitialized = yield* stateService.isInitialized(projectPath);
+      const isInitialized = yield* state.isInitialized(projectPath);
       if (!isInitialized) {
         result.reason = `Project not initialized. Run: gm skills init`;
         return result;
       }
 
       // Check if already enabled
-      const enabled = yield* stateService.getEnabled(projectPath);
+      const enabled = yield* state.getEnabled(projectPath);
       if (enabled.includes(skillName)) {
         result.isEnabled = true;
         result.reason = `Skill "${skillName}" is already enabled`;
@@ -453,13 +463,12 @@ const makeSkillEngineService = (
       }
 
       // Check for missing CLI dependencies
-      const skill = yield* cacheService.getCached(skillName);
+      const skill = yield* cache.getCached(skillName);
       const missingDeps: string[] = [];
 
       if (skill.manifest.cli) {
-        const installerService = yield* CliInstallerService;
         for (const [binary, dep] of Object.entries(skill.manifest.cli)) {
-          const isInstalled = yield* installerService.check(binary, dep.check);
+          const isInstalled = yield* cliInstaller.check(binary, dep.check);
           if (!isInstalled) {
             missingDeps.push(binary);
           }
@@ -487,15 +496,17 @@ const makeSkillEngineService = (
         projectPath,
       };
 
-      yield* performRollback(rollbackState);
+      yield* performRollbackWithServices(rollbackState, state, adapters);
     }),
 });
 
 /**
  * Perform rollback of a failed enable operation
  */
-const performRollback = (
-  rollbackState: RollbackState
+const performRollbackWithServices = (
+  rollbackState: RollbackState,
+  stateService: SkillStateServiceImpl,
+  adapterService: AgentAdapterServiceImpl
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     const { skillName, projectPath } = rollbackState;
@@ -504,7 +515,6 @@ const performRollback = (
 
     // Remove from state
     if (rollbackState.updatedState) {
-      const stateService = yield* SkillStateService;
       yield* stateService.removeEnabled(projectPath, skillName).pipe(
         Effect.catchAll(() => Effect.void)
       );
@@ -512,13 +522,11 @@ const performRollback = (
 
     // Remove injection
     if (rollbackState.injectedContent) {
-      const stateService = yield* SkillStateService;
       const projectState = yield* stateService.getProjectState(projectPath).pipe(
         Effect.catchAll(() => Effect.succeed(null))
       );
 
       if (projectState) {
-        const adapterService = yield* AgentAdapterService;
         const adapter = adapterService.getAdapter(projectState.agent);
         yield* adapter.removeInjection(projectPath, skillName).pipe(
           Effect.catchAll(() => Effect.void)
@@ -528,13 +536,11 @@ const performRollback = (
 
     // Remove skill file
     if (rollbackState.copiedSkillFile) {
-      const stateService = yield* SkillStateService;
       const projectState = yield* stateService.getProjectState(projectPath).pipe(
         Effect.catchAll(() => Effect.succeed(null))
       );
 
       if (projectState) {
-        const adapterService = yield* AgentAdapterService;
         const adapter = adapterService.getAdapter(projectState.agent);
         const skillsDir = adapter.getSkillsDir(projectPath);
         yield* removeSkillFile(skillName, skillsDir).pipe(
