@@ -87,44 +87,185 @@ Uses system clipboard for copy operations
 
 ## Skills Commands
 
-Skills are reusable AI agent capabilities that can be enabled in projects. Skills inject documentation and configuration into the agent's context.
+Skills are reusable AI agent capabilities that can be enabled in projects. Skills inject documentation, CLI tools, plugins, and MCP servers into the agent's context.
+
+### Overview
+
+A skill can provide:
+- **Prompt/Documentation**: Inject instructions into CLAUDE.md or agent config
+- **CLI Tools**: Install command-line dependencies (via brew, npm, cargo, etc.)
+- **Plugins**: Install agent marketplace plugins
+- **MCP Servers**: Configure Model Context Protocol servers
+- **Init Scripts**: Run setup commands when first enabled
+
+See `examples/example-skill.yaml` for a complete skill manifest example.
+
+### Commands
 
 ```bash
-grimoire skills init           # Initialize skills in project
-grimoire skills add <source>   # Add skill from GitHub
-grimoire skills enable <name>  # Enable skill in project
-grimoire skills disable <name> # Disable skill
-grimoire skills list           # List skills
-grimoire skills info <name>    # Show skill details
-grimoire skills search <query> # Search for skills
-grimoire skills sync           # Update enabled skills
-grimoire skills doctor         # Diagnose issues
+grimoire skills init [--agent=<type>]  # Initialize skills in project
+grimoire skills add <source>           # Add skill from GitHub/URL
+grimoire skills enable <name>          # Enable skill in project
+grimoire skills disable <name>         # Disable skill
+grimoire skills list [--enabled]       # List available/enabled skills
+grimoire skills info <name>            # Show skill details
+grimoire skills search <query>         # Search for skills
+grimoire skills sync                   # Update enabled skills
+grimoire skills doctor                 # Diagnose and fix issues
 ```
 
-### Enable Skill
+### Initialize Skills
+
+Initialize the skills system in your project:
+
+```bash
+grimoire skills init                    # Auto-detect agent type
+grimoire skills init --agent=claude_code
+grimoire skills init --agent=opencode
+```
+
+This creates:
+- `.grimoire/skills-state.json` (enabled skills tracking)
+- `.claude/skills/` directory (for Claude Code)
+- Managed sections in CLAUDE.md
+
+### Add Skills
+
+Add skills from various sources:
+
+```bash
+# From GitHub repository
+grimoire skills add github:username/skill-name
+
+# From GitHub with specific branch/tag
+grimoire skills add github:username/skill-name@v1.0.0
+grimoire skills add github:username/skill-name@main
+
+# From URL
+grimoire skills add https://example.com/skills/my-skill.zip
+```
+
+### Enable Skills
 
 Enable one or more skills in the current project:
 
 ```bash
 grimoire skills enable beads
-grimoire skills enable beads typescript-strict
-grimoire skills enable beads -y                 # Auto-confirm
+grimoire skills enable beads typescript-strict  # Multiple skills
+grimoire skills enable beads -y                 # Auto-confirm prompts
 grimoire skills enable beads --no-deps          # Skip CLI dependency installation
 grimoire skills enable beads --no-init          # Skip init commands
 ```
 
-### Disable Skill
+When enabling a skill:
+1. Checks if skill is cached (use `skills add` first)
+2. Checks if project is initialized (use `skills init` first)
+3. Installs CLI dependencies (unless --no-deps)
+4. Runs init commands (unless --no-init, only on first enable)
+5. Installs plugins (if configured)
+6. Configures MCP servers (if configured)
+7. Injects documentation into agent config
+
+### Disable Skills
 
 Disable one or more skills in the current project:
 
 ```bash
 grimoire skills disable beads
-grimoire skills disable beads typescript-strict
-grimoire skills disable beads --purge           # Also remove project artifacts
-grimoire skills disable beads --purge -y        # Skip confirmation
+grimoire skills disable beads typescript-strict  # Multiple skills
+grimoire skills disable beads --purge            # Also remove project artifacts
+grimoire skills disable beads --purge -y         # Skip confirmation
 ```
 
-Note: Disabling a skill removes its documentation from the agent but does NOT uninstall CLI tools or plugins, as these may be used by other skills or projects.
+When disabling a skill:
+1. Removes injected documentation from agent config
+2. Removes skill file from .claude/skills/
+3. Updates skills state
+4. Optionally purges project artifacts (--purge)
+
+Note: Disabling does NOT uninstall CLI tools or plugins, as these may be shared by other skills or projects.
+
+### List Skills
+
+List available or enabled skills:
+
+```bash
+grimoire skills list                # All cached skills
+grimoire skills list --enabled      # Only enabled skills in current project
+```
+
+### Skill Info
+
+Show detailed information about a skill:
+
+```bash
+grimoire skills info beads
+```
+
+Displays:
+- Skill metadata (name, version, description, author)
+- Type and tags
+- CLI dependencies
+- Agent configurations
+- Initialization steps
+
+### Search Skills
+
+Search for skills in configured repositories:
+
+```bash
+grimoire skills search beads
+grimoire skills search "task management"
+```
+
+### Sync Skills
+
+Update all enabled skills to their latest cached versions:
+
+```bash
+grimoire skills sync               # Sync all enabled skills
+grimoire skills sync -y            # Skip confirmation
+```
+
+### Doctor
+
+Diagnose and fix common issues:
+
+```bash
+grimoire skills doctor             # Check for issues
+grimoire skills doctor --fix       # Auto-fix issues
+```
+
+Checks:
+- Skills state file integrity
+- CLI dependencies installation
+- Agent config injection markers
+- Skill file existence
+- MCP server configuration
+
+### Skill Structure
+
+A skill is a directory containing:
+
+```
+skill-name/
+├── skill.yaml          # Manifest (required)
+├── SKILL.md            # Documentation (optional)
+├── init/               # Init scripts (optional)
+│   ├── setup.sh
+│   └── config.json
+└── templates/          # File templates (optional)
+    └── .example.yaml
+```
+
+The `skill.yaml` manifest defines:
+- Metadata (name, version, description, tags)
+- Skill type (prompt, plugin, mcp, tool)
+- CLI dependencies
+- Agent-specific configurations
+- Initialization steps
+
+See `examples/example-skill.yaml` for a complete example.
 
 ## Issue Tracking (Beads)
 

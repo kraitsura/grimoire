@@ -54,10 +54,10 @@ export class DoctorError extends Data.TaggedError("DoctorError")<{
  * Check if project is initialized
  */
 const checkProjectInitialized = (
-  projectPath: string,
-  stateService: typeof SkillStateService.Type
+  projectPath: string
 ): Effect.Effect<DiagnosticIssue | null, DoctorError> =>
   Effect.gen(function* () {
+    const stateService = yield* SkillStateService;
     const isInitialized = yield* stateService.isInitialized(projectPath);
 
     if (!isInitialized) {
@@ -120,10 +120,10 @@ const checkProjectInitialized = (
  * Check if agent MD file has valid managed section
  */
 const checkAgentMdFile = (
-  projectPath: string,
-  stateService: typeof SkillStateService.Type
+  projectPath: string
 ): Effect.Effect<DiagnosticIssue | null, DoctorError> =>
   Effect.gen(function* () {
+    const stateService = yield* SkillStateService;
     const projectState = yield* stateService.getProjectState(projectPath);
     if (!projectState) {
       return null;
