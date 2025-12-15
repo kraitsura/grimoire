@@ -338,7 +338,7 @@ export const skillsSearch = (args: ParsedArgs) =>
       setCachedResults(cacheKey, results);
       return results;
     }).pipe(
-      Effect.catchAll((error) => {
+      Effect.catchAll((error: unknown) => {
         if (error instanceof SkillSourceError) {
           if (error.message.includes("rate limit")) {
             console.log(`${colors.yellow}Error: GitHub API rate limit exceeded${colors.reset}`);
@@ -351,8 +351,9 @@ export const skillsSearch = (args: ParsedArgs) =>
           return Effect.fail(error);
         }
 
+        const errorMessage = error instanceof Error ? error.message : String(error);
         console.log(
-          `${colors.yellow}Error: ${error instanceof Error ? error.message : String(error)}${colors.reset}`
+          `${colors.yellow}Error: ${errorMessage}${colors.reset}`
         );
         return Effect.fail(error);
       }),

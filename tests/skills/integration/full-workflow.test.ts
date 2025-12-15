@@ -13,7 +13,10 @@ import {
   SkillStateServiceLive,
 } from "../../../src/services/skills/skill-state-service";
 import { SkillCacheService } from "../../../src/services/skills/skill-cache-service";
-import { SkillEngineService } from "../../../src/services/skills/skill-engine-service";
+import {
+  SkillEngineService,
+  SkillEngineServiceLive,
+} from "../../../src/services/skills/skill-engine-service";
 import { AgentAdapterService, type AgentAdapter } from "../../../src/services/skills/agent-adapter";
 import { CliInstallerService } from "../../../src/services/skills/cli-installer-service";
 import type { CachedSkill, SkillManifest } from "../../../src/services/skills/skill-cache-service";
@@ -174,7 +177,7 @@ describe("Full Skills Workflow Integration Tests", () => {
       Layer.succeed(SkillCacheService, mockCache),
       Layer.succeed(AgentAdapterService, mockAdapters),
       Layer.succeed(CliInstallerService, mockCliInstaller)
-    );
+    ).pipe(Layer.provide(SkillEngineServiceLive));
 
     const program = Effect.gen(function* () {
       const state = yield* SkillStateService;
@@ -236,7 +239,7 @@ describe("Full Skills Workflow Integration Tests", () => {
       Layer.succeed(SkillCacheService, mockCache),
       Layer.succeed(AgentAdapterService, mockAdapters),
       Layer.succeed(CliInstallerService, mockCliInstaller)
-    );
+    ).pipe(Layer.provide(SkillEngineServiceLive));
 
     const program = Effect.gen(function* () {
       const state = yield* SkillStateService;
@@ -309,7 +312,7 @@ describe("Full Skills Workflow Integration Tests", () => {
       Layer.succeed(SkillCacheService, mockCache),
       Layer.succeed(AgentAdapterService, mockAdapters),
       Layer.succeed(CliInstallerService, mockCliInstaller)
-    );
+    ).pipe(Layer.provide(SkillEngineServiceLive));
 
     const program = Effect.gen(function* () {
       const state = yield* SkillStateService;
@@ -349,7 +352,7 @@ describe("Full Skills Workflow Integration Tests", () => {
       Layer.succeed(SkillCacheService, mockCache),
       Layer.succeed(AgentAdapterService, mockAdapters),
       Layer.succeed(CliInstallerService, mockCliInstaller)
-    );
+    ).pipe(Layer.provide(SkillEngineServiceLive));
 
     const program = Effect.gen(function* () {
       const state = yield* SkillStateService;
@@ -395,7 +398,7 @@ describe("Full Skills Workflow Integration Tests", () => {
       Layer.succeed(SkillCacheService, mockCache),
       Layer.succeed(AgentAdapterService, mockAdapters),
       Layer.succeed(CliInstallerService, mockCliInstaller)
-    );
+    ).pipe(Layer.provide(SkillEngineServiceLive));
 
     const projectPath = testDir;
 
@@ -442,7 +445,7 @@ describe("Full Skills Workflow Integration Tests", () => {
       Layer.succeed(SkillCacheService, mockCache),
       Layer.succeed(AgentAdapterService, mockAdapters),
       Layer.succeed(CliInstallerService, mockCliInstaller)
-    );
+    ).pipe(Layer.provide(SkillEngineServiceLive));
 
     const program = Effect.gen(function* () {
       const state = yield* SkillStateService;
