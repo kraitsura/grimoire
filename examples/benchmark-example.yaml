@@ -1,0 +1,43 @@
+name: Code Generation Benchmark
+model: gpt-4o
+prompt: coding-assistant
+
+tests:
+  - name: "Python Hello World"
+    variables:
+      language: python
+      task: "print hello world"
+    expected:
+      contains: ["def ", "print"]
+      notContains: ["error", "Error"]
+      matches: "\\bdef\\s+\\w+"
+
+  - name: "TypeScript Type"
+    variables:
+      language: typescript
+      task: "create a type for a user"
+    expected:
+      contains: ["interface", "type"]
+
+  - name: "JavaScript Function"
+    variables:
+      language: javascript
+      task: "write a function to sum an array"
+    expected:
+      contains: ["function", "return"]
+      notContains: ["undefined"]
+
+  - name: "Python List Comprehension"
+    variables:
+      language: python
+      task: "filter even numbers from a list"
+    expected:
+      contains: ["for", "if"]
+
+  - name: "React Component"
+    variables:
+      language: typescript
+      task: "create a simple button component"
+    expected:
+      contains: ["return", "React"]
+      matches: "\\bfunction|const\\s+\\w+\\s*="
