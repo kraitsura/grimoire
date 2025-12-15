@@ -5,9 +5,22 @@
  */
 
 import { Effect } from "effect";
+import { Schema } from "@effect/schema";
 import { StorageService } from "../services";
+import { RmCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 import * as readline from "node:readline";
+
+/**
+ * Parse raw CLI args into structured format for schema validation
+ */
+const parseRmArgs = (args: ParsedArgs) => {
+  return {
+    targets: args.positional,
+    force: args.flags.force === true || args.flags.f === true ? true : undefined,
+    yes: args.flags.yes === true || args.flags.y === true ? true : undefined,
+  };
+};
 
 /**
  * Remove command handler
@@ -25,34 +38,36 @@ export const rmCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const storage = yield* StorageService;
 
-    const targets = args.positional;
-    if (targets.length === 0) {
-      console.log("Usage: grimoire rm <name-or-id...> [--force|-f] [--yes|-y]");
-      return;
-    }
+    // Validate arguments with schema
+    const rawArgs = parseRmArgs(args);
+    const validatedArgs = yield* Schema.decodeUnknown(RmCommandArgsSchema)(rawArgs).pipe(
+      Effect.mapError((error) => {
+        const message = error.message || "Invalid arguments";
+        return new ValidationError({
+          field: "args",
+          message: `Invalid arguments: ${message}. Usage: grimoire rm <name-or-id...> [--force|-f] [--yes|-y]`,
+        });
+      })
+    );
 
-    const forceFlag = args.flags["force"] || args.flags["f"];
-    const yesFlag = args.flags["yes"] || args.flags["y"];
-    const hard = !!forceFlag;
+    const hard = !!validatedArgs.force;
 
     // Resolve all targets to prompts first
     const prompts = [];
-    for (const target of targets) {
-      const prompt = yield* storage.getById(target).pipe(
-        Effect.catchTag("PromptNotFoundError", () => storage.getByName(target))
-      );
+    for (const target of validatedArgs.targets) {
+      const prompt = yield* storage
+        .getById(target)
+        .pipe(Effect.catchTag("PromptNotFoundError", () => storage.getByName(target)));
       prompts.push(prompt);
     }
 
     // Confirmation (unless --yes)
-    if (!yesFlag) {
+    if (!validatedArgs.yes) {
       const action = hard ? "permanently delete" : "archive";
       const names = prompts.map((p) => p.name).join(", ");
       console.log(`About to ${action}: ${names}`);
 
-      const confirmed = yield* Effect.promise(() =>
-        askConfirmation("Continue? [y/N] ")
-      );
+      const confirmed = yield* Effect.promise(() => askConfirmation("Continue? [y/N] "));
       if (!confirmed) {
         console.log("Cancelled.");
         return;

@@ -10,8 +10,36 @@
  */
 
 import { Effect } from "effect";
+import { Schema } from "@effect/schema";
 import { StorageService, EditorService } from "../services";
+import { EditCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
+
+/**
+ * Parse raw CLI args into structured format for schema validation
+ */
+const parseEditArgs = (args: ParsedArgs) => {
+  const newNameFlag = args.flags.name || args.flags.n;
+  const tagsFlag = args.flags.tags || args.flags.t;
+  const addTagFlag = args.flags["add-tag"];
+  const removeTagFlag = args.flags["remove-tag"];
+  const contentFlag = args.flags.content || args.flags.c;
+
+  return {
+    nameOrId: args.positional[0],
+    name: typeof newNameFlag === "string" ? newNameFlag : undefined,
+    content: typeof contentFlag === "string" ? contentFlag : undefined,
+    tags:
+      typeof tagsFlag === "string"
+        ? tagsFlag
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : undefined,
+    addTags: typeof addTagFlag === "string" ? [addTagFlag] : undefined,
+    removeTags: typeof removeTagFlag === "string" ? [removeTagFlag] : undefined,
+  };
+};
 
 /**
  * Edit command handler
@@ -28,44 +56,52 @@ export const editCommand = (args: ParsedArgs) =>
     const storage = yield* StorageService;
     const editor = yield* EditorService;
 
-    const nameOrId = args.positional[0];
-    if (!nameOrId) {
-      console.log("Usage: grimoire edit <name-or-id> [options]");
-      return;
-    }
-
-    // Try to find prompt by ID first, then by name
-    let prompt = yield* storage.getById(nameOrId).pipe(
-      Effect.catchTag("PromptNotFoundError", () => storage.getByName(nameOrId))
+    // Validate arguments with schema
+    const rawArgs = parseEditArgs(args);
+    const validatedArgs = yield* Schema.decodeUnknown(EditCommandArgsSchema)(rawArgs).pipe(
+      Effect.mapError((error) => {
+        const message = error.message || "Invalid arguments";
+        return new ValidationError({
+          field: "args",
+          message: `Invalid arguments: ${message}. Usage: grimoire edit <name-or-id> [options]`,
+        });
+      })
     );
 
-    const newNameFlag = args.flags["name"] || args.flags["n"];
-    const tagsFlag = args.flags["tags"] || args.flags["t"];
-    const addTagFlag = args.flags["add-tag"];
-    const removeTagFlag = args.flags["remove-tag"];
+    // Try to find prompt by ID first, then by name
+    const prompt = yield* storage
+      .getById(validatedArgs.nameOrId)
+      .pipe(
+        Effect.catchTag("PromptNotFoundError", () => storage.getByName(validatedArgs.nameOrId))
+      );
 
     // Build update input
     const updateInput: { name?: string; content?: string; tags?: string[] } = {};
 
-    if (typeof newNameFlag === "string") {
-      updateInput.name = newNameFlag;
+    if (validatedArgs.name) {
+      updateInput.name = validatedArgs.name;
     }
 
-    if (typeof tagsFlag === "string") {
-      updateInput.tags = tagsFlag.split(",").map(t => t.trim()).filter(Boolean);
-    } else if (addTagFlag || removeTagFlag) {
-      let tags = [...(prompt.tags || [])];
-      if (typeof addTagFlag === "string") {
-        tags.push(addTagFlag);
+    if (validatedArgs.tags) {
+      updateInput.tags = [...validatedArgs.tags];
+    } else if (validatedArgs.addTags || validatedArgs.removeTags) {
+      let tags = [...(prompt.tags ?? [])];
+      if (validatedArgs.addTags) {
+        tags.push(...validatedArgs.addTags);
       }
-      if (typeof removeTagFlag === "string") {
-        tags = tags.filter(t => t !== removeTagFlag);
+      if (validatedArgs.removeTags) {
+        tags = tags.filter((t) => !validatedArgs.removeTags?.includes(t));
       }
       updateInput.tags = tags;
     }
 
     // If no quick edit flags, open editor for content
-    if (!newNameFlag && !tagsFlag && !addTagFlag && !removeTagFlag) {
+    if (
+      !validatedArgs.name &&
+      !validatedArgs.tags &&
+      !validatedArgs.addTags &&
+      !validatedArgs.removeTags
+    ) {
       const newContent = yield* editor.open(prompt.content, `${prompt.name}.md`);
       updateInput.content = newContent;
     }

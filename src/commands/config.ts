@@ -1,9 +1,13 @@
 /**
  * Config Command - Configure LLM providers and settings
+ *
+ * API keys are stored in ~/.grimoire/.env with 0600 permissions.
  */
 
 import { Effect } from "effect";
+import { Schema } from "@effect/schema";
 import { ApiKeyService, LLMService } from "../services";
+import { ConfigCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 import * as readline from "readline";
 
@@ -19,15 +23,29 @@ const PROVIDER_INFO: Record<Provider, { name: string; envVar: string; keyPrefix?
 };
 
 /**
+ * Parse raw CLI args into structured format for schema validation
+ */
+const parseConfigArgs = (args: ParsedArgs) => {
+  const subcommand = args.positional[0];
+  const action = args.positional[1];
+  const target = args.positional[2];
+
+  return {
+    subcommand,
+    // Default to "list" when no action is provided
+    action: action ?? "list",
+    provider: target && PROVIDERS.includes(target as Provider) ? target : undefined,
+    model: undefined, // Not currently used in config command
+  };
+};
+
+/**
  * Config command handler
  */
 export const configCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
-    const subcommand = args.positional[0]; // "llm"
-    const action = args.positional[1]; // "list", "add", etc.
-    const target = args.positional[2]; // provider name or model
-
-    if (subcommand !== "llm") {
+    // Check for help case first (no subcommand or invalid subcommand)
+    if (!args.positional[0] || args.positional[0] !== "llm") {
       console.log("Usage: grimoire config llm <list|add|test|remove> [provider]");
       console.log("\nManage LLM provider configuration.");
       console.log("\nSubcommands:");
@@ -35,54 +53,58 @@ export const configCommand = (args: ParsedArgs) =>
       console.log("  add <provider>    Add or update provider API key");
       console.log("  test <provider>   Test provider API key");
       console.log("  remove <provider> Remove provider configuration");
-      console.log("\nProviders: openai, anthropic, ollama");
+      console.log("\nProviders: openai, anthropic, google, ollama");
+      console.log("\nKeys are stored in ~/.grimoire/.env with secure permissions (0600).");
       return;
     }
 
+    // Validate arguments with schema
+    const rawArgs = parseConfigArgs(args);
+    const validatedArgs = yield* Schema.decodeUnknown(ConfigCommandArgsSchema)(rawArgs).pipe(
+      Effect.mapError((error) => {
+        const message = error.message || "Invalid arguments";
+        return new ValidationError({
+          field: "args",
+          message: `Invalid arguments: ${message}. Usage: grimoire config llm <list|add|test|remove> [provider]`,
+        });
+      })
+    );
+
     const apiKeyService = yield* ApiKeyService;
 
-    switch (action) {
+    switch (validatedArgs.action) {
       case "list": {
         console.log("LLM Provider Configuration\n");
-        console.log("PROVIDER".padEnd(15) + "STATUS".padEnd(15) + "SOURCE");
-        console.log("-".repeat(50));
+        console.log("PROVIDER".padEnd(15) + "STATUS".padEnd(20) + "ENV VAR");
+        console.log("-".repeat(60));
 
         for (const provider of PROVIDERS) {
           const info = PROVIDER_INFO[provider];
-          const hasEnv = !!process.env[info.envVar];
-          const hasConfig = yield* apiKeyService.validate(provider);
+          const isConfigured = yield* apiKeyService.validate(provider);
 
-          let status = "\x1b[31m✗ Not configured\x1b[0m";
-          let source = "-";
+          const status = isConfigured ? "\x1b[32m✓ Configured\x1b[0m" : "\x1b[31m✗ Not set\x1b[0m";
 
-          if (hasEnv) {
-            status = "\x1b[32m✓ Configured\x1b[0m";
-            source = `env (${info.envVar})`;
-          } else if (hasConfig) {
-            status = "\x1b[32m✓ Configured\x1b[0m";
-            source = "config file";
-          }
-
-          console.log(`${info.name.padEnd(15)}${status.padEnd(26)}${source}`);
+          console.log(`${info.name.padEnd(15)}${status.padEnd(31)}${info.envVar}`);
         }
 
-        console.log("\nTip: Use 'grimoire config llm add <provider>' to configure a provider");
+        console.log("\nUse 'grimoire config llm add <provider>' to configure a provider");
+        console.log("Keys are stored in ~/.grimoire/.env");
         break;
       }
 
       case "add": {
-        if (!target || !PROVIDERS.includes(target as Provider)) {
+        if (!validatedArgs.provider) {
           console.log(`Usage: grimoire config llm add <${PROVIDERS.join("|")}>`);
           return;
         }
 
-        const provider = target as Provider;
+        const provider = validatedArgs.provider;
         const info = PROVIDER_INFO[provider];
 
-        // Check if already configured via env
-        if (process.env[info.envVar]) {
-          console.log(`Note: ${info.name} is already configured via environment variable ${info.envVar}`);
-          console.log("Config file settings will be used as fallback.\n");
+        // Check if already configured
+        const isConfigured = yield* apiKeyService.validate(provider);
+        if (isConfigured) {
+          console.log(`Note: ${info.name} is already configured. This will update the key.\n`);
         }
 
         // Prompt for API key
@@ -109,18 +131,18 @@ export const configCommand = (args: ParsedArgs) =>
         }
 
         yield* apiKeyService.set(provider, apiKey.trim());
-        console.log(`\n✓ ${info.name} API key saved to config file`);
+        console.log(`\n✓ ${info.name} API key saved to ~/.grimoire/.env`);
         console.log("Tip: Run 'grimoire config llm test " + provider + "' to verify the key works");
         break;
       }
 
       case "test": {
-        if (!target || !PROVIDERS.includes(target as Provider)) {
+        if (!validatedArgs.provider) {
           console.log(`Usage: grimoire config llm test <${PROVIDERS.join("|")}>`);
           return;
         }
 
-        const provider = target as Provider;
+        const provider = validatedArgs.provider;
         const info = PROVIDER_INFO[provider];
 
         console.log(`Testing ${info.name} configuration...`);
@@ -153,21 +175,16 @@ export const configCommand = (args: ParsedArgs) =>
       }
 
       case "remove": {
-        if (!target || !PROVIDERS.includes(target as Provider)) {
+        if (!validatedArgs.provider) {
           console.log(`Usage: grimoire config llm remove <${PROVIDERS.join("|")}>`);
           return;
         }
 
-        const provider = target as Provider;
+        const provider = validatedArgs.provider;
         const info = PROVIDER_INFO[provider];
 
-        if (process.env[info.envVar]) {
-          console.log(`Note: ${info.name} is configured via environment variable ${info.envVar}`);
-          console.log("This command only removes the config file entry.\n");
-        }
-
         yield* apiKeyService.remove(provider);
-        console.log(`✓ ${info.name} configuration removed from config file`);
+        console.log(`✓ ${info.name} configuration removed from ~/.grimoire/.env`);
         break;
       }
 
@@ -180,20 +197,17 @@ export const configCommand = (args: ParsedArgs) =>
 /**
  * Prompt user for input (synchronous for simplicity)
  */
-function promptForInput(prompt: string, hideInput: boolean = false): Effect.Effect<string> {
+function promptForInput(prompt: string, _hideInput = false): Effect.Effect<string> {
   return Effect.async<string>((resume) => {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
 
-    // For hiding input (passwords/keys), we can't easily do this in Node
-    // So we just show a note
-    if (hideInput) {
-      process.stdout.write(prompt);
-    }
+    // Note: hiding input in Node.js readline is complex, just show the prompt
+    process.stdout.write(prompt);
 
-    rl.question(hideInput ? "" : prompt, (answer) => {
+    rl.question("", (answer) => {
       rl.close();
       resume(Effect.succeed(answer));
     });

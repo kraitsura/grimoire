@@ -3,27 +3,14 @@
  */
 
 import { Effect, Stream, pipe } from "effect";
+import { Schema } from "@effect/schema";
 import { StorageService } from "../services";
 import { LLMService } from "../services/llm-service";
 import { TokenCounterService } from "../services/token-counter-service";
+import { TestCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 
-/**
- * Test command handler
- *
- * Tests a prompt with an LLM provider, streaming the output to the terminal.
- * Supports variable interpolation and displays usage statistics at the end.
- */
-export const testCommand = (args: ParsedArgs) =>
-  Effect.gen(function* () {
-    const storage = yield* StorageService;
-    const llm = yield* LLMService;
-    const tokenCounter = yield* TokenCounterService;
-
-    // Parse arguments
-    const promptName = args.positional[0];
-    if (!promptName) {
-      console.log(`Usage: grimoire test <prompt-name> [OPTIONS]
+const USAGE = `Usage: grimoire test <prompt-name> [OPTIONS]
 
 OPTIONS:
   -m, --model <model>       Model to use (default: gpt-4o)
@@ -39,35 +26,74 @@ EXAMPLES:
   grimoire test coding-assistant
   grimoire test my-prompt --model claude-sonnet-4-20250514
   grimoire test template --vars '{"name": "John", "task": "review"}'
-`);
-      return;
-    }
+`;
 
-    // Get options from flags
-    const model = (args.flags["model"] as string) || (args.flags["m"] as string) || "gpt-4o";
-    const temperature = parseFloat((args.flags["temperature"] as string) || "0.7");
-    const maxTokens = parseInt((args.flags["max-tokens"] as string) || "1024", 10);
-    const noStream = args.flags["no-stream"] === true;
-    const varsJson = args.flags["vars"] as string | undefined;
+/**
+ * Parse raw CLI args into structured format for schema validation
+ */
+const parseTestArgs = (args: ParsedArgs) => {
+  const varsJson = args.flags.vars as string | undefined;
+  let variables: Record<string, string> | undefined;
 
-    // Parse variables if provided
-    let variables: Record<string, string> = {};
-    if (varsJson) {
-      try {
-        variables = JSON.parse(varsJson);
-      } catch (error) {
-        console.error("Error: Invalid JSON for --vars flag");
-        console.error(error instanceof Error ? error.message : String(error));
-        return;
-      }
+  if (varsJson) {
+    try {
+      variables = JSON.parse(varsJson);
+    } catch {
+      // Let schema validation handle the error
+      variables = undefined;
     }
+  }
+
+  const tempStr = args.flags.temperature as string | undefined;
+  const maxTokensStr = args.flags["max-tokens"] as string | undefined;
+
+  return {
+    promptName: args.positional[0],
+    model: (args.flags.model as string) || (args.flags.m as string) || undefined,
+    temperature: tempStr ? parseFloat(tempStr) : undefined,
+    maxTokens: maxTokensStr ? parseInt(maxTokensStr, 10) : undefined,
+    variables,
+    stream: args.flags["no-stream"] !== true,
+  };
+};
+
+/**
+ * Test command handler
+ *
+ * Tests a prompt with an LLM provider, streaming the output to the terminal.
+ * Supports variable interpolation and displays usage statistics at the end.
+ */
+export const testCommand = (args: ParsedArgs) =>
+  Effect.gen(function* () {
+    const storage = yield* StorageService;
+    const llm = yield* LLMService;
+    const tokenCounter = yield* TokenCounterService;
+
+    // Validate arguments with schema
+    const rawArgs = parseTestArgs(args);
+    const validatedArgs = yield* Schema.decodeUnknown(TestCommandArgsSchema)(rawArgs).pipe(
+      Effect.mapError((error) => {
+        const message = error.message || "Invalid arguments";
+        return new ValidationError({
+          field: "args",
+          message: `Invalid arguments: ${message}.\n\n${USAGE}`,
+        });
+      })
+    );
+
+    // Apply defaults after validation
+    const model = validatedArgs.model ?? "gpt-4o";
+    const temperature = validatedArgs.temperature ?? 0.7;
+    const maxTokens = validatedArgs.maxTokens ?? 1024;
+    const noStream = !validatedArgs.stream;
+    const variables = validatedArgs.variables ?? {};
 
     // Load prompt from storage
-    const prompt = yield* storage.getByName(promptName).pipe(
-      Effect.catchTag("PromptNotFoundError", () =>
-        storage.getById(promptName)
-      )
-    );
+    const prompt = yield* storage
+      .getByName(validatedArgs.promptName)
+      .pipe(
+        Effect.catchTag("PromptNotFoundError", () => storage.getById(validatedArgs.promptName))
+      );
 
     // Interpolate variables in content
     let content = prompt.content;
@@ -107,7 +133,9 @@ EXAMPLES:
         model
       );
 
-      console.log(`\nTokens: ${response.usage.inputTokens} in / ${response.usage.outputTokens} out`);
+      console.log(
+        `\nTokens: ${response.usage.inputTokens} in / ${response.usage.outputTokens} out`
+      );
       console.log(`Cost: $${cost.toFixed(4)}`);
       console.log(`Time: ${duration.toFixed(1)}s\n`);
     } else {
@@ -136,10 +164,7 @@ EXAMPLES:
 
       // Calculate stats for streaming mode
       // Count tokens for input and output
-      const inputTokens = yield* tokenCounter.countMessages(
-        [{ role: "user", content }],
-        model
-      );
+      const inputTokens = yield* tokenCounter.countMessages([{ role: "user", content }], model);
       const outputTokens = yield* tokenCounter.count(fullResponse, model);
       const duration = (Date.now() - startTime) / 1000;
       const cost = yield* tokenCounter.estimateCost(inputTokens, outputTokens, model);
@@ -150,12 +175,12 @@ EXAMPLES:
     }
 
     // TODO: Implement --save flag to save result to prompt history
-    if (args.flags["save"]) {
+    if (args.flags.save) {
       console.log("\nNote: --save flag not yet implemented");
     }
 
     // TODO: Implement -i interactive mode
-    if (args.flags["i"] || args.flags["interactive"]) {
+    if (args.flags.i || args.flags.interactive) {
       console.log("\nNote: Interactive mode not yet implemented");
     }
   });

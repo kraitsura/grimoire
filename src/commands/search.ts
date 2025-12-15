@@ -3,7 +3,9 @@
  */
 
 import { Effect } from "effect";
+import { Schema } from "@effect/schema";
 import { SearchService, type SearchOptions, type SearchResult } from "../services/search-service";
+import { SearchCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 
 /**
@@ -52,9 +54,8 @@ const formatResults = (results: SearchResult[], query: string): void => {
     const { prompt, snippet, highlights } = result;
 
     // Format tags
-    const tagsDisplay = prompt.tags && prompt.tags.length > 0
-      ? ` \x1b[33m(${prompt.tags.join(", ")})\x1b[0m`
-      : "";
+    const tagsDisplay =
+      prompt.tags && prompt.tags.length > 0 ? ` \x1b[33m(${prompt.tags.join(", ")})\x1b[0m` : "";
 
     // Display result number and name
     console.log(`[\x1b[36m${index + 1}\x1b[0m] \x1b[1m${prompt.name}\x1b[0m${tagsDisplay}`);
@@ -66,21 +67,32 @@ const formatResults = (results: SearchResult[], query: string): void => {
 };
 
 /**
- * Parse date string in YYYY-MM-DD format
- * @param dateStr - Date string to parse
- * @returns Date object or undefined if invalid
+ * Parse raw CLI args into structured format for schema validation
  */
-const parseDate = (dateStr: string): Date | undefined => {
-  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return undefined;
+const parseSearchArgs = (args: ParsedArgs) => {
+  const tagsFlag = args.flags.tags || args.flags.t;
+  const fromFlag = args.flags.from;
+  const toFlag = args.flags.to;
+  const limitFlag = args.flags.limit;
 
-  const [, year, month, day] = match;
-  const date = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
-
-  // Validate date
-  if (isNaN(date.getTime())) return undefined;
-
-  return date;
+  return {
+    query: args.positional[0],
+    tags:
+      typeof tagsFlag === "string"
+        ? tagsFlag
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : undefined,
+    from: typeof fromFlag === "string" ? fromFlag : undefined,
+    to: typeof toFlag === "string" ? toFlag : undefined,
+    limit:
+      typeof limitFlag === "string"
+        ? parseInt(limitFlag, 10)
+        : typeof limitFlag === "number"
+          ? limitFlag
+          : undefined,
+  };
 };
 
 /**
@@ -92,76 +104,34 @@ export const searchCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const search = yield* SearchService;
 
-    // Get query from positional args
-    const query = args.positional[0];
-    if (!query) {
-      console.error("Error: Search query is required");
-      console.log("\nUsage: grimoire search <query> [options]");
-      console.log("\nOptions:");
-      console.log("  --tags, -t <tags>    Filter by tags (comma-separated)");
-      console.log("  --from <date>        Date from (YYYY-MM-DD)");
-      console.log("  --to <date>          Date to (YYYY-MM-DD)");
-      console.log("  --limit <n>          Max results (default: 20)");
-      console.log("  --fuzzy              Enable fuzzy matching");
-      console.log("  -i                   Interactive mode (not yet implemented)");
-      return;
-    }
+    // Validate arguments with schema
+    const rawArgs = parseSearchArgs(args);
+    const validatedArgs = yield* Schema.decodeUnknown(SearchCommandArgsSchema)(rawArgs).pipe(
+      Effect.mapError((error) => {
+        const message = error.message || "Invalid arguments";
+        return new ValidationError({
+          field: "args",
+          message: `Invalid arguments: ${message}. Usage: grimoire search <query> [--tags|-t <tags>] [--from <date>] [--to <date>] [--limit <n>]`,
+        });
+      })
+    );
 
-    // Build search options from flags
+    // Build search options from validated args
     const options: SearchOptions = {
-      query,
+      query: validatedArgs.query,
+      tags: validatedArgs.tags ? [...validatedArgs.tags] : undefined,
+      fromDate: validatedArgs.from,
+      toDate: validatedArgs.to,
+      limit: validatedArgs.limit ?? 20,
     };
 
-    // Parse tags
-    const tagsFlag = args.flags["tags"] || args.flags["t"];
-    if (typeof tagsFlag === "string") {
-      options.tags = tagsFlag.split(",").map((t) => t.trim()).filter(Boolean);
-    }
-
-    // Parse from date
-    const fromFlag = args.flags["from"];
-    if (typeof fromFlag === "string") {
-      const fromDate = parseDate(fromFlag);
-      if (!fromDate) {
-        console.error(`Error: Invalid --from date format. Use YYYY-MM-DD`);
-        return;
-      }
-      options.fromDate = fromDate;
-    }
-
-    // Parse to date
-    const toFlag = args.flags["to"];
-    if (typeof toFlag === "string") {
-      const toDate = parseDate(toFlag);
-      if (!toDate) {
-        console.error(`Error: Invalid --to date format. Use YYYY-MM-DD`);
-        return;
-      }
-      options.toDate = toDate;
-    }
-
-    // Parse limit
-    const limitFlag = args.flags["limit"];
-    if (typeof limitFlag === "string") {
-      const limit = parseInt(limitFlag, 10);
-      if (isNaN(limit) || limit < 1) {
-        console.error(`Error: Invalid --limit value. Must be a positive number`);
-        return;
-      }
-      options.limit = limit;
-    } else if (typeof limitFlag === "number") {
-      options.limit = limitFlag;
-    } else {
-      options.limit = 20; // Default limit
-    }
-
-    // Parse fuzzy flag
-    if (args.flags["fuzzy"]) {
+    // Parse fuzzy flag (not in schema, handle separately)
+    if (args.flags.fuzzy) {
       options.fuzzy = true;
     }
 
     // Interactive mode stub
-    if (args.flags["i"] || args.flags["interactive"]) {
+    if (args.flags.i || args.flags.interactive) {
       console.log("Interactive mode is not yet implemented");
       return;
     }
@@ -170,5 +140,5 @@ export const searchCommand = (args: ParsedArgs) =>
     const results = yield* search.search(options);
 
     // Format and display results
-    formatResults(results, query);
+    formatResults(results, validatedArgs.query);
   });

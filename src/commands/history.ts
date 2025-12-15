@@ -19,7 +19,9 @@
  */
 
 import { Effect } from "effect";
+import { Schema } from "@effect/schema";
 import { StorageService, VersionService } from "../services";
+import { HistoryCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 import type { PromptVersion } from "../services/version-service";
 
@@ -89,9 +91,7 @@ function displayOnelineVersion(
 ): void {
   const headLabel = isHead ? " (HEAD)" : "";
   const reason = version.changeReason ? ` - ${version.changeReason}` : "";
-  const changeStr = version.version === 1
-    ? " [Created]"
-    : ` [+${additions} -${deletions}]`;
+  const changeStr = version.version === 1 ? " [Created]" : ` [+${additions} -${deletions}]`;
 
   console.log(
     `v${version.version}${headLabel} - ${formatDate(version.createdAt)}${reason}${changeStr}`
@@ -115,6 +115,26 @@ function displayDiff(diffText: string): void {
 }
 
 /**
+ * Parse raw CLI args into structured format for schema validation
+ */
+const parseHistoryArgs = (args: ParsedArgs) => {
+  const limitFlag = args.flags.limit || args.flags.n;
+
+  return {
+    promptName: args.positional[0],
+    limit:
+      typeof limitFlag === "string"
+        ? parseInt(limitFlag, 10)
+        : typeof limitFlag === "number"
+          ? limitFlag
+          : undefined,
+    all: args.flags.all === true ? true : undefined,
+    diff: args.flags.diff === true ? true : undefined,
+    oneline: args.flags.oneline === true ? true : undefined,
+  };
+};
+
+/**
  * History command implementation
  */
 export const historyCommand = (args: ParsedArgs) =>
@@ -122,31 +142,23 @@ export const historyCommand = (args: ParsedArgs) =>
     const storage = yield* StorageService;
     const versionService = yield* VersionService;
 
-    // Parse arguments
-    const promptName = args.positional[0];
-    if (!promptName) {
-      console.error("Error: Prompt name is required");
-      console.error("Usage: grimoire history <prompt-name> [options]");
-      return;
-    }
-
-    // Parse flags
-    const limitFlag = args.flags["limit"] || args.flags["n"];
-    const allFlag = args.flags["all"];
-    const diffFlag = args.flags["diff"];
-    const onelineFlag = args.flags["oneline"];
+    // Validate arguments with schema
+    const rawArgs = parseHistoryArgs(args);
+    const validatedArgs = yield* Schema.decodeUnknown(HistoryCommandArgsSchema)(rawArgs).pipe(
+      Effect.mapError((error) => {
+        const message = error.message || "Invalid arguments";
+        return new ValidationError({
+          field: "args",
+          message: `Invalid arguments: ${message}. Usage: grimoire history <prompt-name> [--limit|-n <n>] [--all] [--diff] [--oneline]`,
+        });
+      })
+    );
 
     // Determine limit
-    const limit = allFlag
-      ? undefined
-      : typeof limitFlag === "number"
-      ? limitFlag
-      : typeof limitFlag === "string"
-      ? parseInt(limitFlag, 10)
-      : 10;
+    const limit = validatedArgs.all ? undefined : (validatedArgs.limit ?? 10);
 
     // Get prompt by name
-    const prompt = yield* storage.getByName(promptName);
+    const prompt = yield* storage.getByName(validatedArgs.promptName);
 
     // Get version history
     const versions = yield* versionService.listVersions(prompt.id, {
@@ -155,13 +167,13 @@ export const historyCommand = (args: ParsedArgs) =>
     });
 
     if (versions.length === 0) {
-      console.log(`No version history found for: ${promptName}`);
+      console.log(`No version history found for: ${validatedArgs.promptName}`);
       return;
     }
 
     // Display header
-    if (!onelineFlag) {
-      console.log(`History for: ${COLORS.cyan}${promptName}${COLORS.reset}`);
+    if (!validatedArgs.oneline) {
+      console.log(`History for: ${COLORS.cyan}${validatedArgs.promptName}${COLORS.reset}`);
       console.log();
     }
 
@@ -177,25 +189,21 @@ export const historyCommand = (args: ParsedArgs) =>
 
       if (version.version > 1) {
         const prevVersion = version.version - 1;
-        const diffResult = yield* versionService.diff(
-          prompt.id,
-          prevVersion,
-          version.version
-        );
+        const diffResult = yield* versionService.diff(prompt.id, prevVersion, version.version);
         additions = diffResult.additions;
         deletions = diffResult.deletions;
         diffText = diffResult.changes;
       }
 
       // Display version info
-      if (onelineFlag) {
+      if (validatedArgs.oneline) {
         displayOnelineVersion(version, isHead, additions, deletions);
       } else {
         displayDefaultVersion(version, isHead, additions, deletions);
       }
 
       // Display diff if requested
-      if (diffFlag && version.version > 1) {
+      if (validatedArgs.diff && version.version > 1) {
         console.log(`${COLORS.dim}Diff:${COLORS.reset}`);
         displayDiff(diffText);
         console.log();

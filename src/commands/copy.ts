@@ -9,7 +9,9 @@
  */
 
 import { Effect } from "effect";
+import { Schema } from "@effect/schema";
 import { StorageService, Clipboard } from "../services";
+import { CopyCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 
 /**
@@ -59,13 +61,26 @@ const parseVariables = (args: string[]): Record<string, string> => {
  * Replaces {{variable}} patterns with values from the vars object.
  * Leaves unmatched patterns unchanged.
  */
-const interpolateVariables = (
-  content: string,
-  vars: Record<string, string>
-): string => {
+const interpolateVariables = (content: string, vars: Record<string, string>): string => {
   return content.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
     return vars[varName] ?? match;
   });
+};
+
+/**
+ * Parse raw CLI args into structured format for schema validation
+ */
+const parseCopyArgs = (args: ParsedArgs) => {
+  const rawFlag = args.flags.raw || args.flags.r;
+  // Parse variables from process.argv to handle multiple -v flags
+  const rawArgs = process.argv.slice(2);
+  const vars = parseVariables(rawArgs);
+
+  return {
+    nameOrId: args.positional[0],
+    raw: rawFlag === true ? true : undefined,
+    variables: Object.keys(vars).length > 0 ? vars : undefined,
+  };
 };
 
 /**
@@ -79,35 +94,35 @@ export const copyCommand = (args: ParsedArgs) =>
     const storage = yield* StorageService;
     const clipboard = yield* Clipboard;
 
-    const nameOrId = args.positional[0];
-    if (!nameOrId) {
-      console.log(
-        "Usage: grimoire copy <name-or-id> [--vars|-v key=value] [--stdout] [--raw|-r]"
-      );
-      return;
-    }
+    // Validate arguments with schema
+    const rawArgs = parseCopyArgs(args);
+    const validatedArgs = yield* Schema.decodeUnknown(CopyCommandArgsSchema)(rawArgs).pipe(
+      Effect.mapError((error) => {
+        const message = error.message || "Invalid arguments";
+        return new ValidationError({
+          field: "args",
+          message: `Invalid arguments: ${message}. Usage: grimoire copy <name-or-id> [--vars|-v key=value] [--stdout] [--raw|-r]`,
+        });
+      })
+    );
 
     // Find prompt (try by ID first, then by name)
-    const prompt = yield* storage.getById(nameOrId).pipe(
-      Effect.catchTag("PromptNotFoundError", () => storage.getByName(nameOrId))
-    );
+    const prompt = yield* storage
+      .getById(validatedArgs.nameOrId)
+      .pipe(
+        Effect.catchTag("PromptNotFoundError", () => storage.getByName(validatedArgs.nameOrId))
+      );
 
     let content = prompt.content;
 
     // Variable interpolation (unless --raw)
-    const rawFlag = args.flags["raw"] || args.flags["r"];
-    if (!rawFlag) {
-      // Parse variables from process.argv to handle multiple -v flags
-      // Skip the first two args (node path and script path)
-      const rawArgs = process.argv.slice(2);
-      const vars = parseVariables(rawArgs);
-
+    if (!validatedArgs.raw && validatedArgs.variables) {
       // Interpolate {{variable}} patterns
-      content = interpolateVariables(content, vars);
+      content = interpolateVariables(content, validatedArgs.variables);
     }
 
     // Output
-    const stdoutFlag = args.flags["stdout"];
+    const stdoutFlag = args.flags.stdout;
     if (stdoutFlag) {
       console.log(content);
     } else {

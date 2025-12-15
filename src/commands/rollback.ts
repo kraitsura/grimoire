@@ -3,9 +3,28 @@
  */
 
 import { Effect } from "effect";
+import { Schema } from "@effect/schema";
 import { StorageService, VersionService } from "../services";
+import { RollbackCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 import * as readline from "node:readline";
+
+/**
+ * Parse raw CLI args into structured format for schema validation
+ */
+const parseRollbackArgs = (args: ParsedArgs) => {
+  const versionStr = args.positional[1];
+  const reasonFlag = args.flags.reason;
+
+  return {
+    promptName: args.positional[0],
+    version: versionStr ? parseInt(versionStr, 10) : undefined,
+    reason: typeof reasonFlag === "string" ? reasonFlag : undefined,
+    preview: args.flags.preview === true ? true : undefined,
+    backup: args.flags.backup === false ? false : undefined, // default true, only set if explicitly false
+    force: args.flags.force === true ? true : undefined,
+  };
+};
 
 /**
  * Rollback command handler
@@ -31,25 +50,19 @@ export const rollbackCommand = (args: ParsedArgs) =>
     const storage = yield* StorageService;
     const versionService = yield* VersionService;
 
-    const promptName = args.positional[0];
-    const versionStr = args.positional[1];
+    // Validate arguments with schema
+    const rawArgs = parseRollbackArgs(args);
+    const validatedArgs = yield* Schema.decodeUnknown(RollbackCommandArgsSchema)(rawArgs).pipe(
+      Effect.mapError((error) => {
+        const message = error.message || "Invalid arguments";
+        return new ValidationError({
+          field: "args",
+          message: `Invalid arguments: ${message}. Usage: grimoire rollback <prompt-name> <version> [--preview] [--backup] [--reason <reason>] [--force]`,
+        });
+      })
+    );
 
-    if (!promptName || !versionStr) {
-      console.log("Usage: grimoire rollback <prompt-name> <version> [--preview] [--backup] [--reason] [--force] [-i]");
-      return;
-    }
-
-    const targetVersion = parseInt(versionStr, 10);
-    if (isNaN(targetVersion) || targetVersion < 1) {
-      console.log("Error: Version must be a positive integer");
-      return;
-    }
-
-    const previewFlag = args.flags["preview"];
-    const backupFlag = args.flags["backup"] !== false; // default true
-    const reasonFlag = args.flags["reason"];
-    const forceFlag = args.flags["force"];
-    const interactiveFlag = args.flags["interactive"] || args.flags["i"];
+    const interactiveFlag = args.flags.interactive || args.flags.i;
 
     // Interactive mode stub
     if (interactiveFlag) {
@@ -58,32 +71,29 @@ export const rollbackCommand = (args: ParsedArgs) =>
     }
 
     // Get the prompt by name
-    const prompt = yield* storage.getByName(promptName);
+    const prompt = yield* storage.getByName(validatedArgs.promptName);
 
     // Get current head version
     const currentVersion = yield* versionService.getHead(prompt.id);
 
     // Check if already at target version
-    if (currentVersion.version === targetVersion) {
-      console.log(`Already at version ${targetVersion}`);
+    if (currentVersion.version === validatedArgs.version) {
+      console.log(`Already at version ${validatedArgs.version}`);
       return;
     }
 
     // Get target version
-    const targetVersionData = yield* versionService.getVersion(
-      prompt.id,
-      targetVersion
-    );
+    const targetVersionData = yield* versionService.getVersion(prompt.id, validatedArgs.version);
 
     // Compute diff
     const diff = yield* versionService.diff(
       prompt.id,
       currentVersion.version,
-      targetVersion
+      validatedArgs.version
     );
 
     // Display preview
-    console.log(`\nRolling back ${promptName} to v${targetVersion}\n`);
+    console.log(`\nRolling back ${validatedArgs.promptName} to v${validatedArgs.version}\n`);
     console.log("Changes:");
     if (diff.changes) {
       console.log(diff.changes);
@@ -93,27 +103,23 @@ export const rollbackCommand = (args: ParsedArgs) =>
     console.log(`\nLine changes: -${diff.deletions} +${diff.additions}\n`);
 
     // If preview mode, stop here
-    if (previewFlag) {
+    if (validatedArgs.preview) {
       console.log("Use --force to apply, or confirm below.");
       return;
     }
 
     // Confirm rollback (unless --force)
-    if (!forceFlag) {
-      const confirmed = yield* Effect.promise(() =>
-        askConfirmation("Apply rollback? [y/N] ")
-      );
+    if (!validatedArgs.force) {
+      const confirmed = yield* Effect.promise(() => askConfirmation("Apply rollback? [y/N] "));
       if (!confirmed) {
         console.log("Cancelled.");
         return;
       }
     }
 
-    // Perform rollback
-    const customReason = typeof reasonFlag === "string" ? reasonFlag : undefined;
-
-    // If backup requested, create a pre-rollback backup version
-    if (backupFlag) {
+    // If backup requested (default true), create a pre-rollback backup version
+    const shouldBackup = validatedArgs.backup !== false;
+    if (shouldBackup) {
       yield* versionService.createVersion({
         promptId: prompt.id,
         content: currentVersion.content,
@@ -125,7 +131,7 @@ export const rollbackCommand = (args: ParsedArgs) =>
     // Rollback to target version - this creates a new version with the restored content
     const newVersion = yield* versionService.rollback(
       prompt.id,
-      targetVersion,
+      validatedArgs.version,
       { createBackup: true } // Always create rollback version
     );
 
@@ -134,9 +140,9 @@ export const rollbackCommand = (args: ParsedArgs) =>
       content: targetVersionData.content,
     });
 
-    console.log(`\nRollback complete: ${promptName} → v${newVersion.version}`);
-    if (customReason) {
-      console.log(`Reason: ${customReason}`);
+    console.log(`\nRollback complete: ${validatedArgs.promptName} → v${newVersion.version}`);
+    if (validatedArgs.reason) {
+      console.log(`Reason: ${validatedArgs.reason}`);
     }
   });
 

@@ -3,7 +3,9 @@
  */
 
 import { Effect } from "effect";
+import { Schema } from "@effect/schema";
 import { ImportService, type ConflictStrategy } from "../services/import-service";
+import { ImportCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 
 /**
@@ -12,7 +14,7 @@ import type { ParsedArgs } from "../cli/parser";
 const formatPreview = (
   total: number,
   newPrompts: number,
-  conflicts: Array<{ name: string; contentDiffers: boolean }>
+  conflicts: { name: string; contentDiffers: boolean }[]
 ): void => {
   console.log("\nImport Preview:");
   console.log(`  Total prompts: ${total}`);
@@ -74,6 +76,19 @@ const formatResult = (
 };
 
 /**
+ * Parse raw CLI args into structured format for schema validation
+ */
+const parseImportArgs = (args: ParsedArgs) => {
+  const onConflictFlag = args.flags["on-conflict"];
+
+  return {
+    source: args.positional[0],
+    onConflict: typeof onConflictFlag === "string" ? onConflictFlag.toLowerCase() : undefined,
+    dryRun: args.flags["dry-run"] === true ? true : undefined,
+  };
+};
+
+/**
  * Import command handler
  * @param args - Parsed command-line arguments
  * @returns Effect that performs the import
@@ -82,40 +97,24 @@ export const importCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const importService = yield* ImportService;
 
-    // Get source from positional args
-    const source = args.positional[0];
-    if (!source) {
-      console.error("Error: Source file or URL is required");
-      console.log("\nUsage: grimoire import <source> [options]");
-      console.log("\nArguments:");
-      console.log("  <source>              File path or URL to import from");
-      console.log("\nOptions:");
-      console.log("  --on-conflict <mode>  How to handle conflicts (skip|rename|overwrite)");
-      console.log("                        Default: skip");
-      console.log("  --dry-run             Preview without making changes");
-      return;
-    }
+    // Validate arguments with schema
+    const rawArgs = parseImportArgs(args);
+    const validatedArgs = yield* Schema.decodeUnknown(ImportCommandArgsSchema)(rawArgs).pipe(
+      Effect.mapError((error) => {
+        const message = error.message || "Invalid arguments";
+        return new ValidationError({
+          field: "args",
+          message: `Invalid arguments: ${message}. Usage: grimoire import <source> [--on-conflict <skip|rename|overwrite>] [--dry-run]`,
+        });
+      })
+    );
 
-    // Parse flags
-    const dryRun = args.flags["dry-run"] || false;
-    const onConflictFlag = args.flags["on-conflict"];
-
-    // Validate conflict strategy
-    let strategy: ConflictStrategy = "skip";
-    if (typeof onConflictFlag === "string") {
-      const normalized = onConflictFlag.toLowerCase();
-      if (normalized === "skip" || normalized === "rename" || normalized === "overwrite") {
-        strategy = normalized;
-      } else {
-        console.error(`Error: Invalid --on-conflict value: ${onConflictFlag}`);
-        console.log("Valid values: skip, rename, overwrite");
-        return;
-      }
-    }
+    // Get validated values
+    const strategy: ConflictStrategy = validatedArgs.onConflict ?? "skip";
 
     // Handle dry-run mode
-    if (dryRun) {
-      const preview = yield* importService.preview(source);
+    if (validatedArgs.dryRun) {
+      const preview = yield* importService.preview(validatedArgs.source);
 
       if (preview.errors.length > 0) {
         console.log(`\n\x1b[31mErrors:\x1b[0m`);
@@ -130,7 +129,7 @@ export const importCommand = (args: ParsedArgs) =>
     }
 
     // Perform actual import
-    const result = yield* importService.import(source, strategy);
+    const result = yield* importService.import(validatedArgs.source, strategy);
     formatResult(
       result.imported,
       result.skipped,
