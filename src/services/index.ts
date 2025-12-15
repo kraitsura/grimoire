@@ -283,6 +283,7 @@ import { ApiKeyService, ApiKeyServiceLive } from "./api-key-service";
 import { TokenCounterServiceLive } from "./token-counter-service";
 import { OpenAIProvider } from "./providers/openai-provider";
 import { makeAnthropicProvider } from "./providers/anthropic-provider";
+import { makeGeminiProvider } from "./providers/gemini-provider";
 
 // Import all the Live implementations needed for MainLive
 import { EditorServiceLive as EditorServiceLiveImport } from "./editor-service";
@@ -317,11 +318,13 @@ export const LLMLive = Layer.effectDiscard(
     // Create providers
     const openAIProvider = yield* OpenAIProvider;
     const anthropicProvider = yield* makeAnthropicProvider;
+    const geminiProvider = yield* makeGeminiProvider;
 
     // Get LLM service and register providers
     const llmService = yield* LLMService;
     yield* llmService.registerProvider(openAIProvider);
     yield* llmService.registerProvider(anthropicProvider);
+    yield* llmService.registerProvider(geminiProvider);
   })
 ).pipe(
   Layer.provide(
