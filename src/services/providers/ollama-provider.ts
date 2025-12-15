@@ -1,68 +1,16 @@
-import { Effect, Stream, Data, pipe } from "effect"
-import {
+import { Effect, Stream } from "effect"
+import { chat } from "@tanstack/ai"
+import { ollama } from "@tanstack/ai-ollama"
+import type {
   LLMProvider,
   LLMRequest,
   LLMResponse,
-  LLMError,
   StreamChunk,
-  Message,
 } from "../llm-service"
+import { LLMError } from "../llm-service"
 
-// Ollama-specific error types
-export class OllamaConnectionError extends Data.TaggedError("OllamaConnectionError")<{
-  message: string
-  cause?: unknown
-}> {}
-
-export class OllamaModelNotFoundError extends Data.TaggedError("OllamaModelNotFoundError")<{
-  message: string
-  model: string
-}> {}
-
-// Ollama API types
-interface OllamaMessage {
-  role: "system" | "user" | "assistant"
-  content: string
-}
-
-interface OllamaChatRequest {
-  model: string
-  messages: OllamaMessage[]
-  stream: boolean
-  options?: {
-    temperature?: number
-    num_predict?: number
-    stop?: string[]
-  }
-}
-
-interface OllamaChatResponse {
-  model: string
-  created_at: string
-  message: {
-    role: string
-    content: string
-  }
-  done: boolean
-  total_duration?: number
-  load_duration?: number
-  prompt_eval_count?: number
-  eval_count?: number
-  eval_duration?: number
-}
-
-interface OllamaStreamChunk {
-  model: string
-  created_at: string
-  message?: {
-    role: string
-    content: string
-  }
-  done: boolean
-  total_duration?: number
-  prompt_eval_count?: number
-  eval_count?: number
-}
+const OLLAMA_BASE_URL = "http://localhost:11434"
+const OLLAMA_TAGS_URL = `${OLLAMA_BASE_URL}/api/tags`
 
 interface OllamaTagsResponse {
   models: Array<{
@@ -81,20 +29,25 @@ interface OllamaTagsResponse {
   }>
 }
 
-interface OllamaErrorResponse {
-  error: string
+// Helper to extract system prompts from messages
+const extractSystemPrompts = (
+  messages: Array<{ role: string; content: string }>
+): string[] => {
+  return messages
+    .filter((msg) => msg.role === "system")
+    .map((msg) => msg.content)
 }
 
-const OLLAMA_BASE_URL = "http://localhost:11434"
-const OLLAMA_CHAT_URL = `${OLLAMA_BASE_URL}/api/chat`
-const OLLAMA_TAGS_URL = `${OLLAMA_BASE_URL}/api/tags`
-
-// Convert our Message format to Ollama format
-const convertMessages = (messages: Message[]): OllamaMessage[] => {
-  return messages.map((msg) => ({
-    role: msg.role,
-    content: msg.content,
-  }))
+// Helper to convert our messages to TanStack AI format (excluding system messages)
+const convertMessages = (
+  messages: Array<{ role: string; content: string }>
+): Array<{ role: "user" | "assistant"; content: string }> => {
+  return messages
+    .filter((msg) => msg.role === "user" || msg.role === "assistant")
+    .map((msg) => ({
+      role: msg.role as "user" | "assistant",
+      content: msg.content,
+    }))
 }
 
 // Check if Ollama is running
@@ -123,129 +76,73 @@ const checkOllamaConnection = (): Effect.Effect<boolean, LLMError> =>
     }
   })
 
-// Make Ollama API request
-const makeOllamaRequest = (
-  request: LLMRequest,
-  stream: boolean
-): Effect.Effect<Response, LLMError> =>
-  Effect.gen(function* () {
-    // First check if Ollama is running
-    yield* checkOllamaConnection()
-
-    const ollamaRequest: OllamaChatRequest = {
-      model: request.model,
-      messages: convertMessages(request.messages),
-      stream,
-      options: {
-        temperature: request.temperature,
-        num_predict: request.maxTokens,
-        stop: request.stopSequences,
-      },
-    }
-
-    try {
-      const response = yield* Effect.promise(() =>
-        fetch(OLLAMA_CHAT_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(ollamaRequest),
-        })
-      )
-
-      return response
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error && error.message.includes("ECONNREFUSED")
-          ? "Ollama is not running. Start with: ollama serve"
-          : `Ollama API request failed: ${error instanceof Error ? error.message : String(error)}`
-
-      return yield* Effect.fail(
-        new LLMError({
-          message: errorMessage,
-          provider: "ollama",
-          cause: error,
-        })
-      )
-    }
-  })
-
-// Handle error response
-const handleErrorResponse = (
-  response: Response
-): Effect.Effect<never, LLMError> =>
-  Effect.gen(function* () {
-    // Try to parse error response
-    try {
-      const errorData = (yield* Effect.promise(() =>
-        response.json()
-      )) as OllamaErrorResponse
-
-      // Check if it's a model not found error
-      if (
-        errorData.error.toLowerCase().includes("model") &&
-        errorData.error.toLowerCase().includes("not found")
-      ) {
-        return yield* Effect.fail(
-          new LLMError({
-            message: `Model not found. Pull it with: ollama pull <model>`,
-            provider: "ollama",
-          })
-        )
-      }
-
-      return yield* Effect.fail(
-        new LLMError({
-          message: `Ollama API error: ${errorData.error}`,
-          provider: "ollama",
-        })
-      )
-    } catch {
-      return yield* Effect.fail(
-        new LLMError({
-          message: `Ollama API error: ${response.status} ${response.statusText}`,
-          provider: "ollama",
-        })
-      )
-    }
-  })
-
 // Create the Ollama provider
 export const makeOllamaProvider = (): LLMProvider => {
-  const complete = (request: LLMRequest): Effect.Effect<LLMResponse, LLMError> =>
+  const complete = (
+    request: LLMRequest
+  ): Effect.Effect<LLMResponse, LLMError, never> =>
     Effect.gen(function* () {
-      // Make request
-      const response = yield* makeOllamaRequest(request, false)
+      // First check if Ollama is running
+      yield* checkOllamaConnection()
 
-      // Handle errors
-      if (!response.ok) {
-        return yield* handleErrorResponse(response)
-      }
+      const systemPrompts = extractSystemPrompts(request.messages)
+      const messages = convertMessages(request.messages)
 
-      // Parse response
-      const data = (yield* Effect.promise(() =>
-        response.json()
-      )) as OllamaChatResponse
-
-      if (!data.message) {
-        return yield* Effect.fail(
-          new LLMError({
-            message: "Ollama API returned no message",
-            provider: "ollama",
+      const result = yield* Effect.tryPromise({
+        try: async () => {
+          const adapter = ollama({
+            baseURL: OLLAMA_BASE_URL,
           })
-        )
-      }
 
-      return {
-        content: data.message.content,
-        model: data.model,
-        usage: {
-          inputTokens: data.prompt_eval_count ?? 0,
-          outputTokens: data.eval_count ?? 0,
+          // Cast model name - Ollama supports arbitrary model names that may not be in TanStack AI's type list
+          const chatStream = chat({
+            adapter,
+            model: request.model as "llama3",
+            messages,
+            systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+          })
+
+          // Collect all chunks for non-streaming response
+          let content = ""
+          let inputTokens = 0
+          let outputTokens = 0
+
+          for await (const chunk of chatStream) {
+            if (chunk.type === "content" && chunk.content) {
+              content += chunk.content
+            }
+            if (chunk.type === "done" && chunk.usage) {
+              // TanStack AI uses promptTokens/completionTokens
+              inputTokens = chunk.usage.promptTokens ?? 0
+              outputTokens = chunk.usage.completionTokens ?? 0
+            }
+          }
+
+          return {
+            content,
+            model: request.model,
+            usage: {
+              inputTokens,
+              outputTokens,
+            },
+            finishReason: "stop" as const,
+          }
         },
-        finishReason: data.done ? "stop" : "error",
-      }
+        catch: (error) => {
+          const errorMessage =
+            error instanceof Error && error.message.includes("ECONNREFUSED")
+              ? "Ollama is not running. Start with: ollama serve"
+              : `Ollama API error: ${error instanceof Error ? error.message : String(error)}`
+
+          return new LLMError({
+            message: errorMessage,
+            provider: "ollama",
+            cause: error,
+          })
+        },
+      })
+
+      return result
     })
 
   const stream = (
@@ -253,84 +150,52 @@ export const makeOllamaProvider = (): LLMProvider => {
   ): Stream.Stream<StreamChunk, LLMError, never> =>
     Stream.asyncEffect<StreamChunk, LLMError>((emit) =>
       Effect.gen(function* () {
-        // Make streaming request
-        const response = yield* makeOllamaRequest(request, true)
+        // First check if Ollama is running
+        yield* checkOllamaConnection()
 
-        // Handle errors
-        if (!response.ok) {
-          return yield* handleErrorResponse(response)
-        }
+        const systemPrompts = extractSystemPrompts(request.messages)
+        const messages = convertMessages(request.messages)
 
-        // Check if response body exists
-        if (!response.body) {
-          return yield* Effect.fail(
-            new LLMError({
-              message: "Ollama API response has no body",
-              provider: "ollama",
+        yield* Effect.tryPromise({
+          try: async () => {
+            const adapter = ollama({
+              baseURL: OLLAMA_BASE_URL,
             })
-          )
-        }
 
-        // Process the stream - Ollama sends newline-delimited JSON
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ""
+            // Cast model name - Ollama supports arbitrary model names that may not be in TanStack AI's type list
+            const chatStream = chat({
+              adapter,
+              model: request.model as "llama3",
+              messages,
+              systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+            })
 
-        try {
-          while (true) {
-            const { done, value } = yield* Effect.promise(() => reader.read())
-
-            if (done) {
-              break
-            }
-
-            // Decode and add to buffer
-            buffer += decoder.decode(value, { stream: true })
-
-            // Process complete lines (newline-delimited JSON)
-            const lines = buffer.split("\n")
-            buffer = lines.pop() ?? ""
-
-            for (const line of lines) {
-              const trimmedLine = line.trim()
-              if (!trimmedLine) {
-                continue
+            for await (const chunk of chatStream) {
+              if (chunk.type === "content" && chunk.content) {
+                await emit.single({
+                  content: chunk.content,
+                  done: false,
+                })
               }
-
-              try {
-                const chunk = JSON.parse(trimmedLine) as OllamaStreamChunk
-
-                // Emit content if available
-                if (chunk.message && chunk.message.content) {
-                  yield* Effect.promise(() =>
-                    emit.single({
-                      content: chunk.message!.content,
-                      done: false,
-                    })
-                  )
-                }
-
-                // Check if done
-                if (chunk.done) {
-                  yield* Effect.promise(() => emit.single({ content: "", done: true }))
-                  break
-                }
-              } catch (error) {
-                // Skip malformed JSON lines
-                continue
+              if (chunk.type === "done") {
+                await emit.single({ content: "", done: true })
               }
             }
-          }
-        } catch (error) {
-          return yield* Effect.fail(
-            new LLMError({
-              message: `Ollama streaming error: ${error instanceof Error ? error.message : String(error)}`,
+          },
+          catch: (error) => {
+            const errorMessage =
+              error instanceof Error && error.message.includes("ECONNREFUSED")
+                ? "Ollama is not running. Start with: ollama serve"
+                : `Ollama streaming error: ${error instanceof Error ? error.message : String(error)}`
+
+            return new LLMError({
+              message: errorMessage,
               provider: "ollama",
               cause: error,
             })
-          )
-        }
-      })
+          },
+        })
+      }) as Effect.Effect<void, LLMError>
     )
 
   const listModels = (): Effect.Effect<string[], LLMError> =>

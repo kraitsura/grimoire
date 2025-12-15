@@ -20,7 +20,8 @@ export class ConfigWriteError extends Data.TaggedError("ConfigWriteError")<{
 const ENV_KEYS: Record<string, string> = {
   openai: "OPENAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
-  ollama: "OLLAMA_HOST"
+  ollama: "OLLAMA_HOST",
+  google: "GOOGLE_API_KEY"
 }
 
 // Config file structure

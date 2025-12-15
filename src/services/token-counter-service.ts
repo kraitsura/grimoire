@@ -39,6 +39,11 @@ const MODEL_TO_ENCODING: Record<string, string> = {
   "claude-sonnet-4-20250514": "cl100k_base", // approximation
   "claude-3-5-sonnet-20241022": "cl100k_base",
   "claude-3-opus-20240229": "cl100k_base",
+  // Gemini models (approximation using cl100k_base)
+  "gemini-2.5-pro": "cl100k_base",
+  "gemini-2.5-flash": "cl100k_base",
+  "gemini-2.0-flash": "cl100k_base",
+  "gemini-2.0-flash-lite": "cl100k_base",
 };
 
 /**
@@ -55,6 +60,11 @@ const MODEL_PRICING: Record<
   "claude-sonnet-4-20250514": { inputPer1M: 3.0, outputPer1M: 15.0 },
   "claude-3-5-sonnet-20241022": { inputPer1M: 3.0, outputPer1M: 15.0 },
   "claude-3-opus-20240229": { inputPer1M: 15.0, outputPer1M: 75.0 },
+  // Gemini models pricing (per 1M tokens)
+  "gemini-2.5-pro": { inputPer1M: 1.25, outputPer1M: 5.0 },
+  "gemini-2.5-flash": { inputPer1M: 0.075, outputPer1M: 0.30 },
+  "gemini-2.0-flash": { inputPer1M: 0.10, outputPer1M: 0.40 },
+  "gemini-2.0-flash-lite": { inputPer1M: 0.075, outputPer1M: 0.30 },
 };
 
 /**
@@ -70,6 +80,11 @@ const MESSAGE_OVERHEAD: Record<string, number> = {
   "claude-sonnet-4-20250514": 3,
   "claude-3-5-sonnet-20241022": 3,
   "claude-3-opus-20240229": 3,
+  // Gemini models (approximation)
+  "gemini-2.5-pro": 3,
+  "gemini-2.5-flash": 3,
+  "gemini-2.0-flash": 3,
+  "gemini-2.0-flash-lite": 3,
 };
 
 /**

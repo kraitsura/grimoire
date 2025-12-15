@@ -1,196 +1,72 @@
-import { Effect, Stream, Data, Either, Option } from "effect"
+import { Effect, Stream, Either } from "effect"
+import { chat } from "@tanstack/ai"
+import { createAnthropic } from "@tanstack/ai-anthropic"
 import type {
   LLMProvider,
   LLMRequest,
   LLMResponse,
   StreamChunk,
-  Message,
 } from "../llm-service"
 import { LLMError } from "../llm-service"
 import { ApiKeyService, ApiKeyNotFoundError } from "../api-key-service"
 
-// Anthropic API types
-interface AnthropicMessage {
-  role: "user" | "assistant"
-  content: string
-}
-
-interface AnthropicRequest {
-  model: string
-  messages: AnthropicMessage[]
-  max_tokens: number
-  temperature?: number
-  stop_sequences?: string[]
-  stream: boolean
-  system?: string
-}
-
-interface AnthropicResponse {
-  id: string
-  type: "message"
-  role: "assistant"
-  content: Array<{ type: "text"; text: string }>
-  model: string
-  stop_reason: "end_turn" | "max_tokens" | "stop_sequence" | null
-  usage: {
-    input_tokens: number
-    output_tokens: number
-  }
-}
-
-interface AnthropicError {
-  type: "error"
-  error: {
-    type: string
-    message: string
-  }
-}
-
-// SSE event types
-interface SSEMessageStart {
-  type: "message_start"
-  message: {
-    id: string
-    type: "message"
-    role: "assistant"
-    content: []
-    model: string
-    usage: {
-      input_tokens: number
-      output_tokens: number
-    }
-  }
-}
-
-interface SSEContentBlockDelta {
-  type: "content_block_delta"
-  index: number
-  delta: {
-    type: "text_delta"
-    text: string
-  }
-}
-
-interface SSEMessageDelta {
-  type: "message_delta"
-  delta: {
-    stop_reason: "end_turn" | "max_tokens" | "stop_sequence" | null
-  }
-  usage: {
-    output_tokens: number
-  }
-}
-
-interface SSEMessageStop {
-  type: "message_stop"
-}
-
-type SSEEvent =
-  | SSEMessageStart
-  | SSEContentBlockDelta
-  | SSEMessageDelta
-  | SSEMessageStop
-  | { type: "ping" }
-  | { type: "content_block_start" }
-  | { type: "content_block_stop" }
-
-// Supported models
+// Supported models (TanStack AI format)
 const SUPPORTED_MODELS = [
-  "claude-sonnet-4-20250514",
-  "claude-opus-4-20250514",
-  "claude-3-5-sonnet-20241022",
-  "claude-3-5-haiku-20241022",
+  "claude-opus-4-5",
+  "claude-sonnet-4-5",
+  "claude-haiku-4-5",
+  "claude-opus-4",
+  "claude-sonnet-4",
+  "claude-3-7-sonnet",
+  "claude-3-5-haiku",
+  "claude-3-haiku",
 ] as const
 
-const API_BASE_URL = "https://api.anthropic.com/v1"
-const ANTHROPIC_VERSION = "2023-06-01"
-const DEFAULT_MAX_TOKENS = 4096
+type AnthropicModel = (typeof SUPPORTED_MODELS)[number]
 
-// Helper to convert OpenAI-style messages to Anthropic format
+// Map from full model names (used in requests) to TanStack AI model names
+const MODEL_ALIASES: Record<string, AnthropicModel> = {
+  "claude-sonnet-4-20250514": "claude-sonnet-4",
+  "claude-opus-4-20250514": "claude-opus-4",
+  "claude-3-5-sonnet-20241022": "claude-3-7-sonnet",
+  "claude-3-5-haiku-20241022": "claude-3-5-haiku",
+  "claude-opus-4-5-20251101": "claude-opus-4-5",
+  "claude-sonnet-4-5-20250929": "claude-sonnet-4-5",
+}
+
+// Helper to extract system prompts from messages
+const extractSystemPrompts = (
+  messages: Array<{ role: string; content: string }>
+): string[] => {
+  return messages
+    .filter((msg) => msg.role === "system")
+    .map((msg) => msg.content)
+}
+
+// Helper to convert our messages to TanStack AI format (excluding system messages)
 const convertMessages = (
-  messages: Message[]
-): { system?: string; messages: AnthropicMessage[] } => {
-  let system: string | undefined
-  const anthropicMessages: AnthropicMessage[] = []
-
-  for (const msg of messages) {
-    if (msg.role === "system") {
-      // Combine multiple system messages if present
-      system = system ? `${system}\n\n${msg.content}` : msg.content
-    } else {
-      anthropicMessages.push({
-        role: msg.role as "user" | "assistant",
-        content: msg.content,
-      })
-    }
-  }
-
-  return { system, messages: anthropicMessages }
+  messages: Array<{ role: string; content: string }>
+): Array<{ role: "user" | "assistant"; content: string }> => {
+  return messages
+    .filter((msg) => msg.role === "user" || msg.role === "assistant")
+    .map((msg) => ({
+      role: msg.role as "user" | "assistant",
+      content: msg.content,
+    }))
 }
 
-// Helper to parse SSE stream
-const parseSSELine = (line: string): SSEEvent | null => {
-  if (!line.startsWith("data: ")) {
-    return null
+// Helper to resolve model name to TanStack AI format
+const resolveModel = (model: string): AnthropicModel => {
+  // Check if it's already a valid TanStack AI model
+  if (SUPPORTED_MODELS.includes(model as AnthropicModel)) {
+    return model as AnthropicModel
   }
-
-  const data = line.slice(6).trim()
-
-  if (data === "[DONE]") {
-    return null
+  // Check if it has an alias
+  if (model in MODEL_ALIASES) {
+    return MODEL_ALIASES[model]
   }
-
-  try {
-    return JSON.parse(data) as SSEEvent
-  } catch {
-    return null
-  }
-}
-
-// Helper to handle rate limit errors
-const handleRateLimitError = (
-  response: Response
-): Effect.Effect<never, LLMError> => {
-  const retryAfterHeader = response.headers.get("retry-after")
-  let retryAfter: Date | undefined
-
-  if (retryAfterHeader) {
-    const seconds = parseInt(retryAfterHeader, 10)
-    if (!isNaN(seconds)) {
-      retryAfter = new Date(Date.now() + seconds * 1000)
-    }
-  }
-
-  return Effect.fail(
-    new LLMError({
-      provider: "anthropic",
-      message: `Rate limit exceeded. ${retryAfter ? `Retry after ${retryAfter.toISOString()}` : "Please try again later."}`,
-    })
-  )
-}
-
-// Helper to parse error response
-const parseErrorResponse = (
-  body: unknown
-): Effect.Effect<never, LLMError> => {
-  const errorBody = body as AnthropicError
-
-  if (errorBody?.error?.type === "rate_limit_error") {
-    return Effect.fail(
-      new LLMError({
-        provider: "anthropic",
-        message: errorBody.error.message,
-      })
-    )
-  }
-
-  return Effect.fail(
-    new LLMError({
-      message: errorBody?.error?.message || "Unknown error from Anthropic API",
-      provider: "anthropic",
-      cause: body,
-    })
-  )
+  // Default to claude-sonnet-4
+  return "claude-sonnet-4"
 }
 
 // Create the Anthropic provider
@@ -221,85 +97,59 @@ export const makeAnthropicProvider = Effect.gen(function* () {
   ): Effect.Effect<LLMResponse, LLMError, never> =>
     Effect.gen(function* () {
       const apiKey = yield* getApiKey()
-      const { system, messages } = convertMessages(request.messages)
 
-      const anthropicRequest: AnthropicRequest = {
-        model: request.model,
-        messages,
-        max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-        temperature: request.temperature,
-        stop_sequences: request.stopSequences,
-        stream: false,
-        system,
-      }
+      // Resolve model name to TanStack AI format
+      const modelToUse = resolveModel(request.model)
 
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch(`${API_BASE_URL}/messages`, {
-            method: "POST",
-            headers: {
-              "x-api-key": apiKey,
-              "anthropic-version": ANTHROPIC_VERSION,
-              "Content-Type": "application/json",
+      const systemPrompts = extractSystemPrompts(request.messages)
+      const messages = convertMessages(request.messages)
+
+      const result = yield* Effect.tryPromise({
+        try: async () => {
+          const adapter = createAnthropic(apiKey)
+
+          const chatStream = chat({
+            adapter,
+            model: modelToUse,
+            messages,
+            systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+          })
+
+          // Collect all chunks for non-streaming response
+          let content = ""
+          let inputTokens = 0
+          let outputTokens = 0
+
+          for await (const chunk of chatStream) {
+            if (chunk.type === "content" && chunk.content) {
+              content += chunk.content
+            }
+            if (chunk.type === "done" && chunk.usage) {
+              // TanStack AI uses promptTokens/completionTokens
+              inputTokens = chunk.usage.promptTokens ?? 0
+              outputTokens = chunk.usage.completionTokens ?? 0
+            }
+          }
+
+          return {
+            content,
+            model: request.model,
+            usage: {
+              inputTokens,
+              outputTokens,
             },
-            body: JSON.stringify(anthropicRequest),
-          }),
+            finishReason: "stop" as const,
+          }
+        },
         catch: (error) =>
           new LLMError({
-            message: `Failed to call Anthropic API: ${error instanceof Error ? error.message : String(error)}`,
+            message: `Anthropic API error: ${error instanceof Error ? error.message : String(error)}`,
             provider: "anthropic",
             cause: error,
           }),
       })
 
-      if (response.status === 429) {
-        return yield* handleRateLimitError(response)
-      }
-
-      if (!response.ok) {
-        const errorBody = yield* Effect.tryPromise({
-          try: () => response.json(),
-          catch: (error) =>
-            new LLMError({
-              message: "Failed to parse error response",
-              provider: "anthropic",
-              cause: error,
-            }),
-        }).pipe(Effect.catchAll(() => Effect.succeed({})))
-        return yield* parseErrorResponse(errorBody)
-      }
-
-      const data = (yield* Effect.tryPromise({
-        try: () => response.json(),
-        catch: (error) =>
-          new LLMError({
-            message: "Failed to parse Anthropic API response",
-            provider: "anthropic",
-            cause: error,
-          }),
-      })) as AnthropicResponse
-
-      const content = data.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("")
-
-      const finishReason: "stop" | "length" | "error" =
-        data.stop_reason === "end_turn"
-          ? "stop"
-          : data.stop_reason === "max_tokens"
-            ? "length"
-            : "stop"
-
-      return {
-        content,
-        model: data.model,
-        usage: {
-          inputTokens: data.usage.input_tokens,
-          outputTokens: data.usage.output_tokens,
-        },
-        finishReason,
-      }
+      return result
     })
 
   const stream = (
@@ -308,113 +158,43 @@ export const makeAnthropicProvider = Effect.gen(function* () {
     Stream.asyncEffect<StreamChunk, LLMError>((emit) =>
       Effect.gen(function* () {
         const apiKey = yield* getApiKey()
-        const { system, messages } = convertMessages(request.messages)
 
-        const anthropicRequest: AnthropicRequest = {
-          model: request.model,
-          messages,
-          max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-          temperature: request.temperature,
-          stop_sequences: request.stopSequences,
-          stream: true,
-          system,
-        }
+        // Resolve model name to TanStack AI format
+        const modelToUse = resolveModel(request.model)
 
-        const response = yield* Effect.tryPromise({
-          try: () =>
-            fetch(`${API_BASE_URL}/messages`, {
-              method: "POST",
-              headers: {
-                "x-api-key": apiKey,
-                "anthropic-version": ANTHROPIC_VERSION,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(anthropicRequest),
-            }),
+        const systemPrompts = extractSystemPrompts(request.messages)
+        const messages = convertMessages(request.messages)
+
+        yield* Effect.tryPromise({
+          try: async () => {
+            const adapter = createAnthropic(apiKey)
+
+            const chatStream = chat({
+              adapter,
+              model: modelToUse,
+              messages,
+              systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+            })
+
+            for await (const chunk of chatStream) {
+              if (chunk.type === "content" && chunk.content) {
+                await emit.single({
+                  content: chunk.content,
+                  done: false,
+                })
+              }
+              if (chunk.type === "done") {
+                await emit.single({ content: "", done: true })
+              }
+            }
+          },
           catch: (error) =>
             new LLMError({
-              message: `Failed to call Anthropic API: ${error instanceof Error ? error.message : String(error)}`,
+              message: `Anthropic streaming error: ${error instanceof Error ? error.message : String(error)}`,
               provider: "anthropic",
               cause: error,
             }),
         })
-
-        if (response.status === 429) {
-          return yield* handleRateLimitError(response)
-        }
-
-        if (!response.ok) {
-          const errorBody = yield* Effect.tryPromise({
-            try: () => response.json(),
-            catch: (error) =>
-              new LLMError({
-                message: "Failed to parse error response",
-                provider: "anthropic",
-                cause: error,
-              }),
-          }).pipe(Effect.catchAll(() => Effect.succeed({})))
-          return yield* parseErrorResponse(errorBody)
-        }
-
-        if (!response.body) {
-          return yield* Effect.fail(
-            new LLMError({
-              message: "No response body from Anthropic API",
-              provider: "anthropic",
-            })
-          )
-        }
-
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ""
-
-        try {
-          while (true) {
-            const result = yield* Effect.promise(() => reader.read())
-
-            if (result.done) {
-              yield* Effect.promise(() =>
-                emit.single({ content: "", done: true })
-              )
-              break
-            }
-
-            buffer += decoder.decode(result.value, { stream: true })
-            const lines = buffer.split("\n")
-            buffer = lines.pop() || ""
-
-            for (const line of lines) {
-              if (!line.trim()) continue
-
-              const event = parseSSELine(line)
-              if (!event) continue
-
-              if (event.type === "content_block_delta") {
-                yield* Effect.promise(() =>
-                  emit.single({
-                    content: event.delta.text,
-                    done: false,
-                  })
-                )
-              } else if (event.type === "message_stop") {
-                yield* Effect.promise(() =>
-                  emit.single({ content: "", done: true })
-                )
-              }
-            }
-          }
-        } catch (error) {
-          return yield* Effect.fail(
-            new LLMError({
-              message: `Error reading stream: ${error instanceof Error ? error.message : String(error)}`,
-              provider: "anthropic",
-              cause: error,
-            })
-          )
-        } finally {
-          reader.releaseLock()
-        }
       }) as Effect.Effect<void, LLMError>
     )
 
@@ -433,46 +213,28 @@ export const makeAnthropicProvider = Effect.gen(function* () {
       const apiKey = apiKeyResult.right
 
       // Make a minimal request to validate the key
-      const result = yield* Effect.either(
-        Effect.tryPromise({
-          try: () =>
-            fetch(`${API_BASE_URL}/messages`, {
-              method: "POST",
-              headers: {
-                "x-api-key": apiKey,
-                "anthropic-version": ANTHROPIC_VERSION,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                model: SUPPORTED_MODELS[0],
-                messages: [{ role: "user", content: "test" }],
-                max_tokens: 1,
-              }),
-            }),
-          catch: () =>
-            new LLMError({
-              message: "Network error validating API key",
-              provider: "anthropic",
-            }),
-        })
-      )
+      const result = yield* Effect.tryPromise({
+        try: async () => {
+          const adapter = createAnthropic(apiKey)
 
-      if (Either.isLeft(result)) {
-        return false
-      }
+          const stream = chat({
+            adapter,
+            model: "claude-3-5-haiku",
+            messages: [{ role: "user", content: "test" }],
+          })
 
-      const response = result.right
+          // Just try to get first chunk to validate
+          for await (const _ of stream) {
+            break
+          }
 
-      // If we get a 429 (rate limit), the key is valid but we're rate limited
-      if (response.status === 429) {
-        return true
-      }
+          return true
+        },
+        catch: () => false as boolean,
+      })
 
-      // 200-299 means valid key
-      // 401 means invalid key
-      // Other errors might be network issues, so we'll consider them valid for now
-      return response.ok || response.status !== 401
-    })
+      return result
+    }).pipe(Effect.catchAll(() => Effect.succeed(false)))
 
   return {
     name: "anthropic",

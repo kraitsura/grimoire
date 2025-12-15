@@ -1,87 +1,14 @@
-import { Effect, Stream, Data, pipe } from "effect"
-import {
+import { Effect, Stream, Either } from "effect"
+import { chat } from "@tanstack/ai"
+import { createOpenAI } from "@tanstack/ai-openai"
+import type {
   LLMProvider,
   LLMRequest,
   LLMResponse,
-  LLMError,
   StreamChunk,
-  Message,
 } from "../llm-service"
+import { LLMError } from "../llm-service"
 import { ApiKeyService, ApiKeyNotFoundError } from "../api-key-service"
-
-// OpenAI-specific error types
-export class OpenAIRateLimitError extends Data.TaggedError("OpenAIRateLimitError")<{
-  message: string
-  retryAfter?: number
-  limit?: number
-  remaining?: number
-  resetAt?: Date
-}> {}
-
-export class OpenAIAPIError extends Data.TaggedError("OpenAIAPIError")<{
-  message: string
-  statusCode?: number
-  type?: string
-}> {}
-
-// OpenAI API types
-interface OpenAIMessage {
-  role: "system" | "user" | "assistant"
-  content: string
-}
-
-interface OpenAIRequest {
-  model: string
-  messages: OpenAIMessage[]
-  temperature?: number
-  max_tokens?: number
-  stop?: string[]
-  stream: boolean
-}
-
-interface OpenAIUsage {
-  prompt_tokens: number
-  completion_tokens: number
-  total_tokens: number
-}
-
-interface OpenAIChoice {
-  message?: {
-    role: string
-    content: string
-  }
-  delta?: {
-    role?: string
-    content?: string
-  }
-  finish_reason: string | null
-  index: number
-}
-
-interface OpenAIResponse {
-  id: string
-  object: string
-  created: number
-  model: string
-  choices: OpenAIChoice[]
-  usage?: OpenAIUsage
-}
-
-interface OpenAIStreamChunk {
-  id: string
-  object: string
-  created: number
-  model: string
-  choices: OpenAIChoice[]
-}
-
-interface OpenAIErrorResponse {
-  error: {
-    message: string
-    type: string
-    code?: string
-  }
-}
 
 // Supported models
 const SUPPORTED_MODELS = [
@@ -91,129 +18,35 @@ const SUPPORTED_MODELS = [
   "gpt-4",
   "gpt-3.5-turbo",
   "o1",
-  "o1-mini",
+  "o3-mini",
 ] as const
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+type OpenAIModel = (typeof SUPPORTED_MODELS)[number]
 
-// Parse rate limit headers
-const parseRateLimitHeaders = (headers: Headers) => {
-  const limit = headers.get("x-ratelimit-limit-requests")
-  const remaining = headers.get("x-ratelimit-remaining-requests")
-  const resetTime = headers.get("x-ratelimit-reset-requests")
-
-  return {
-    limit: limit ? parseInt(limit, 10) : undefined,
-    remaining: remaining ? parseInt(remaining, 10) : undefined,
-    resetAt: resetTime ? new Date(resetTime) : undefined,
-  }
+// Helper to extract system prompts from messages
+const extractSystemPrompts = (
+  messages: Array<{ role: string; content: string }>
+): string[] => {
+  return messages
+    .filter((msg) => msg.role === "system")
+    .map((msg) => msg.content)
 }
 
-// Convert our Message format to OpenAI format
-const convertMessages = (messages: Message[]): OpenAIMessage[] => {
-  return messages.map((msg) => ({
-    role: msg.role,
-    content: msg.content,
-  }))
+// Helper to convert our messages to TanStack AI format (excluding system messages)
+const convertMessages = (
+  messages: Array<{ role: string; content: string }>
+): Array<{ role: "user" | "assistant"; content: string }> => {
+  return messages
+    .filter((msg) => msg.role === "user" || msg.role === "assistant")
+    .map((msg) => ({
+      role: msg.role as "user" | "assistant",
+      content: msg.content,
+    }))
 }
 
-// Make OpenAI API request
-const makeOpenAIRequest = (
-  apiKey: string,
-  request: LLMRequest,
-  stream: boolean
-): Effect.Effect<Response, LLMError> =>
-  Effect.gen(function* () {
-    const openAIRequest: OpenAIRequest = {
-      model: request.model,
-      messages: convertMessages(request.messages),
-      temperature: request.temperature,
-      max_tokens: request.maxTokens,
-      stop: request.stopSequences,
-      stream,
-    }
-
-    try {
-      const response = yield* Effect.promise(() =>
-        fetch(OPENAI_API_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(openAIRequest),
-        })
-      )
-
-      return response
-    } catch (error) {
-      return yield* Effect.fail(
-        new LLMError({
-          message: `OpenAI API request failed: ${error instanceof Error ? error.message : String(error)}`,
-          provider: "openai",
-          cause: error,
-        })
-      )
-    }
-  })
-
-// Handle error response
-const handleErrorResponse = (
-  response: Response
-): Effect.Effect<never, LLMError> =>
-  Effect.gen(function* () {
-    const rateLimitInfo = parseRateLimitHeaders(response.headers)
-
-    // Check for rate limit error
-    if (response.status === 429) {
-      const retryAfter = response.headers.get("retry-after")
-      return yield* Effect.fail(
-        new LLMError({
-          message: `OpenAI rate limit exceeded. ${retryAfter ? `Retry after ${retryAfter} seconds.` : ""} Remaining: ${rateLimitInfo.remaining ?? "unknown"}`,
-          provider: "openai",
-        })
-      )
-    }
-
-    // Parse error response
-    try {
-      const errorData = (yield* Effect.promise(() =>
-        response.json()
-      )) as OpenAIErrorResponse
-
-      return yield* Effect.fail(
-        new LLMError({
-          message: `OpenAI API error: ${errorData.error.message}`,
-          provider: "openai",
-        })
-      )
-    } catch {
-      return yield* Effect.fail(
-        new LLMError({
-          message: `OpenAI API error: ${response.status} ${response.statusText}`,
-          provider: "openai",
-        })
-      )
-    }
-  })
-
-// Parse Server-Sent Events (SSE)
-const parseSSE = (line: string): OpenAIStreamChunk | null => {
-  if (!line.startsWith("data: ")) {
-    return null
-  }
-
-  const data = line.slice(6).trim()
-
-  if (data === "[DONE]") {
-    return null
-  }
-
-  try {
-    return JSON.parse(data) as OpenAIStreamChunk
-  } catch {
-    return null
-  }
+// Helper to validate model name
+const isValidModel = (model: string): model is OpenAIModel => {
+  return SUPPORTED_MODELS.includes(model as OpenAIModel)
 }
 
 // Create the OpenAI provider
@@ -239,48 +72,66 @@ export const makeOpenAIProvider = Effect.gen(function* () {
       })
     )
 
-  const complete = (request: LLMRequest): Effect.Effect<LLMResponse, LLMError, never> =>
+  const complete = (
+    request: LLMRequest
+  ): Effect.Effect<LLMResponse, LLMError, never> =>
     Effect.gen(function* () {
-      // Get API key
       const apiKey = yield* getApiKey()
 
-      // Make request
-      const response = yield* makeOpenAIRequest(apiKey, request, false)
+      // Map model names - default to gpt-4o-mini if not in our list
+      const modelToUse: OpenAIModel = isValidModel(request.model)
+        ? request.model
+        : "gpt-4o-mini"
 
-      // Handle errors
-      if (!response.ok) {
-        return yield* handleErrorResponse(response)
-      }
+      const systemPrompts = extractSystemPrompts(request.messages)
+      const messages = convertMessages(request.messages)
 
-      // Parse response
-      const data = (yield* Effect.promise(() =>
-        response.json()
-      )) as OpenAIResponse
+      const result = yield* Effect.tryPromise({
+        try: async () => {
+          const adapter = createOpenAI(apiKey)
 
-      const choice = data.choices[0]
-      if (!choice || !choice.message) {
-        return yield* Effect.fail(
-          new LLMError({
-            message: "OpenAI API returned no choices",
-            provider: "openai",
+          const chatStream = chat({
+            adapter,
+            model: modelToUse,
+            messages,
+            systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
           })
-        )
-      }
 
-      return {
-        content: choice.message.content,
-        model: data.model,
-        usage: {
-          inputTokens: data.usage?.prompt_tokens ?? 0,
-          outputTokens: data.usage?.completion_tokens ?? 0,
+          // Collect all chunks for non-streaming response
+          let content = ""
+          let inputTokens = 0
+          let outputTokens = 0
+
+          for await (const chunk of chatStream) {
+            if (chunk.type === "content" && chunk.content) {
+              content += chunk.content
+            }
+            if (chunk.type === "done" && chunk.usage) {
+              // TanStack AI uses promptTokens/completionTokens
+              inputTokens = chunk.usage.promptTokens ?? 0
+              outputTokens = chunk.usage.completionTokens ?? 0
+            }
+          }
+
+          return {
+            content,
+            model: request.model,
+            usage: {
+              inputTokens,
+              outputTokens,
+            },
+            finishReason: "stop" as const,
+          }
         },
-        finishReason:
-          choice.finish_reason === "stop"
-            ? "stop"
-            : choice.finish_reason === "length"
-              ? "length"
-              : "error",
-      }
+        catch: (error) =>
+          new LLMError({
+            message: `OpenAI API error: ${error instanceof Error ? error.message : String(error)}`,
+            provider: "openai",
+            cause: error,
+          }),
+      })
+
+      return result
     })
 
   const stream = (
@@ -288,76 +139,47 @@ export const makeOpenAIProvider = Effect.gen(function* () {
   ): Stream.Stream<StreamChunk, LLMError, never> =>
     Stream.asyncEffect<StreamChunk, LLMError>((emit) =>
       Effect.gen(function* () {
-        // Get API key
         const apiKey = yield* getApiKey()
 
-        // Make streaming request
-        const response = yield* makeOpenAIRequest(apiKey, request, true)
+        // Map model names
+        const modelToUse: OpenAIModel = isValidModel(request.model)
+          ? request.model
+          : "gpt-4o-mini"
 
-        // Handle errors
-        if (!response.ok) {
-          return yield* handleErrorResponse(response)
-        }
+        const systemPrompts = extractSystemPrompts(request.messages)
+        const messages = convertMessages(request.messages)
 
-        // Check if response body exists
-        if (!response.body) {
-          return yield* Effect.fail(
-            new LLMError({
-              message: "OpenAI API response has no body",
-              provider: "openai",
+        yield* Effect.tryPromise({
+          try: async () => {
+            const adapter = createOpenAI(apiKey)
+
+            const chatStream = chat({
+              adapter,
+              model: modelToUse,
+              messages,
+              systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
             })
-          )
-        }
 
-        // Process the stream
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ""
-
-        try {
-          while (true) {
-            const { done, value } = yield* Effect.promise(() => reader.read())
-
-            if (done) {
-              // Emit final chunk
-              yield* Effect.promise(() => emit.single({ content: "", done: true }))
-              break
-            }
-
-            // Decode and add to buffer
-            buffer += decoder.decode(value, { stream: true })
-
-            // Process complete lines
-            const lines = buffer.split("\n")
-            buffer = lines.pop() ?? ""
-
-            for (const line of lines) {
-              const trimmedLine = line.trim()
-              if (!trimmedLine || trimmedLine === "data: [DONE]") {
-                continue
+            for await (const chunk of chatStream) {
+              if (chunk.type === "content" && chunk.content) {
+                await emit.single({
+                  content: chunk.content,
+                  done: false,
+                })
               }
-
-              const chunk = parseSSE(trimmedLine)
-              if (!chunk) {
-                continue
-              }
-
-              const delta = chunk.choices[0]?.delta
-              if (delta && delta.content) {
-                yield* Effect.promise(() => emit.single({ content: delta.content!, done: false }))
+              if (chunk.type === "done") {
+                await emit.single({ content: "", done: true })
               }
             }
-          }
-        } catch (error) {
-          return yield* Effect.fail(
+          },
+          catch: (error) =>
             new LLMError({
               message: `OpenAI streaming error: ${error instanceof Error ? error.message : String(error)}`,
               provider: "openai",
               cause: error,
-            })
-          )
-        }
-      })
+            }),
+        })
+      }) as Effect.Effect<void, LLMError>
     )
 
   const listModels = (): Effect.Effect<string[], LLMError> =>
@@ -365,25 +187,38 @@ export const makeOpenAIProvider = Effect.gen(function* () {
 
   const validateApiKey = (): Effect.Effect<boolean, LLMError, never> =>
     Effect.gen(function* () {
-      try {
-        // Get API key
-        const apiKey = yield* getApiKey()
+      // Try to get API key
+      const apiKeyResult = yield* Effect.either(getApiKey())
 
-        // Make a simple request to validate the key
-        const response = yield* Effect.promise(() =>
-          fetch("https://api.openai.com/v1/models", {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-            },
-          })
-        )
-
-        return response.ok
-      } catch {
+      if (Either.isLeft(apiKeyResult)) {
         return false
       }
-    })
+
+      const apiKey = apiKeyResult.right
+
+      // Make a minimal request to validate the key
+      const result = yield* Effect.tryPromise({
+        try: async () => {
+          const adapter = createOpenAI(apiKey)
+
+          const stream = chat({
+            adapter,
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: "test" }],
+          })
+
+          // Just try to get first chunk to validate
+          for await (const _ of stream) {
+            break
+          }
+
+          return true
+        },
+        catch: () => false as boolean,
+      })
+
+      return result
+    }).pipe(Effect.catchAll(() => Effect.succeed(false)))
 
   return {
     name: "openai",
