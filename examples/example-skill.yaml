@@ -2,12 +2,17 @@
 #
 # This file demonstrates the structure of a skill manifest (skill.yaml)
 # that defines a reusable AI agent capability.
+#
+# IMPORTANT: Skills vs Plugins
+# - Skills = Context injection (instructions, documentation) via SKILL.md
+# - Plugins = Full packages with commands, hooks, MCP servers, agents
+# Use skills for adding knowledge/instructions, use plugins for adding tools/capabilities.
 
 # Required fields
 name: example-skill
 version: 1.0.0
 description: An example skill demonstrating all available configuration options
-type: prompt  # Options: prompt, plugin, mcp, tool
+type: prompt  # Options: prompt, mcp, tool (avoid 'plugin' - use actual Claude Code plugins instead)
 
 # Optional metadata
 tags:
@@ -17,6 +22,26 @@ tags:
 author: Your Name
 license: MIT
 repository: https://github.com/your-org/example-skill
+
+# Claude Code Discovery Fields (IMPORTANT for skill discoverability)
+#
+# trigger_description: Helps Claude understand WHEN to invoke this skill.
+# This is critical for automatic skill discovery. Without it, skills are
+# passive documentation rather than active capabilities.
+#
+# Good: "Use when managing tasks, tracking issues, planning sprints, or organizing work"
+# Bad:  "Task management" (too vague, won't trigger reliably)
+trigger_description: >
+  Use this skill when working with examples, tutorials, or demonstrations.
+  Invoke when the user asks about skill configuration, manifest structure,
+  or how to create new skills for AI agents.
+
+# allowed_tools: Restricts which tools the skill can use (security boundary)
+# Valid tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, Task, etc.
+allowed_tools:
+  - Read
+  - Glob
+  - Grep
 
 # CLI dependencies (optional)
 # Specify command-line tools required by this skill
@@ -55,10 +80,13 @@ agents:
         This skill demonstrates how to inject custom documentation
         into the agent's context.
 
-    # Install a Claude Code plugin from marketplace
-    plugin:
-      marketplace: claude_code
-      name: example-plugin
+    # DEPRECATED: Plugin installation from skills
+    # Skills should NOT install plugins. If you need plugin functionality,
+    # create a proper Claude Code plugin instead (with .claude-plugin/plugin.json).
+    # This field is preserved for backwards compatibility but discouraged.
+    # plugin:
+    #   marketplace: claude_code
+    #   name: example-plugin
 
     # Configure MCP (Model Context Protocol) server
     mcp:
@@ -70,16 +98,22 @@ agents:
         DEBUG: "true"
 
   # OpenCode agent configuration
+  # Note: OpenCode uses different config paths than Claude Code:
+  # - Config file: opencode.json (at project root)
+  # - Instructions: AGENTS.md (at project root)
+  # - Skills: .opencode/skills/ directory
   opencode:
-    # Inject content into agent configuration
+    # Inject content into AGENTS.md
     inject:
-      file: .opencode/config.md
+      file: AGENTS.md
       content: |
         ## Example Skill for OpenCode
 
         Custom documentation for OpenCode agent.
 
-    # MCP configuration (same structure as Claude Code)
+    # MCP configuration for OpenCode
+    # Note: OpenCode uses different MCP format:
+    # { "mcp": { "name": { "type": "local", "command": [...], "environment": {...} } } }
     mcp:
       command: python
       args:
