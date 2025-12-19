@@ -33,3 +33,5 @@ export { tagCommand } from "./tag";
 export { templatesCommand } from "./templates";
 export { testCommand } from "./test";
 export { versionsCommand } from "./versions";
+export { stashCommand } from "./stash";
+export { popCommand } from "./pop";

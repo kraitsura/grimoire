@@ -30,7 +30,8 @@ export type Screen =
   | { name: "compare" }
   | { name: "llmconfig" }
   | { name: "pinned" }
-  | { name: "templates" };
+  | { name: "templates" }
+  | { name: "stash" };
 
 /**
  * Notification types

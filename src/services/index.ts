@@ -133,6 +133,10 @@ export type { CacheStats } from "./response-cache-service";
 export { ArchiveService, ArchiveServiceLive } from "./archive-service";
 export type { ArchivedPrompt } from "./archive-service";
 
+// Re-export Stash service (StashService is a Context.Tag class)
+export { StashService, StashServiceLive } from "./stash-service";
+export type { StashItem } from "./stash-service";
+
 // Re-export Rate Limiter service (RateLimiterService is a Context.Tag class)
 export { RateLimiterService, RateLimiterServiceLive } from "./rate-limiter-service";
 export type { RateLimitStatus } from "./rate-limiter-service";
@@ -187,6 +191,16 @@ export type { SkillsConfig } from "./skills/skill-config-service";
 // Re-export Skill Cache service (SkillCacheService is a Context.Tag class)
 export { SkillCacheService, SkillCacheServiceLive } from "./skills/skill-cache-service";
 export type { GitHubSource, CachedSkill } from "./skills/skill-cache-service";
+
+// Re-export Skill types from models
+export type {
+  SkillManifest,
+  AgentType,
+  SkillInfo,
+  PluginInfo,
+  RepoType,
+  InferredManifest,
+} from "../models/skill";
 
 // Re-export Skill State service (SkillStateService is a Context.Tag class)
 export { SkillStateService, SkillStateServiceLive } from "./skills/skill-state-service";
@@ -348,6 +362,7 @@ import { StatsServiceLive as StatsServiceLiveImport } from "./stats-service";
 import { TagServiceLive as TagServiceLiveImport } from "./tag-service";
 import { SearchServiceLive as SearchServiceLiveImport } from "./search-service";
 import { ArchiveServiceLive as ArchiveServiceLiveImport } from "./archive-service";
+import { StashServiceLive as StashServiceLiveImport } from "./stash-service";
 import { ExportServiceLive as ExportServiceLiveImport } from "./export-service";
 import { ImportServiceLive as ImportServiceLiveImport } from "./import-service";
 import { VersionServiceLive as VersionServiceLiveImport } from "./version-service";
@@ -431,7 +446,8 @@ const SqlAndStorageDependentServices = Layer.mergeAll(
 // Services that need only SqlService
 const SqlOnlyDependentServices = Layer.mergeAll(
   ResponseCacheServiceLiveImport,
-  RetentionServiceLiveImport
+  RetentionServiceLiveImport,
+  StashServiceLiveImport
 ).pipe(Layer.provide(SqlLayer));
 
 // Chain needs StorageService (which includes Sql, PromptStorage, Sync)

@@ -73,12 +73,14 @@ import {
   importCommand,
   listCommand,
   pinCommand,
+  popCommand,
   reindexCommand,
   rmCommand,
   rollbackCommand,
   searchCommand,
   showCommand,
   skillsCommand,
+  stashCommand,
   statsCommand,
   syncCommand,
   tagCommand,
@@ -139,6 +141,8 @@ COMMANDS:
   completion <shell>  Generate shell completions (bash/zsh/fish)
   config llm          Manage LLM provider configuration
   skills              Package manager for agent context
+  stash [name]        Stash clipboard content
+  pop [name]          Pop from stash to clipboard
 
 Run 'grimoire' with no arguments to launch interactive mode.
     `);
@@ -255,6 +259,12 @@ Run 'grimoire' with no arguments to launch interactive mode.
         break;
       case "skills":
         yield* skillsCommand(parsedArgs);
+        break;
+      case "stash":
+        yield* stashCommand(parsedArgs);
+        break;
+      case "pop":
+        yield* popCommand(parsedArgs);
         break;
       default:
         console.log(`Unknown command: ${command}`);

@@ -42,3 +42,26 @@ export {
   replaceSkillInjection,
   listInjectedSkills,
 } from "./injection-utils";
+
+// Skill Validation Service
+export {
+  SkillValidationService,
+  SkillValidationServiceLive,
+  validateName,
+  validateDescription,
+  validateCompatibility,
+  validateSkillMdSize,
+  validateManifest,
+  validateSkillAtPath,
+  parseAllowedTools,
+} from "./skill-validation-service";
+
+// Project Config Service
+export {
+  ProjectConfigService,
+  ProjectConfigServiceLive,
+  ProjectConfigSchema,
+  ProjectConfigReadError,
+  ProjectConfigWriteError,
+} from "./project-config-service";
+export type { ProjectConfig } from "./project-config-service";

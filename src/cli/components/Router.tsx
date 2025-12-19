@@ -23,6 +23,7 @@ import {
   LLMConfigScreen,
   PinnedScreen,
   TemplatesScreen,
+  StashScreen,
 } from "../screens/index.js";
 
 /**
@@ -169,6 +170,9 @@ export const Router: React.FC<RouterProps> = ({ screen, loading = false }) => {
 
       case "templates":
         return <TemplatesScreen />;
+
+      case "stash":
+        return <StashScreen />;
 
       default: {
         // Type-safe exhaustive check
