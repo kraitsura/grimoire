@@ -88,3 +88,59 @@ export class InjectionError extends Data.TaggedError("InjectionError")<{
   file: string;
   message: string;
 }> {}
+
+/**
+ * Error when a plugin is detected instead of a skill
+ */
+export class PluginDetectedError extends Data.TaggedError("PluginDetectedError")<{
+  source: string;
+  pluginPath: string;
+}> {}
+
+/**
+ * Error when repository contains no skills or plugins
+ */
+export class EmptyRepoError extends Data.TaggedError("EmptyRepoError")<{
+  source: string;
+}> {}
+
+/**
+ * Error when SKILL.md is missing required frontmatter
+ */
+export class SkillMdFrontmatterError extends Data.TaggedError("SkillMdFrontmatterError")<{
+  path: string;
+  message: string;
+}> {}
+
+/**
+ * Validation severity level
+ */
+export type ValidationSeverity = "error" | "warning";
+
+/**
+ * Single validation issue
+ */
+export interface ValidationIssue {
+  field: string;
+  message: string;
+  severity: ValidationSeverity;
+  value?: unknown;
+}
+
+/**
+ * Validation result containing all issues found
+ */
+export interface ValidationResult {
+  valid: boolean;
+  issues: ValidationIssue[];
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
+}
+
+/**
+ * Error when skill validation fails against agentskills.io standard
+ */
+export class SkillValidationError extends Data.TaggedError("SkillValidationError")<{
+  name: string;
+  result: ValidationResult;
+}> {}
