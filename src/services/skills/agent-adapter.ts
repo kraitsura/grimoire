@@ -12,7 +12,7 @@ import type { CachedSkill } from "./skill-cache-service";
 import { InjectionError, PluginInstallError } from "../../models/skill-errors";
 import type { McpConfig } from "../../models/skill";
 import { existsSync } from "node:fs";
-import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir, copyFile, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import {
   hasManagedSection,
@@ -21,6 +21,153 @@ import {
   removeSkillInjection,
   hasSkillInjection,
 } from "./injection-utils";
+import type { SkillManifest } from "../../models/skill";
+
+// ============================================================================
+// YAML Frontmatter Utilities for Claude Code Skills
+// ============================================================================
+
+/**
+ * Check if content already has YAML frontmatter
+ */
+export function hasYamlFrontmatter(content: string): boolean {
+  return content.trimStart().startsWith("---");
+}
+
+/**
+ * Generate YAML frontmatter for a Claude Code SKILL.md file
+ *
+ * Claude Code uses this frontmatter for semantic skill discovery.
+ * The description field is critical - it tells Claude WHEN to use the skill.
+ */
+export function generateSkillFrontmatter(manifest: SkillManifest): string {
+  const lines: string[] = ["---"];
+
+  // Name (required)
+  lines.push(`name: ${manifest.name}`);
+
+  // Description for discovery (use trigger_description if available, else description)
+  const description = manifest.trigger_description || manifest.description;
+  if (description) {
+    // Handle multi-line descriptions
+    if (description.includes("\n")) {
+      lines.push(`description: |`);
+      description.split("\n").forEach((line) => {
+        lines.push(`  ${line}`);
+      });
+    } else {
+      lines.push(`description: ${description}`);
+    }
+  }
+
+  // Allowed tools (security boundary)
+  if (manifest.allowed_tools && manifest.allowed_tools.length > 0) {
+    lines.push(`allowed-tools: ${manifest.allowed_tools.join(", ")}`);
+  }
+
+  lines.push("---");
+  lines.push(""); // Empty line after frontmatter
+
+  return lines.join("\n");
+}
+
+/**
+ * Prepend YAML frontmatter to skill content if not already present
+ */
+export function ensureSkillFrontmatter(content: string, manifest: SkillManifest): string {
+  if (hasYamlFrontmatter(content)) {
+    // Already has frontmatter, don't double-add
+    return content;
+  }
+
+  const frontmatter = generateSkillFrontmatter(manifest);
+  return frontmatter + content;
+}
+
+/**
+ * Paths to exclude when copying skill directories
+ */
+const EXCLUDED_SKILL_PATHS = [".git", "node_modules", ".DS_Store", ".meta.json", "skill.yaml"];
+
+/**
+ * Check if a path should be excluded when copying to project
+ */
+function shouldExcludeFromProject(name: string): boolean {
+  return EXCLUDED_SKILL_PATHS.includes(name);
+}
+
+/**
+ * Options for copying skill directories
+ */
+interface CopySkillOptions {
+  /** Whether to add YAML frontmatter to SKILL.md (Claude Code feature) */
+  addFrontmatter?: boolean;
+  /** The manifest to use for frontmatter generation */
+  manifest: SkillManifest;
+}
+
+/**
+ * Recursively copy skill directory from cache to project
+ * Excludes .git, node_modules, .meta.json, and skill.yaml
+ * Optionally adds frontmatter to SKILL.md (for Claude Code discovery)
+ */
+async function copySkillDirectoryToProjectAsync(
+  srcDir: string,
+  destDir: string,
+  options: CopySkillOptions
+): Promise<void> {
+  // Create destination directory
+  await mkdir(destDir, { recursive: true });
+
+  // Read source directory entries
+  const entries = await readdir(srcDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    // Skip excluded paths
+    if (shouldExcludeFromProject(entry.name)) {
+      continue;
+    }
+
+    const srcPath = join(srcDir, entry.name);
+    const destPath = join(destDir, entry.name);
+
+    if (entry.isDirectory()) {
+      // Recursively copy subdirectory
+      await copySkillDirectoryToProjectAsync(srcPath, destPath, options);
+    } else if (entry.isFile()) {
+      // Special handling for SKILL.md - optionally add frontmatter
+      if (entry.name === "SKILL.md" && options.addFrontmatter) {
+        const content = await readFile(srcPath, "utf-8");
+        const contentWithFrontmatter = ensureSkillFrontmatter(content, options.manifest);
+        await writeFile(destPath, contentWithFrontmatter, "utf-8");
+      } else {
+        // Regular file copy
+        await copyFile(srcPath, destPath);
+      }
+    }
+  }
+}
+
+/**
+ * Effect wrapper for copySkillDirectoryToProject
+ */
+function copySkillDirectoryToProject(
+  srcDir: string,
+  destDir: string,
+  options: CopySkillOptions,
+  agent: AgentType = "claude_code"
+): Effect.Effect<void, AgentAdapterError> {
+  return Effect.tryPromise({
+    try: () => copySkillDirectoryToProjectAsync(srcDir, destDir, options),
+    catch: (error) =>
+      new AgentAdapterError({
+        agent,
+        operation: "enableSkill",
+        message: `Failed to copy skill directory: ${error instanceof Error ? error.message : String(error)}`,
+        cause: error,
+      }),
+  });
+}
 
 /**
  * Result of enabling a skill for an agent
@@ -220,43 +367,32 @@ const ClaudeCodeAdapter: AgentAdapter = {
         skillFileCopied: false,
       };
 
-      const agentConfig = skill.manifest.agents?.claude_code;
-      if (!agentConfig) {
-        return result;
-      }
-
-      // Copy skill file if configured
-      if (agentConfig.skill_file && skill.skillMdPath) {
+      // Always copy skill directory when SKILL.md exists (agentskills.io standard)
+      // Claude Code expects skills as directories: .claude/skills/<name>/
+      if (skill.skillMdPath) {
         const skillsDir = ClaudeCodeAdapter.getSkillsDir(projectPath);
-        const destPath = join(skillsDir, `${skill.manifest.name}.md`);
+        const skillDir = join(skillsDir, skill.manifest.name);
 
-        yield* Effect.tryPromise({
-          try: () => mkdir(dirname(destPath), { recursive: true }),
-          catch: (error) =>
-            new AgentAdapterError({
-              agent: "claude_code",
-              operation: "enableSkill",
-              message: `Failed to create skills directory`,
-              cause: error,
-            }),
-        });
+        // Get the source cache directory (parent of SKILL.md)
+        const sourceCacheDir = dirname(skill.skillMdPath);
 
-        yield* Effect.tryPromise({
-          try: () => copyFile(skill.skillMdPath!, destPath),
-          catch: (error) =>
-            new AgentAdapterError({
-              agent: "claude_code",
-              operation: "enableSkill",
-              message: `Failed to copy skill file`,
-              cause: error,
-            }),
-        });
+        // Copy entire skill directory from cache to project
+        // Claude Code needs frontmatter for skill discovery
+        yield* copySkillDirectoryToProject(
+          sourceCacheDir,
+          skillDir,
+          { manifest: skill.manifest, addFrontmatter: true },
+          "claude_code"
+        );
 
         result.skillFileCopied = true;
       }
 
+      // Check for additional agent-specific config (plugins, MCP, injection)
+      const agentConfig = skill.manifest.agents?.claude_code;
+
       // Install plugin if configured
-      if (agentConfig.plugin && ClaudeCodeAdapter.installPlugin) {
+      if (agentConfig?.plugin && ClaudeCodeAdapter.installPlugin) {
         yield* ClaudeCodeAdapter.installPlugin(
           agentConfig.plugin.marketplace,
           agentConfig.plugin.name
@@ -275,7 +411,7 @@ const ClaudeCodeAdapter: AgentAdapter = {
       }
 
       // Configure MCP if configured
-      if (agentConfig.mcp && ClaudeCodeAdapter.configureMcp) {
+      if (agentConfig?.mcp && ClaudeCodeAdapter.configureMcp) {
         yield* ClaudeCodeAdapter.configureMcp(
           projectPath,
           skill.manifest.name,
@@ -285,7 +421,7 @@ const ClaudeCodeAdapter: AgentAdapter = {
       }
 
       // Inject content if configured
-      if (agentConfig.inject) {
+      if (agentConfig?.inject) {
         yield* ClaudeCodeAdapter.injectContent(
           projectPath,
           skill.manifest.name,
@@ -310,20 +446,38 @@ const ClaudeCodeAdapter: AgentAdapter = {
   disableSkill: (projectPath: string, skillName: string) =>
     Effect.gen(function* () {
       const skillsDir = ClaudeCodeAdapter.getSkillsDir(projectPath);
-      const skillFilePath = join(skillsDir, `${skillName}.md`);
+      const skillDir = join(skillsDir, skillName);
+      const legacyFilePath = join(skillsDir, `${skillName}.md`);
 
-      // Remove skill file if it exists
-      if (existsSync(skillFilePath)) {
+      // Remove skill directory if it exists (new structure: .claude/skills/<name>/)
+      if (existsSync(skillDir)) {
         yield* Effect.tryPromise({
           try: async () => {
-            const { unlink } = await import("node:fs/promises");
-            await unlink(skillFilePath);
+            const { rm } = await import("node:fs/promises");
+            await rm(skillDir, { recursive: true, force: true });
           },
           catch: (error) =>
             new AgentAdapterError({
               agent: "claude_code",
               operation: "disableSkill",
-              message: `Failed to remove skill file: ${skillFilePath}`,
+              message: `Failed to remove skill directory: ${skillDir}`,
+              cause: error,
+            }),
+        });
+      }
+
+      // Also remove legacy file structure if it exists (old: .claude/skills/<name>.md)
+      if (existsSync(legacyFilePath)) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            const { unlink } = await import("node:fs/promises");
+            await unlink(legacyFilePath);
+          },
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "claude_code",
+              operation: "disableSkill",
+              message: `Failed to remove legacy skill file: ${legacyFilePath}`,
               cause: error,
             }),
         });
@@ -498,15 +652,34 @@ const ClaudeCodeAdapter: AgentAdapter = {
 
 /**
  * OpenCode adapter
+ *
+ * OpenCode configuration paths:
+ * - Primary config: opencode.json (project root)
+ * - Global config: ~/.config/opencode/opencode.json
+ * - Agents: .opencode/agent/
+ * - Commands: .opencode/command/
+ * - Instructions: AGENTS.md
+ *
+ * MCP format for OpenCode:
+ * {
+ *   "mcp": {
+ *     "server-name": {
+ *       "type": "local",
+ *       "command": ["cmd", "arg1", "arg2"],
+ *       "environment": { "VAR": "value" }
+ *     }
+ *   }
+ * }
  */
 const OpenCodeAdapter: AgentAdapter = {
   name: "opencode",
 
   detect: (projectPath: string) =>
     Effect.gen(function* () {
-      // Check for .opencode/ directory existence
+      // Check for .opencode/ directory or opencode.json config file
       const opencodeDir = join(projectPath, ".opencode");
-      return existsSync(opencodeDir);
+      const opencodeConfig = join(projectPath, "opencode.json");
+      return existsSync(opencodeDir) || existsSync(opencodeConfig);
     }),
 
   init: (projectPath: string) =>
@@ -587,43 +760,32 @@ const OpenCodeAdapter: AgentAdapter = {
         skillFileCopied: false,
       };
 
-      const agentConfig = skill.manifest.agents?.opencode;
-      if (!agentConfig) {
-        return result;
-      }
-
-      // Copy skill file if configured (using same logic as claude_code)
+      // Always copy skill directory when SKILL.md exists (agentskills.io standard)
+      // OpenCode stores skills as directories: .opencode/skills/<name>/
       if (skill.skillMdPath) {
         const skillsDir = OpenCodeAdapter.getSkillsDir(projectPath);
-        const destPath = join(skillsDir, `${skill.manifest.name}.md`);
+        const skillDir = join(skillsDir, skill.manifest.name);
 
-        yield* Effect.tryPromise({
-          try: () => mkdir(dirname(destPath), { recursive: true }),
-          catch: (error) =>
-            new AgentAdapterError({
-              agent: "opencode",
-              operation: "enableSkill",
-              message: `Failed to create skills directory`,
-              cause: error,
-            }),
-        });
+        // Get the source cache directory (parent of SKILL.md)
+        const sourceCacheDir = dirname(skill.skillMdPath);
 
-        yield* Effect.tryPromise({
-          try: () => copyFile(skill.skillMdPath!, destPath),
-          catch: (error) =>
-            new AgentAdapterError({
-              agent: "opencode",
-              operation: "enableSkill",
-              message: `Failed to copy skill file`,
-              cause: error,
-            }),
-        });
+        // Copy entire skill directory from cache to project
+        // OpenCode doesn't need frontmatter (no Skill tool discovery mechanism)
+        yield* copySkillDirectoryToProject(
+          sourceCacheDir,
+          skillDir,
+          { manifest: skill.manifest, addFrontmatter: false },
+          "opencode"
+        );
 
         result.skillFileCopied = true;
       }
 
+      // Check for additional agent-specific config (MCP, injection)
+      const agentConfig = skill.manifest.agents?.opencode;
+
       // Configure MCP if configured
-      if (agentConfig.mcp && OpenCodeAdapter.configureMcp) {
+      if (agentConfig?.mcp && OpenCodeAdapter.configureMcp) {
         yield* OpenCodeAdapter.configureMcp(
           projectPath,
           skill.manifest.name,
@@ -633,7 +795,7 @@ const OpenCodeAdapter: AgentAdapter = {
       }
 
       // Inject content if configured
-      if (agentConfig.inject) {
+      if (agentConfig?.inject) {
         yield* OpenCodeAdapter.injectContent(
           projectPath,
           skill.manifest.name,
@@ -658,20 +820,38 @@ const OpenCodeAdapter: AgentAdapter = {
   disableSkill: (projectPath: string, skillName: string) =>
     Effect.gen(function* () {
       const skillsDir = OpenCodeAdapter.getSkillsDir(projectPath);
-      const skillFilePath = join(skillsDir, `${skillName}.md`);
+      const skillDir = join(skillsDir, skillName);
+      const legacyFilePath = join(skillsDir, `${skillName}.md`);
 
-      // Remove skill file if it exists
-      if (existsSync(skillFilePath)) {
+      // Remove skill directory if it exists (new structure: .opencode/skills/<name>/)
+      if (existsSync(skillDir)) {
         yield* Effect.tryPromise({
           try: async () => {
-            const { unlink } = await import("node:fs/promises");
-            await unlink(skillFilePath);
+            const { rm } = await import("node:fs/promises");
+            await rm(skillDir, { recursive: true, force: true });
           },
           catch: (error) =>
             new AgentAdapterError({
               agent: "opencode",
               operation: "disableSkill",
-              message: `Failed to remove skill file: ${skillFilePath}`,
+              message: `Failed to remove skill directory: ${skillDir}`,
+              cause: error,
+            }),
+        });
+      }
+
+      // Also remove legacy file structure if it exists (old: .opencode/skills/<name>.md)
+      if (existsSync(legacyFilePath)) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            const { unlink } = await import("node:fs/promises");
+            await unlink(legacyFilePath);
+          },
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "opencode",
+              operation: "disableSkill",
+              message: `Failed to remove legacy skill file: ${legacyFilePath}`,
               cause: error,
             }),
         });
@@ -683,7 +863,8 @@ const OpenCodeAdapter: AgentAdapter = {
 
   configureMcp: (projectPath: string, name: string, config: McpConfig) =>
     Effect.gen(function* () {
-      const configPath = join(projectPath, ".opencode", "config.json");
+      // OpenCode uses opencode.json at project root (not .opencode/config.json)
+      const configPath = join(projectPath, "opencode.json");
 
       // Read existing config or create empty object
       let opencodeConfig: any = {};
@@ -694,7 +875,7 @@ const OpenCodeAdapter: AgentAdapter = {
             new AgentAdapterError({
               agent: "opencode",
               operation: "configureMcp",
-              message: `Failed to read config.json`,
+              message: `Failed to read opencode.json`,
               cause: error,
             }),
         });
@@ -706,11 +887,19 @@ const OpenCodeAdapter: AgentAdapter = {
         }
       }
 
-      // Add MCP configuration
-      if (!opencodeConfig.mcpServers) {
-        opencodeConfig.mcpServers = {};
+      // Add MCP configuration in OpenCode format
+      // OpenCode uses "mcp" key (not "mcpServers") with different structure
+      if (!opencodeConfig.mcp) {
+        opencodeConfig.mcp = {};
       }
-      opencodeConfig.mcpServers[name] = config;
+
+      // Transform to OpenCode MCP format:
+      // { type: "local", command: ["cmd", ...args], environment: { ... } }
+      opencodeConfig.mcp[name] = {
+        type: "local",
+        command: [config.command, ...(config.args || [])],
+        ...(config.env && { environment: config.env }),
+      };
 
       // Write updated config
       yield* Effect.tryPromise({
@@ -719,7 +908,7 @@ const OpenCodeAdapter: AgentAdapter = {
           new AgentAdapterError({
             agent: "opencode",
             operation: "configureMcp",
-            message: `Failed to write config.json`,
+            message: `Failed to write opencode.json`,
             cause: error,
           }),
       });
@@ -1031,6 +1220,735 @@ const GenericAdapter: AgentAdapter = {
 };
 
 // ============================================================================
+// Codex Adapter (OpenAI Codex CLI)
+// ============================================================================
+
+/**
+ * Codex adapter
+ *
+ * Codex configuration:
+ * - Agent MD: AGENTS.md (walks from repo root to cwd)
+ * - Config: ~/.codex/config.toml
+ * - Skills: Injected into AGENTS.md (no separate skills dir)
+ */
+const CodexAdapter: AgentAdapter = {
+  name: "codex",
+
+  detect: (projectPath: string) =>
+    Effect.gen(function* () {
+      // Check for AGENTS.md file (Codex uses this)
+      // Note: We don't check ~/.codex as that's global config
+      const agentsMd = join(projectPath, "AGENTS.md");
+      return existsSync(agentsMd);
+    }),
+
+  init: (projectPath: string) =>
+    Effect.gen(function* () {
+      const agentsMdPath = join(projectPath, "AGENTS.md");
+
+      // Ensure AGENTS.md exists with managed section
+      const agentsMdExists = existsSync(agentsMdPath);
+      if (!agentsMdExists) {
+        const defaultContent = `# Agent Instructions
+
+Instructions for AI coding assistants.
+
+<!-- skills:managed:start -->
+<!-- This section is managed by grimoire skills -->
+<!-- skills:managed:end -->
+`;
+        yield* Effect.tryPromise({
+          try: () => writeFile(agentsMdPath, defaultContent, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "codex",
+              operation: "init",
+              message: `Failed to create AGENTS.md`,
+              cause: error,
+            }),
+        });
+      } else {
+        const content = yield* Effect.tryPromise({
+          try: () => readFile(agentsMdPath, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "codex",
+              operation: "init",
+              message: `Failed to read AGENTS.md`,
+              cause: error,
+            }),
+        });
+
+        if (!hasManagedSection(content)) {
+          const contentWithManaged = addManagedSection(content);
+          yield* Effect.tryPromise({
+            try: () => writeFile(agentsMdPath, contentWithManaged, "utf-8"),
+            catch: (error) =>
+              new AgentAdapterError({
+                agent: "codex",
+                operation: "init",
+                message: `Failed to update AGENTS.md`,
+                cause: error,
+              }),
+          });
+        }
+      }
+    }).pipe(Effect.orDie),
+
+  getSkillsDir: (projectPath: string) => {
+    // Codex doesn't have a skills dir - it uses AGENTS.md injection
+    return join(projectPath, ".codex", "skills");
+  },
+
+  getAgentMdPath: (projectPath: string) => {
+    return join(projectPath, "AGENTS.md");
+  },
+
+  enableSkill: (projectPath: string, skill: CachedSkill) =>
+    Effect.gen(function* () {
+      const result: AgentEnableResult = {
+        injected: false,
+        skillFileCopied: false,
+      };
+
+      // For Codex, we inject skill content into AGENTS.md rather than copying files
+      // Read SKILL.md content and inject it
+      if (skill.skillMdPath) {
+        const skillContent = yield* Effect.tryPromise({
+          try: () => readFile(skill.skillMdPath!, "utf-8"),
+          catch: () => "",
+        });
+
+        if (skillContent) {
+          // Strip frontmatter before injection
+          const contentWithoutFrontmatter = skillContent.replace(/^---[\s\S]*?---\n*/, "");
+          yield* CodexAdapter.injectContent(
+            projectPath,
+            skill.manifest.name,
+            contentWithoutFrontmatter
+          ).pipe(
+            Effect.mapError(
+              (error) =>
+                new AgentAdapterError({
+                  agent: "codex",
+                  operation: "enableSkill",
+                  message: `Failed to inject content: ${error.message}`,
+                  cause: error,
+                })
+            )
+          );
+          result.injected = true;
+        }
+      }
+
+      return result;
+    }),
+
+  disableSkill: (projectPath: string, skillName: string) =>
+    Effect.gen(function* () {
+      yield* CodexAdapter.removeInjection(projectPath, skillName);
+    }).pipe(Effect.orDie),
+
+  injectContent: (projectPath: string, skillName: string, content: string) =>
+    Effect.gen(function* () {
+      const agentsMdPath = CodexAdapter.getAgentMdPath(projectPath);
+
+      const currentContent = yield* Effect.tryPromise({
+        try: () => readFile(agentsMdPath, "utf-8"),
+        catch: (error) =>
+          new InjectionError({
+            file: agentsMdPath,
+            message: `Failed to read AGENTS.md`,
+          }),
+      });
+
+      const updatedContent = yield* addSkillInjection(currentContent, skillName, content);
+
+      yield* Effect.tryPromise({
+        try: () => writeFile(agentsMdPath, updatedContent, "utf-8"),
+        catch: (error) =>
+          new InjectionError({
+            file: agentsMdPath,
+            message: `Failed to write AGENTS.md`,
+          }),
+      });
+    }),
+
+  removeInjection: (projectPath: string, skillName: string) =>
+    Effect.gen(function* () {
+      const agentsMdPath = CodexAdapter.getAgentMdPath(projectPath);
+
+      if (!existsSync(agentsMdPath)) {
+        return;
+      }
+
+      const currentContent = yield* Effect.tryPromise({
+        try: () => readFile(agentsMdPath, "utf-8"),
+        catch: (error) =>
+          new AgentAdapterError({
+            agent: "codex",
+            operation: "removeInjection",
+            message: `Failed to read AGENTS.md`,
+            cause: error,
+          }),
+      });
+
+      const updatedContent = removeSkillInjection(currentContent, skillName);
+
+      if (updatedContent !== currentContent) {
+        yield* Effect.tryPromise({
+          try: () => writeFile(agentsMdPath, updatedContent, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "codex",
+              operation: "removeInjection",
+              message: `Failed to write AGENTS.md`,
+              cause: error,
+            }),
+        });
+      }
+    }).pipe(Effect.orDie),
+};
+
+// ============================================================================
+// Cursor Adapter (Cursor IDE)
+// ============================================================================
+
+/**
+ * Convert SKILL.md to Cursor MDC format
+ */
+function convertToMdc(skill: CachedSkill, skillContent: string): string {
+  const frontmatter = {
+    description: skill.manifest.description || skill.manifest.name,
+    alwaysApply: false,
+  };
+
+  // Strip existing frontmatter from skill content
+  const contentWithoutFrontmatter = skillContent.replace(/^---[\s\S]*?---\n*/, "");
+
+  const lines = ["---"];
+  lines.push(`description: ${frontmatter.description}`);
+  lines.push(`alwaysApply: ${frontmatter.alwaysApply}`);
+  lines.push("---");
+  lines.push("");
+  lines.push(contentWithoutFrontmatter);
+
+  return lines.join("\n");
+}
+
+/**
+ * Cursor adapter
+ *
+ * Cursor configuration:
+ * - Rules: .cursor/rules/*.mdc (MDC format)
+ * - No AGENTS.md - uses rule files directly
+ */
+const CursorAdapter: AgentAdapter = {
+  name: "cursor",
+
+  detect: (projectPath: string) =>
+    Effect.gen(function* () {
+      const cursorDir = join(projectPath, ".cursor");
+      return existsSync(cursorDir);
+    }),
+
+  init: (projectPath: string) =>
+    Effect.gen(function* () {
+      const cursorDir = join(projectPath, ".cursor");
+      const rulesDir = join(cursorDir, "rules");
+
+      // Create .cursor/rules/ directory
+      yield* Effect.tryPromise({
+        try: () => mkdir(rulesDir, { recursive: true }),
+        catch: (error) =>
+          new AgentAdapterError({
+            agent: "cursor",
+            operation: "init",
+            message: `Failed to create rules directory: ${rulesDir}`,
+            cause: error,
+          }),
+      });
+    }).pipe(Effect.orDie),
+
+  getSkillsDir: (projectPath: string) => {
+    return join(projectPath, ".cursor", "rules");
+  },
+
+  getAgentMdPath: (projectPath: string) => {
+    // Cursor doesn't use a single agent MD file
+    // Return the rules directory instead
+    return join(projectPath, ".cursor", "rules");
+  },
+
+  enableSkill: (projectPath: string, skill: CachedSkill) =>
+    Effect.gen(function* () {
+      const result: AgentEnableResult = {
+        injected: false,
+        skillFileCopied: false,
+      };
+
+      if (skill.skillMdPath) {
+        const rulesDir = CursorAdapter.getSkillsDir(projectPath);
+        const ruleFile = join(rulesDir, `${skill.manifest.name}.mdc`);
+
+        // Ensure rules directory exists
+        yield* Effect.tryPromise({
+          try: () => mkdir(rulesDir, { recursive: true }),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "cursor",
+              operation: "enableSkill",
+              message: `Failed to create rules directory`,
+              cause: error,
+            }),
+        });
+
+        // Read SKILL.md and convert to MDC format
+        const skillContent = yield* Effect.tryPromise({
+          try: () => readFile(skill.skillMdPath!, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "cursor",
+              operation: "enableSkill",
+              message: `Failed to read SKILL.md`,
+              cause: error,
+            }),
+        });
+
+        const mdcContent = convertToMdc(skill, skillContent);
+
+        yield* Effect.tryPromise({
+          try: () => writeFile(ruleFile, mdcContent, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "cursor",
+              operation: "enableSkill",
+              message: `Failed to write rule file`,
+              cause: error,
+            }),
+        });
+
+        result.skillFileCopied = true;
+      }
+
+      return result;
+    }),
+
+  disableSkill: (projectPath: string, skillName: string) =>
+    Effect.gen(function* () {
+      const rulesDir = CursorAdapter.getSkillsDir(projectPath);
+      const ruleFile = join(rulesDir, `${skillName}.mdc`);
+
+      if (existsSync(ruleFile)) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            const { unlink } = await import("node:fs/promises");
+            await unlink(ruleFile);
+          },
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "cursor",
+              operation: "disableSkill",
+              message: `Failed to remove rule file: ${ruleFile}`,
+              cause: error,
+            }),
+        });
+      }
+    }).pipe(Effect.orDie),
+
+  injectContent: (projectPath: string, skillName: string, content: string) =>
+    Effect.gen(function* () {
+      // Cursor uses individual rule files, not injection
+      // This is a no-op for Cursor
+    }),
+
+  removeInjection: (projectPath: string, skillName: string) =>
+    Effect.gen(function* () {
+      // Cursor uses individual rule files, not injection
+      // This is a no-op for Cursor
+    }).pipe(Effect.orDie),
+};
+
+// ============================================================================
+// Aider Adapter (aider.chat)
+// ============================================================================
+
+/**
+ * Aider adapter
+ *
+ * Aider configuration:
+ * - Config: .aider.conf.yml
+ * - Conventions: CONVENTIONS.md
+ * - Skills: Injected into CONVENTIONS.md
+ */
+const AiderAdapter: AgentAdapter = {
+  name: "aider",
+
+  detect: (projectPath: string) =>
+    Effect.gen(function* () {
+      const aiderConf = join(projectPath, ".aider.conf.yml");
+      const conventionsMd = join(projectPath, "CONVENTIONS.md");
+      return existsSync(aiderConf) || existsSync(conventionsMd);
+    }),
+
+  init: (projectPath: string) =>
+    Effect.gen(function* () {
+      const conventionsMdPath = join(projectPath, "CONVENTIONS.md");
+
+      // Ensure CONVENTIONS.md exists with managed section
+      const conventionsMdExists = existsSync(conventionsMdPath);
+      if (!conventionsMdExists) {
+        const defaultContent = `# Coding Conventions
+
+Coding guidelines and conventions for this project.
+
+<!-- skills:managed:start -->
+<!-- This section is managed by grimoire skills -->
+<!-- skills:managed:end -->
+`;
+        yield* Effect.tryPromise({
+          try: () => writeFile(conventionsMdPath, defaultContent, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "aider",
+              operation: "init",
+              message: `Failed to create CONVENTIONS.md`,
+              cause: error,
+            }),
+        });
+      } else {
+        const content = yield* Effect.tryPromise({
+          try: () => readFile(conventionsMdPath, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "aider",
+              operation: "init",
+              message: `Failed to read CONVENTIONS.md`,
+              cause: error,
+            }),
+        });
+
+        if (!hasManagedSection(content)) {
+          const contentWithManaged = addManagedSection(content);
+          yield* Effect.tryPromise({
+            try: () => writeFile(conventionsMdPath, contentWithManaged, "utf-8"),
+            catch: (error) =>
+              new AgentAdapterError({
+                agent: "aider",
+                operation: "init",
+                message: `Failed to update CONVENTIONS.md`,
+                cause: error,
+              }),
+          });
+        }
+      }
+    }).pipe(Effect.orDie),
+
+  getSkillsDir: (projectPath: string) => {
+    // Aider doesn't have a skills dir - uses CONVENTIONS.md injection
+    return join(projectPath, ".aider", "skills");
+  },
+
+  getAgentMdPath: (projectPath: string) => {
+    return join(projectPath, "CONVENTIONS.md");
+  },
+
+  enableSkill: (projectPath: string, skill: CachedSkill) =>
+    Effect.gen(function* () {
+      const result: AgentEnableResult = {
+        injected: false,
+        skillFileCopied: false,
+      };
+
+      // Inject skill content into CONVENTIONS.md
+      if (skill.skillMdPath) {
+        const skillContent = yield* Effect.tryPromise({
+          try: () => readFile(skill.skillMdPath!, "utf-8"),
+          catch: () => "",
+        });
+
+        if (skillContent) {
+          // Strip frontmatter before injection
+          const contentWithoutFrontmatter = skillContent.replace(/^---[\s\S]*?---\n*/, "");
+          yield* AiderAdapter.injectContent(
+            projectPath,
+            skill.manifest.name,
+            contentWithoutFrontmatter
+          ).pipe(
+            Effect.mapError(
+              (error) =>
+                new AgentAdapterError({
+                  agent: "aider",
+                  operation: "enableSkill",
+                  message: `Failed to inject content: ${error.message}`,
+                  cause: error,
+                })
+            )
+          );
+          result.injected = true;
+        }
+      }
+
+      return result;
+    }),
+
+  disableSkill: (projectPath: string, skillName: string) =>
+    Effect.gen(function* () {
+      yield* AiderAdapter.removeInjection(projectPath, skillName);
+    }).pipe(Effect.orDie),
+
+  injectContent: (projectPath: string, skillName: string, content: string) =>
+    Effect.gen(function* () {
+      const conventionsMdPath = AiderAdapter.getAgentMdPath(projectPath);
+
+      const currentContent = yield* Effect.tryPromise({
+        try: () => readFile(conventionsMdPath, "utf-8"),
+        catch: (error) =>
+          new InjectionError({
+            file: conventionsMdPath,
+            message: `Failed to read CONVENTIONS.md`,
+          }),
+      });
+
+      const updatedContent = yield* addSkillInjection(currentContent, skillName, content);
+
+      yield* Effect.tryPromise({
+        try: () => writeFile(conventionsMdPath, updatedContent, "utf-8"),
+        catch: (error) =>
+          new InjectionError({
+            file: conventionsMdPath,
+            message: `Failed to write CONVENTIONS.md`,
+          }),
+      });
+    }),
+
+  removeInjection: (projectPath: string, skillName: string) =>
+    Effect.gen(function* () {
+      const conventionsMdPath = AiderAdapter.getAgentMdPath(projectPath);
+
+      if (!existsSync(conventionsMdPath)) {
+        return;
+      }
+
+      const currentContent = yield* Effect.tryPromise({
+        try: () => readFile(conventionsMdPath, "utf-8"),
+        catch: (error) =>
+          new AgentAdapterError({
+            agent: "aider",
+            operation: "removeInjection",
+            message: `Failed to read CONVENTIONS.md`,
+            cause: error,
+          }),
+      });
+
+      const updatedContent = removeSkillInjection(currentContent, skillName);
+
+      if (updatedContent !== currentContent) {
+        yield* Effect.tryPromise({
+          try: () => writeFile(conventionsMdPath, updatedContent, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "aider",
+              operation: "removeInjection",
+              message: `Failed to write CONVENTIONS.md`,
+              cause: error,
+            }),
+        });
+      }
+    }).pipe(Effect.orDie),
+};
+
+// ============================================================================
+// Amp Adapter (Sourcegraph Amp)
+// ============================================================================
+
+/**
+ * Amp adapter
+ *
+ * Amp configuration:
+ * - Agent MD: AGENT.md (singular, NOT AGENTS.md)
+ * - Config: ~/.config/amp/settings.json
+ * - Skills: Injected into AGENT.md
+ */
+const AmpAdapter: AgentAdapter = {
+  name: "amp",
+
+  detect: (projectPath: string) =>
+    Effect.gen(function* () {
+      // Note: Amp uses AGENT.md (singular), not AGENTS.md
+      const agentMd = join(projectPath, "AGENT.md");
+      return existsSync(agentMd);
+    }),
+
+  init: (projectPath: string) =>
+    Effect.gen(function* () {
+      const agentMdPath = join(projectPath, "AGENT.md");
+
+      // Ensure AGENT.md exists with managed section
+      const agentMdExists = existsSync(agentMdPath);
+      if (!agentMdExists) {
+        const defaultContent = `# Agent Instructions
+
+Instructions for Amp AI coding assistant.
+
+<!-- skills:managed:start -->
+<!-- This section is managed by grimoire skills -->
+<!-- skills:managed:end -->
+`;
+        yield* Effect.tryPromise({
+          try: () => writeFile(agentMdPath, defaultContent, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "amp",
+              operation: "init",
+              message: `Failed to create AGENT.md`,
+              cause: error,
+            }),
+        });
+      } else {
+        const content = yield* Effect.tryPromise({
+          try: () => readFile(agentMdPath, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "amp",
+              operation: "init",
+              message: `Failed to read AGENT.md`,
+              cause: error,
+            }),
+        });
+
+        if (!hasManagedSection(content)) {
+          const contentWithManaged = addManagedSection(content);
+          yield* Effect.tryPromise({
+            try: () => writeFile(agentMdPath, contentWithManaged, "utf-8"),
+            catch: (error) =>
+              new AgentAdapterError({
+                agent: "amp",
+                operation: "init",
+                message: `Failed to update AGENT.md`,
+                cause: error,
+              }),
+          });
+        }
+      }
+    }).pipe(Effect.orDie),
+
+  getSkillsDir: (projectPath: string) => {
+    // Amp doesn't have a skills dir - uses AGENT.md injection
+    return join(projectPath, ".amp", "skills");
+  },
+
+  getAgentMdPath: (projectPath: string) => {
+    // Note: AGENT.md (singular), not AGENTS.md
+    return join(projectPath, "AGENT.md");
+  },
+
+  enableSkill: (projectPath: string, skill: CachedSkill) =>
+    Effect.gen(function* () {
+      const result: AgentEnableResult = {
+        injected: false,
+        skillFileCopied: false,
+      };
+
+      // Inject skill content into AGENT.md
+      if (skill.skillMdPath) {
+        const skillContent = yield* Effect.tryPromise({
+          try: () => readFile(skill.skillMdPath!, "utf-8"),
+          catch: () => "",
+        });
+
+        if (skillContent) {
+          // Strip frontmatter before injection
+          const contentWithoutFrontmatter = skillContent.replace(/^---[\s\S]*?---\n*/, "");
+          yield* AmpAdapter.injectContent(
+            projectPath,
+            skill.manifest.name,
+            contentWithoutFrontmatter
+          ).pipe(
+            Effect.mapError(
+              (error) =>
+                new AgentAdapterError({
+                  agent: "amp",
+                  operation: "enableSkill",
+                  message: `Failed to inject content: ${error.message}`,
+                  cause: error,
+                })
+            )
+          );
+          result.injected = true;
+        }
+      }
+
+      return result;
+    }),
+
+  disableSkill: (projectPath: string, skillName: string) =>
+    Effect.gen(function* () {
+      yield* AmpAdapter.removeInjection(projectPath, skillName);
+    }).pipe(Effect.orDie),
+
+  injectContent: (projectPath: string, skillName: string, content: string) =>
+    Effect.gen(function* () {
+      const agentMdPath = AmpAdapter.getAgentMdPath(projectPath);
+
+      const currentContent = yield* Effect.tryPromise({
+        try: () => readFile(agentMdPath, "utf-8"),
+        catch: (error) =>
+          new InjectionError({
+            file: agentMdPath,
+            message: `Failed to read AGENT.md`,
+          }),
+      });
+
+      const updatedContent = yield* addSkillInjection(currentContent, skillName, content);
+
+      yield* Effect.tryPromise({
+        try: () => writeFile(agentMdPath, updatedContent, "utf-8"),
+        catch: (error) =>
+          new InjectionError({
+            file: agentMdPath,
+            message: `Failed to write AGENT.md`,
+          }),
+      });
+    }),
+
+  removeInjection: (projectPath: string, skillName: string) =>
+    Effect.gen(function* () {
+      const agentMdPath = AmpAdapter.getAgentMdPath(projectPath);
+
+      if (!existsSync(agentMdPath)) {
+        return;
+      }
+
+      const currentContent = yield* Effect.tryPromise({
+        try: () => readFile(agentMdPath, "utf-8"),
+        catch: (error) =>
+          new AgentAdapterError({
+            agent: "amp",
+            operation: "removeInjection",
+            message: `Failed to read AGENT.md`,
+            cause: error,
+          }),
+      });
+
+      const updatedContent = removeSkillInjection(currentContent, skillName);
+
+      if (updatedContent !== currentContent) {
+        yield* Effect.tryPromise({
+          try: () => writeFile(agentMdPath, updatedContent, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "amp",
+              operation: "removeInjection",
+              message: `Failed to write AGENT.md`,
+              cause: error,
+            }),
+        });
+      }
+    }).pipe(Effect.orDie),
+};
+
+// ============================================================================
 // Factory Functions
 // ============================================================================
 
@@ -1040,6 +1958,10 @@ const GenericAdapter: AgentAdapter = {
 const adapters: Record<AgentType, AgentAdapter> = {
   claude_code: ClaudeCodeAdapter,
   opencode: OpenCodeAdapter,
+  codex: CodexAdapter,
+  cursor: CursorAdapter,
+  aider: AiderAdapter,
+  amp: AmpAdapter,
   generic: GenericAdapter,
 };
 
@@ -1057,8 +1979,12 @@ export function getAgentAdapter(agent: AgentType): AgentAdapter {
  * Auto-detect the agent type for a project
  *
  * Checks for agent-specific markers in the project directory:
- * - Claude Code: .claude/ directory or CLAUDE.md
+ * - Claude Code: .claude/ directory
  * - OpenCode: .opencode/ directory
+ * - Cursor: .cursor/ directory
+ * - Aider: .aider.conf.yml or CONVENTIONS.md
+ * - Amp: AGENT.md (singular)
+ * - Codex: AGENTS.md
  * - Generic: AGENTS.md (fallback)
  *
  * @param projectPath - Path to the project directory
@@ -1066,7 +1992,7 @@ export function getAgentAdapter(agent: AgentType): AgentAdapter {
  */
 export function detectAgent(projectPath: string): Effect.Effect<AgentType | null> {
   return Effect.gen(function* () {
-    // Try Claude Code first
+    // Try Claude Code first (most specific)
     const claudeCodeDetected = yield* ClaudeCodeAdapter.detect(projectPath);
     if (claudeCodeDetected) {
       return "claude_code" as AgentType;
@@ -1078,7 +2004,31 @@ export function detectAgent(projectPath: string): Effect.Effect<AgentType | null
       return "opencode" as AgentType;
     }
 
-    // Try Generic
+    // Try Cursor
+    const cursorDetected = yield* CursorAdapter.detect(projectPath);
+    if (cursorDetected) {
+      return "cursor" as AgentType;
+    }
+
+    // Try Aider
+    const aiderDetected = yield* AiderAdapter.detect(projectPath);
+    if (aiderDetected) {
+      return "aider" as AgentType;
+    }
+
+    // Try Amp (AGENT.md singular)
+    const ampDetected = yield* AmpAdapter.detect(projectPath);
+    if (ampDetected) {
+      return "amp" as AgentType;
+    }
+
+    // Try Codex (AGENTS.md)
+    const codexDetected = yield* CodexAdapter.detect(projectPath);
+    if (codexDetected) {
+      return "codex" as AgentType;
+    }
+
+    // Try Generic (fallback)
     const genericDetected = yield* GenericAdapter.detect(projectPath);
     if (genericDetected) {
       return "generic" as AgentType;

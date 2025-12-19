@@ -9,6 +9,9 @@ import {
   AgentAdapterServiceLive,
   getAgentAdapter,
   detectAgent,
+  hasYamlFrontmatter,
+  generateSkillFrontmatter,
+  ensureSkillFrontmatter,
   type AgentAdapter,
 } from "./agent-adapter";
 
@@ -154,6 +157,142 @@ describe("AgentAdapter", () => {
       const adapter = getAgentAdapter("claude_code");
       // Should fail because /test/path doesn't exist
       await expect(Effect.runPromise(adapter.init("/test/path"))).rejects.toThrow();
+    });
+  });
+
+  describe("YAML Frontmatter Utilities", () => {
+    describe("hasYamlFrontmatter", () => {
+      test("should detect frontmatter at start of content", () => {
+        const content = `---
+name: test
+---
+# Content`;
+        expect(hasYamlFrontmatter(content)).toBe(true);
+      });
+
+      test("should detect frontmatter with leading whitespace", () => {
+        const content = `  ---
+name: test
+---
+# Content`;
+        expect(hasYamlFrontmatter(content)).toBe(true);
+      });
+
+      test("should return false for content without frontmatter", () => {
+        const content = `# Skill
+Some content here`;
+        expect(hasYamlFrontmatter(content)).toBe(false);
+      });
+
+      test("should return false for content with --- later in document", () => {
+        const content = `# Skill
+
+---
+
+Some separator`;
+        expect(hasYamlFrontmatter(content)).toBe(false);
+      });
+    });
+
+    describe("generateSkillFrontmatter", () => {
+      test("should generate frontmatter with name and description", () => {
+        const manifest = {
+          name: "test-skill",
+          version: "1.0.0",
+          description: "A test skill for testing",
+          type: "prompt" as const,
+        };
+
+        const frontmatter = generateSkillFrontmatter(manifest);
+
+        expect(frontmatter).toContain("---");
+        expect(frontmatter).toContain("name: test-skill");
+        expect(frontmatter).toContain("description: A test skill for testing");
+      });
+
+      test("should use trigger_description when available", () => {
+        const manifest = {
+          name: "test-skill",
+          version: "1.0.0",
+          description: "Basic description",
+          type: "prompt" as const,
+          trigger_description: "Use when testing skills",
+        };
+
+        const frontmatter = generateSkillFrontmatter(manifest);
+
+        expect(frontmatter).toContain("description: Use when testing skills");
+        expect(frontmatter).not.toContain("Basic description");
+      });
+
+      test("should include allowed-tools when specified", () => {
+        const manifest = {
+          name: "test-skill",
+          version: "1.0.0",
+          description: "Test",
+          type: "prompt" as const,
+          allowed_tools: ["Read", "Write", "Bash"],
+        };
+
+        const frontmatter = generateSkillFrontmatter(manifest);
+
+        expect(frontmatter).toContain("allowed-tools: Read, Write, Bash");
+      });
+
+      test("should handle multi-line descriptions", () => {
+        const manifest = {
+          name: "test-skill",
+          version: "1.0.0",
+          description: "Line 1\nLine 2\nLine 3",
+          type: "prompt" as const,
+        };
+
+        const frontmatter = generateSkillFrontmatter(manifest);
+
+        expect(frontmatter).toContain("description: |");
+        expect(frontmatter).toContain("  Line 1");
+        expect(frontmatter).toContain("  Line 2");
+      });
+    });
+
+    describe("ensureSkillFrontmatter", () => {
+      test("should prepend frontmatter to content without it", () => {
+        const content = `# My Skill
+
+Instructions here.`;
+        const manifest = {
+          name: "my-skill",
+          version: "1.0.0",
+          description: "A great skill",
+          type: "prompt" as const,
+        };
+
+        const result = ensureSkillFrontmatter(content, manifest);
+
+        expect(result).toMatch(/^---\n/);
+        expect(result).toContain("name: my-skill");
+        expect(result).toContain("# My Skill");
+      });
+
+      test("should not double-add frontmatter", () => {
+        const content = `---
+name: existing
+---
+# My Skill`;
+        const manifest = {
+          name: "my-skill",
+          version: "1.0.0",
+          description: "A great skill",
+          type: "prompt" as const,
+        };
+
+        const result = ensureSkillFrontmatter(content, manifest);
+
+        // Should return original content unchanged
+        expect(result).toBe(content);
+        expect(result).toContain("name: existing");
+        expect(result).not.toContain("name: my-skill");
+      });
     });
   });
 });
