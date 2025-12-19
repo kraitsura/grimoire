@@ -329,53 +329,21 @@ const makeSkillEngineService = (
         }
 
         const adapter = adapters.getAdapter(projectState.agent);
-        const skillsDir = adapter.getSkillsDir(projectPath);
-        const agentMdPath = adapter.getAgentMdPath(projectPath);
 
-        // 6. Delegate to AgentAdapter for agent-specific setup
-        const agentConfig = projectState.agent === "generic"
-          ? undefined
-          : skill.manifest.agents?.[projectState.agent];
+        // 6. Delegate to AgentAdapter.enableSkill() for agent-specific setup
+        // This handles: plugin installation, MCP configuration, skill file copying, and injection
+        const adapterResult = yield* adapter.enableSkill(projectPath, skill);
 
-        // Install plugin (if skill has plugin config - Claude Code only)
-        const claudeConfig = projectState.agent === "claude_code"
-          ? skill.manifest.agents?.claude_code
-          : undefined;
-        if (claudeConfig?.plugin && adapter.installPlugin) {
-          yield* adapter.installPlugin(
-            claudeConfig.plugin.marketplace,
-            claudeConfig.plugin.name
-          );
+        if (adapterResult.pluginInstalled) {
           result.pluginInstalled = true;
         }
-
-        // Configure MCP (if skill has mcp config)
-        if (agentConfig && agentConfig.mcp && adapter.configureMcp) {
-          yield* adapter.configureMcp(
-            projectPath,
-            skillName,
-            agentConfig.mcp
-          );
+        if (adapterResult.mcpConfigured) {
           result.mcpConfigured = true;
         }
-
-        // Copy skill file to project skills dir
-        const shouldCopySkillFile = agentConfig && "skill_file" in agentConfig
-          ? agentConfig.skill_file !== false
-          : true;
-
-        if (shouldCopySkillFile && skill.skillMdPath) {
-          const copied = yield* copySkillFile(skill, skillsDir);
-          rollbackState.copiedSkillFile = copied;
+        if (adapterResult.skillFileCopied) {
+          rollbackState.copiedSkillFile = true;
         }
-
-        // Inject content into agent MD file
-        if (agentConfig?.inject) {
-          yield* injectSkillContent(
-            agentMdPath,
-            skillName,
-            agentConfig.inject.content
-          );
+        if (adapterResult.injected) {
           rollbackState.injectedContent = true;
           result.injected = true;
         }

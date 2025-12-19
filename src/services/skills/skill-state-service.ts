@@ -30,7 +30,7 @@ export class StateFileWriteError extends Data.TaggedError("StateFileWriteError")
  * Get the skills state file path
  */
 const getStateFilePath = (): string => {
-  return join(homedir(), ".skills", "state.json");
+  return join(homedir(), ".grimoire", "skills-state.json");
 };
 
 /**
@@ -93,7 +93,7 @@ const writeStateFile = (
 ): Effect.Effect<void, StateFileWriteError> =>
   Effect.gen(function* () {
     const statePath = getStateFilePath();
-    const stateDir = join(homedir(), ".skills");
+    const stateDir = join(homedir(), ".grimoire");
     const tempPath = `${statePath}.tmp`;
 
     try {

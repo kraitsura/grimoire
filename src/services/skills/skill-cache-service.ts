@@ -13,11 +13,16 @@ import * as yaml from "js-yaml";
 import {
   SkillManifest,
   SkillManifestSchema,
+  type SkillInfo,
+  type PluginInfo,
+  type RepoType,
+  type InferredManifest,
 } from "../../models/skill";
 import {
   SkillNotCachedError,
   SkillSourceError,
   SkillManifestError,
+  SkillMdFrontmatterError,
 } from "../../models/skill-errors";
 
 /**
@@ -67,9 +72,10 @@ interface CacheIndex {
 
 /**
  * Get the cache directory path
+ * Note: Migrated from ~/.skills/cache to ~/.grimoire/cache
  */
 const getCacheDir = (): string => {
-  return join(homedir(), ".skills", "cache");
+  return join(homedir(), ".grimoire", "cache");
 };
 
 /**
@@ -85,6 +91,303 @@ const getIndexPath = (): string => {
 const getSkillCacheDir = (name: string): string => {
   return join(getCacheDir(), name);
 };
+
+/**
+ * Directories and files to exclude when copying skill directories
+ */
+const EXCLUDED_PATHS = [".git", "node_modules", ".DS_Store", ".gitignore"];
+
+/**
+ * Check if a path should be excluded from copying
+ */
+const shouldExcludePath = (name: string): boolean => {
+  return EXCLUDED_PATHS.includes(name) || name.startsWith(".");
+};
+
+/**
+ * Parse YAML frontmatter from SKILL.md content
+ *
+ * Expected format:
+ * ---
+ * name: skill-name
+ * description: When to use this skill...
+ * allowed-tools: Read, Write, Bash
+ * ---
+ */
+const parseSkillMdFrontmatter = (
+  content: string,
+  fallbackName: string
+): Effect.Effect<InferredManifest, SkillMdFrontmatterError> =>
+  Effect.gen(function* () {
+    // Check for frontmatter markers
+    if (!content.startsWith("---")) {
+      return yield* Effect.fail(
+        new SkillMdFrontmatterError({
+          path: fallbackName,
+          message: "SKILL.md must start with YAML frontmatter (---)",
+        })
+      );
+    }
+
+    // Find closing frontmatter marker
+    const endMarkerIndex = content.indexOf("---", 3);
+    if (endMarkerIndex === -1) {
+      return yield* Effect.fail(
+        new SkillMdFrontmatterError({
+          path: fallbackName,
+          message: "SKILL.md frontmatter is not properly closed (missing ---)",
+        })
+      );
+    }
+
+    // Extract frontmatter content
+    const frontmatterContent = content.slice(3, endMarkerIndex).trim();
+
+    try {
+      const parsed = yaml.load(frontmatterContent) as Record<string, unknown>;
+
+      if (!parsed || typeof parsed !== "object") {
+        return yield* Effect.fail(
+          new SkillMdFrontmatterError({
+            path: fallbackName,
+            message: "SKILL.md frontmatter is empty or invalid YAML",
+          })
+        );
+      }
+
+      // Extract name (required, or use fallback)
+      const name = typeof parsed.name === "string" ? parsed.name : fallbackName;
+
+      // Extract description (required for discovery)
+      const description = typeof parsed.description === "string"
+        ? parsed.description
+        : "";
+
+      if (!description) {
+        return yield* Effect.fail(
+          new SkillMdFrontmatterError({
+            path: fallbackName,
+            message: "SKILL.md frontmatter must have a 'description' field for skill discovery",
+          })
+        );
+      }
+
+      // Extract allowed-tools (optional, can be comma-separated string or array)
+      let allowedTools: string[] | undefined;
+      if (parsed["allowed-tools"]) {
+        if (typeof parsed["allowed-tools"] === "string") {
+          allowedTools = parsed["allowed-tools"].split(",").map((t) => t.trim());
+        } else if (Array.isArray(parsed["allowed-tools"])) {
+          allowedTools = parsed["allowed-tools"].map(String);
+        }
+      }
+
+      return {
+        name,
+        version: typeof parsed.version === "string" ? parsed.version : "1.0.0",
+        description,
+        type: "prompt" as const,
+        trigger_description: description,
+        allowed_tools: allowedTools,
+      };
+    } catch (error) {
+      return yield* Effect.fail(
+        new SkillMdFrontmatterError({
+          path: fallbackName,
+          message: `Failed to parse SKILL.md frontmatter: ${error instanceof Error ? error.message : String(error)}`,
+        })
+      );
+    }
+  });
+
+/**
+ * Convert InferredManifest to full SkillManifest
+ */
+const inferredToManifest = (inferred: InferredManifest): SkillManifest => ({
+  name: inferred.name,
+  version: inferred.version,
+  description: inferred.description,
+  type: inferred.type,
+  trigger_description: inferred.trigger_description,
+  allowed_tools: inferred.allowed_tools,
+});
+
+/**
+ * Detect repository type by checking for skill/plugin markers
+ */
+const detectRepoTypeFromGitHub = (
+  source: GitHubSource
+): Effect.Effect<RepoType, SkillSourceError> =>
+  Effect.gen(function* () {
+    const { owner, repo, ref = "main", subdir } = source;
+    const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents`;
+    const path = subdir ? `/${subdir}` : "";
+
+    // Fetch directory listing
+    const listUrl = `${baseUrl}${path}?ref=${ref}`;
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(listUrl),
+      catch: (error) =>
+        new SkillSourceError({
+          source: `github:${owner}/${repo}`,
+          message: `Failed to fetch directory listing: ${error instanceof Error ? error.message : String(error)}`,
+          cause: error,
+        }),
+    });
+
+    if (!response.ok) {
+      return yield* Effect.fail(
+        new SkillSourceError({
+          source: `github:${owner}/${repo}`,
+          message: `GitHub API error: ${response.status} ${response.statusText}`,
+        })
+      );
+    }
+
+    const contents = (yield* Effect.tryPromise({
+      try: () => response.json(),
+      catch: (error) =>
+        new SkillSourceError({
+          source: `github:${owner}/${repo}`,
+          message: `Failed to parse directory listing: ${error instanceof Error ? error.message : String(error)}`,
+          cause: error,
+        }),
+    })) as Array<{ name: string; type: string }>;
+
+    // Check for root-level markers
+    const hasSkillYaml = contents.some((f) => f.name === "skill.yaml");
+    const hasSkillMd = contents.some((f) => f.name === "SKILL.md");
+    const hasPluginDir = contents.some(
+      (f) => f.name === ".claude-plugin" && f.type === "dir"
+    );
+
+    // If root has skill markers, it's a single skill
+    if (hasSkillYaml || hasSkillMd) {
+      return {
+        type: "skill" as const,
+        skill: {
+          name: subdir || repo,
+          description: "",
+          path: subdir || "",
+          hasYaml: hasSkillYaml,
+          hasMd: hasSkillMd,
+        },
+      };
+    }
+
+    // If root has plugin markers, it's a plugin
+    if (hasPluginDir) {
+      return {
+        type: "plugin" as const,
+        plugin: {
+          name: subdir || repo,
+          path: subdir || "",
+        },
+      };
+    }
+
+    // Check subdirectories for skills/plugins (collection)
+    const subdirs = contents.filter((f) => f.type === "dir" && !f.name.startsWith("."));
+    const skills: SkillInfo[] = [];
+    const plugins: PluginInfo[] = [];
+
+    for (const dir of subdirs) {
+      const subdirUrl = `${baseUrl}${path}/${dir.name}?ref=${ref}`;
+      const subdirResponse = yield* Effect.tryPromise({
+        try: () => fetch(subdirUrl),
+        catch: () =>
+          new SkillSourceError({
+            source: `github:${owner}/${repo}`,
+            message: `Failed to fetch subdirectory: ${dir.name}`,
+          }),
+      }).pipe(Effect.orElse(() => Effect.succeed(null)));
+
+      if (!subdirResponse || !subdirResponse.ok) continue;
+
+      const subdirContents = (yield* Effect.tryPromise({
+        try: () => subdirResponse.json(),
+        catch: () =>
+          new SkillSourceError({
+            source: `github:${owner}/${repo}`,
+            message: `Failed to parse subdirectory: ${dir.name}`,
+          }),
+      }).pipe(
+        Effect.orElse(() => Effect.succeed([] as Array<{ name: string; type: string }>))
+      )) as Array<{ name: string; type: string }>;
+
+      const subdirHasSkillYaml = subdirContents.some((f) => f.name === "skill.yaml");
+      const subdirHasSkillMd = subdirContents.some((f) => f.name === "SKILL.md");
+      const subdirHasPlugin = subdirContents.some(
+        (f) => f.name === ".claude-plugin" && f.type === "dir"
+      );
+
+      if (subdirHasSkillYaml || subdirHasSkillMd) {
+        skills.push({
+          name: dir.name,
+          description: "",
+          path: dir.name,
+          hasYaml: subdirHasSkillYaml,
+          hasMd: subdirHasSkillMd,
+        });
+      } else if (subdirHasPlugin) {
+        plugins.push({
+          name: dir.name,
+          path: dir.name,
+        });
+      }
+    }
+
+    if (skills.length > 0 || plugins.length > 0) {
+      return {
+        type: "collection" as const,
+        skills,
+        plugins,
+      };
+    }
+
+    return { type: "empty" as const };
+  });
+
+/**
+ * Fetch skill description from SKILL.md frontmatter (for collection display)
+ */
+const fetchSkillDescription = (
+  source: GitHubSource,
+  skillPath: string
+): Effect.Effect<string, never> =>
+  Effect.gen(function* () {
+    const { owner, repo, ref = "main" } = source;
+    const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents`;
+    const skillMdUrl = `${baseUrl}/${skillPath}/SKILL.md?ref=${ref}`;
+
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(skillMdUrl),
+      catch: () => Effect.succeed(null),
+    }).pipe(Effect.orElse(() => Effect.succeed(null)));
+
+    if (!response || !response.ok) return "";
+
+    const data = (yield* Effect.tryPromise({
+      try: () => response.json(),
+      catch: () => Effect.succeed(null),
+    }).pipe(Effect.orElse(() => Effect.succeed(null)))) as { content: string } | null;
+
+    if (!data || !data.content) return "";
+
+    try {
+      const content = atob(data.content);
+      const frontmatterResult = yield* parseSkillMdFrontmatter(content, skillPath).pipe(
+        Effect.either
+      );
+      if (frontmatterResult._tag === "Right") {
+        return frontmatterResult.right.description;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+
+    return "";
+  });
 
 /**
  * Parse GitHub source string
@@ -245,7 +548,125 @@ const validateManifestAtPath = (
   });
 
 /**
+ * GitHub file entry from API response
+ */
+interface GitHubFileEntry {
+  name: string;
+  path: string;
+  type: "file" | "dir";
+  download_url?: string;
+  sha?: string;
+}
+
+/**
+ * Recursively fetch all files from a GitHub directory
+ * Returns a map of relative paths to file contents
+ */
+const fetchGitHubDirectoryRecursive = (
+  owner: string,
+  repo: string,
+  ref: string,
+  dirPath: string,
+  baseUrl: string
+): Effect.Effect<Map<string, string>, SkillSourceError> =>
+  Effect.gen(function* () {
+    const files = new Map<string, string>();
+    const sourceStr = `github:${owner}/${repo}`;
+
+    // Fetch directory listing
+    const listUrl = `${baseUrl}/${dirPath}?ref=${ref}`;
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(listUrl),
+      catch: (error) =>
+        new SkillSourceError({
+          source: sourceStr,
+          message: `Failed to fetch directory listing: ${error instanceof Error ? error.message : String(error)}`,
+          cause: error,
+        }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        // Directory doesn't exist, return empty
+        return files;
+      }
+      return yield* Effect.fail(
+        new SkillSourceError({
+          source: sourceStr,
+          message: `GitHub API error: ${response.status} ${response.statusText}`,
+        })
+      );
+    }
+
+    const contents = (yield* Effect.tryPromise({
+      try: () => response.json(),
+      catch: (error) =>
+        new SkillSourceError({
+          source: sourceStr,
+          message: `Failed to parse directory listing: ${error instanceof Error ? error.message : String(error)}`,
+          cause: error,
+        }),
+    })) as GitHubFileEntry[];
+
+    // Process each entry
+    for (const entry of contents) {
+      // Skip excluded paths
+      if (shouldExcludePath(entry.name)) {
+        continue;
+      }
+
+      if (entry.type === "file" && entry.download_url) {
+        // Fetch file content
+        const fileResponse = yield* Effect.tryPromise({
+          try: () => fetch(entry.download_url!),
+          catch: (error) =>
+            new SkillSourceError({
+              source: sourceStr,
+              message: `Failed to fetch file: ${entry.path}`,
+              cause: error,
+            }),
+        });
+
+        if (fileResponse.ok) {
+          const content = yield* Effect.tryPromise({
+            try: () => fileResponse.text(),
+            catch: (error) =>
+              new SkillSourceError({
+                source: sourceStr,
+                message: `Failed to read file content: ${entry.path}`,
+                cause: error,
+              }),
+          });
+
+          // Calculate relative path from the skill root
+          const relativePath = dirPath ? entry.path.slice(dirPath.length + 1) : entry.name;
+          files.set(relativePath, content);
+        }
+      } else if (entry.type === "dir") {
+        // Recursively fetch subdirectory
+        const subFiles = yield* fetchGitHubDirectoryRecursive(
+          owner,
+          repo,
+          ref,
+          entry.path,
+          baseUrl
+        );
+
+        // Merge subdirectory files with appropriate path prefix
+        const subDirName = entry.name;
+        for (const [subPath, content] of subFiles) {
+          files.set(`${subDirName}/${subPath}`, content);
+        }
+      }
+    }
+
+    return files;
+  });
+
+/**
  * Fetch skill from GitHub using API
+ * Supports both skill.yaml and SKILL.md-only skills
+ * Now recursively fetches ALL files in the skill directory
  */
 const fetchFromGitHubAPI = (
   source: GitHubSource
@@ -253,230 +674,257 @@ const fetchFromGitHubAPI = (
   Effect.gen(function* () {
     const { owner, repo, ref = "main", subdir } = source;
     const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents`;
-    const path = subdir ? `/${subdir}` : "";
-    const manifestUrl = `${baseUrl}${path}/skill.yaml?ref=${ref}`;
+    const dirPath = subdir || "";
+    const sourceStr = `github:${owner}/${repo}${ref !== "main" ? `@${ref}` : ""}${subdir ? `#${subdir}` : ""}`;
+    const fallbackName = subdir || repo;
 
-    try {
-      // Fetch manifest
-      const manifestResponse = yield* Effect.tryPromise({
-        try: () => fetch(manifestUrl),
-        catch: (error) =>
-          new SkillSourceError({
-            source: `github:${owner}/${repo}`,
-            message: `Failed to fetch from GitHub: ${error instanceof Error ? error.message : String(error)}`,
-            cause: error,
-          }),
-      });
+    // Recursively fetch all files from the skill directory
+    const allFiles = yield* fetchGitHubDirectoryRecursive(
+      owner,
+      repo,
+      ref,
+      dirPath,
+      baseUrl
+    );
 
-      if (!manifestResponse.ok) {
-        return yield* Effect.fail(
-          new SkillSourceError({
-            source: `github:${owner}/${repo}`,
-            message: `GitHub API error: ${manifestResponse.status} ${manifestResponse.statusText}`,
-          })
-        );
-      }
+    // Check for required files
+    const manifestContent = allFiles.get("skill.yaml");
+    const skillMdContent = allFiles.get("SKILL.md");
 
-      const manifestDataRaw = yield* Effect.tryPromise({
-        try: () => manifestResponse.json(),
-        catch: (error) =>
-          new SkillSourceError({
-            source: `github:${owner}/${repo}`,
-            message: `Failed to parse GitHub response: ${error instanceof Error ? error.message : String(error)}`,
-            cause: error,
-          }),
-      });
+    if (!manifestContent && !skillMdContent) {
+      return yield* Effect.fail(
+        new SkillSourceError({
+          source: sourceStr,
+          message: `No skill.yaml or SKILL.md found in repository`,
+        })
+      );
+    }
 
-      const manifestData = manifestDataRaw as { content: string };
-
-      // Decode base64 content
-      const manifestContent = atob(manifestData.content);
+    // Parse manifest
+    let manifest: SkillManifest;
+    if (manifestContent) {
       const parsed = yaml.load(manifestContent);
-
-      // Validate manifest
       const decoded = Schema.decodeUnknownSync(SkillManifestSchema);
-      const manifest = yield* Effect.try({
+      manifest = yield* Effect.try({
         try: () => decoded(parsed),
         catch: (error) =>
           new SkillSourceError({
-            source: `github:${owner}/${repo}`,
+            source: sourceStr,
             message: `Invalid manifest: ${error instanceof Error ? error.message : String(error)}`,
             cause: error,
           }),
       });
-
-      // Create skill cache directory
-      const skillCacheDir = getSkillCacheDir(manifest.name);
-      yield* Effect.promise(() =>
-        import("fs/promises").then((fs) => fs.mkdir(skillCacheDir, { recursive: true }))
+    } else {
+      // Infer manifest from SKILL.md frontmatter
+      const inferred = yield* parseSkillMdFrontmatter(skillMdContent!, fallbackName).pipe(
+        Effect.mapError(
+          (error) =>
+            new SkillSourceError({
+              source: sourceStr,
+              message: error.message,
+            })
+        )
       );
-
-      // Write manifest
-      const manifestPath = join(skillCacheDir, "skill.yaml");
-      yield* Effect.promise(() => Bun.write(manifestPath, manifestContent));
-
-      // Try to fetch SKILL.md
-      let skillMdPath: string | undefined;
-      const skillMdUrl = `${baseUrl}${path}/SKILL.md?ref=${ref}`;
-      const skillMdResult = yield* Effect.gen(function* () {
-        const skillMdResponse = yield* Effect.promise(() => fetch(skillMdUrl));
-        if (skillMdResponse.ok) {
-          const skillMdData = (yield* Effect.promise(() =>
-            skillMdResponse.json()
-          )) as { content: string };
-          const skillMdContent = atob(skillMdData.content);
-          const path = join(skillCacheDir, "SKILL.md");
-          yield* Effect.promise(() => Bun.write(path, skillMdContent));
-          return path;
-        }
-        return undefined;
-      }).pipe(Effect.orElse(() => Effect.succeed(undefined)));
-      skillMdPath = skillMdResult;
-
-      // Try to fetch README.md
-      let readmePath: string | undefined;
-      const readmeUrl = `${baseUrl}${path}/README.md?ref=${ref}`;
-      const readmeResult = yield* Effect.gen(function* () {
-        const readmeResponse = yield* Effect.promise(() => fetch(readmeUrl));
-        if (readmeResponse.ok) {
-          const readmeData = (yield* Effect.promise(() =>
-            readmeResponse.json()
-          )) as { content: string };
-          const readmeContent = atob(readmeData.content);
-          const path = join(skillCacheDir, "README.md");
-          yield* Effect.promise(() => Bun.write(path, readmeContent));
-          return path;
-        }
-        return undefined;
-      }).pipe(Effect.orElse(() => Effect.succeed(undefined)));
-      readmePath = readmeResult;
-
-      // Write .meta.json
-      const sourceStr = `github:${owner}/${repo}${ref ? `@${ref}` : ""}${subdir ? `#${subdir}` : ""}`;
-      const meta: CacheMeta = {
-        source: sourceStr,
-        cachedAt: new Date().toISOString(),
-        version: manifest.version,
-      };
-      const metaPath = join(skillCacheDir, ".meta.json");
-      yield* Effect.promise(() => Bun.write(metaPath, JSON.stringify(meta, null, 2)));
-
-      return {
-        manifest,
-        skillMdPath,
-        readmePath,
-        cachedAt: new Date(),
-        source: sourceStr,
-      };
-    } catch (error) {
-      return yield* Effect.fail(
-        new SkillSourceError({
-          source: `github:${owner}/${repo}`,
-          message: `Failed to fetch from GitHub: ${error instanceof Error ? error.message : String(error)}`,
-          cause: error,
-        })
-      );
+      manifest = inferredToManifest(inferred);
     }
-  });
-
-/**
- * Fetch skill from local path
- */
-const fetchFromLocalPath = (path: string): Effect.Effect<CachedSkill, SkillSourceError> =>
-  Effect.gen(function* () {
-    const manifestPath = join(path, "skill.yaml");
-
-    // Validate manifest
-    const manifest = yield* validateManifestAtPath(manifestPath).pipe(
-      Effect.mapError(
-        (error) =>
-          new SkillSourceError({
-            source: path,
-            message: error.message,
-            cause: error,
-          })
-      )
-    );
 
     // Create skill cache directory
     const skillCacheDir = getSkillCacheDir(manifest.name);
-    yield* Effect.tryPromise({
-      try: () =>
-        import("fs/promises").then((fs) => fs.mkdir(skillCacheDir, { recursive: true })),
-      catch: (error) =>
-        new SkillSourceError({
-          source: path,
-          message: `Failed to create cache directory: ${error instanceof Error ? error.message : String(error)}`,
-          cause: error,
-        }),
-    });
+    yield* Effect.promise(() =>
+      import("fs/promises").then((fs) => fs.mkdir(skillCacheDir, { recursive: true }))
+    );
 
-    // Copy manifest
-    const destManifestPath = join(skillCacheDir, "skill.yaml");
-    yield* Effect.tryPromise({
-      try: async () => {
-        const fs = await import("fs/promises");
-        await fs.copyFile(manifestPath, destManifestPath);
-      },
-      catch: (error) =>
-        new SkillSourceError({
-          source: path,
-          message: `Failed to copy manifest: ${error instanceof Error ? error.message : String(error)}`,
-          cause: error,
-        }),
-    });
+    // Write ALL files to cache
+    const fs = yield* Effect.promise(() => import("fs/promises"));
+    for (const [relativePath, content] of allFiles) {
+      const destPath = join(skillCacheDir, relativePath);
+      const destDir = join(skillCacheDir, relativePath.split("/").slice(0, -1).join("/"));
 
-    // Copy SKILL.md if exists
-    let skillMdPath: string | undefined;
-    const srcSkillMdPath = join(path, "SKILL.md");
-    const skillMdResult = yield* Effect.gen(function* () {
-      const skillMdFile = Bun.file(srcSkillMdPath);
-      const exists = yield* Effect.promise(() => skillMdFile.exists());
-      if (exists) {
-        const destPath = join(skillCacheDir, "SKILL.md");
-        yield* Effect.promise(async () => {
-          const fs = await import("fs/promises");
-          await fs.copyFile(srcSkillMdPath, destPath);
-        });
-        return destPath;
+      // Ensure directory exists for nested files
+      if (destDir !== skillCacheDir) {
+        yield* Effect.promise(() => fs.mkdir(destDir, { recursive: true }));
       }
-      return undefined;
-    }).pipe(Effect.orElse(() => Effect.succeed(undefined)));
-    skillMdPath = skillMdResult;
 
-    // Copy README.md if exists
-    let readmePath: string | undefined;
-    const srcReadmePath = join(path, "README.md");
-    const readmeResult = yield* Effect.gen(function* () {
-      const readmeFile = Bun.file(srcReadmePath);
-      const exists = yield* Effect.promise(() => readmeFile.exists());
-      if (exists) {
-        const destPath = join(skillCacheDir, "README.md");
-        yield* Effect.promise(async () => {
-          const fs = await import("fs/promises");
-          await fs.copyFile(srcReadmePath, destPath);
-        });
-        return destPath;
-      }
-      return undefined;
-    }).pipe(Effect.orElse(() => Effect.succeed(undefined)));
-    readmePath = readmeResult;
+      yield* Effect.promise(() => Bun.write(destPath, content));
+    }
+
+    // If we inferred manifest from SKILL.md, generate skill.yaml
+    if (!manifestContent) {
+      const generatedManifest = yaml.dump(manifest);
+      const manifestPath = join(skillCacheDir, "skill.yaml");
+      yield* Effect.promise(() => Bun.write(manifestPath, generatedManifest));
+    }
 
     // Write .meta.json
     const meta: CacheMeta = {
-      source: path,
+      source: sourceStr,
       cachedAt: new Date().toISOString(),
       version: manifest.version,
     };
     const metaPath = join(skillCacheDir, ".meta.json");
     yield* Effect.promise(() => Bun.write(metaPath, JSON.stringify(meta, null, 2)));
 
+    // Determine paths for optional files
+    const skillMdPath = skillMdContent ? join(skillCacheDir, "SKILL.md") : undefined;
+    const readmePath = allFiles.has("README.md") ? join(skillCacheDir, "README.md") : undefined;
+
     return {
       manifest,
       skillMdPath,
       readmePath,
       cachedAt: new Date(),
-      source: path,
+      source: sourceStr,
+    };
+  });
+
+/**
+ * Recursively copy a local directory, excluding certain paths
+ */
+const copyDirectoryRecursive = (
+  srcDir: string,
+  destDir: string
+): Effect.Effect<void, SkillSourceError> =>
+  Effect.gen(function* () {
+    const fs = yield* Effect.promise(() => import("fs/promises"));
+
+    // Create destination directory
+    yield* Effect.tryPromise({
+      try: () => fs.mkdir(destDir, { recursive: true }),
+      catch: (error) =>
+        new SkillSourceError({
+          source: srcDir,
+          message: `Failed to create directory: ${destDir}`,
+          cause: error,
+        }),
+    });
+
+    // Read source directory entries
+    const entries = yield* Effect.tryPromise({
+      try: () => fs.readdir(srcDir, { withFileTypes: true }),
+      catch: (error) =>
+        new SkillSourceError({
+          source: srcDir,
+          message: `Failed to read directory: ${srcDir}`,
+          cause: error,
+        }),
+    });
+
+    // Copy each entry
+    for (const entry of entries) {
+      // Skip excluded paths
+      if (shouldExcludePath(entry.name)) {
+        continue;
+      }
+
+      const srcPath = join(srcDir, entry.name);
+      const destPath = join(destDir, entry.name);
+
+      if (entry.isDirectory()) {
+        // Recursively copy subdirectory
+        yield* copyDirectoryRecursive(srcPath, destPath);
+      } else if (entry.isFile()) {
+        // Copy file
+        yield* Effect.tryPromise({
+          try: () => fs.copyFile(srcPath, destPath),
+          catch: (error) =>
+            new SkillSourceError({
+              source: srcDir,
+              message: `Failed to copy file: ${srcPath}`,
+              cause: error,
+            }),
+        });
+      }
+    }
+  });
+
+/**
+ * Fetch skill from local path
+ * Supports both skill.yaml and SKILL.md-only skills
+ * Now recursively copies ALL files in the skill directory
+ */
+const fetchFromLocalPath = (sourcePath: string): Effect.Effect<CachedSkill, SkillSourceError> =>
+  Effect.gen(function* () {
+    const manifestPath = join(sourcePath, "skill.yaml");
+    const skillMdPath = join(sourcePath, "SKILL.md");
+    const fallbackName = sourcePath.split("/").pop() || "unknown";
+
+    // Check what files exist
+    const manifestFile = Bun.file(manifestPath);
+    const skillMdFile = Bun.file(skillMdPath);
+    const hasManifest = yield* Effect.promise(() => manifestFile.exists());
+    const hasSkillMd = yield* Effect.promise(() => skillMdFile.exists());
+
+    if (!hasManifest && !hasSkillMd) {
+      return yield* Effect.fail(
+        new SkillSourceError({
+          source: sourcePath,
+          message: `No skill.yaml or SKILL.md found in directory`,
+        })
+      );
+    }
+
+    // Parse manifest
+    let manifest: SkillManifest;
+    if (hasManifest) {
+      manifest = yield* validateManifestAtPath(manifestPath).pipe(
+        Effect.mapError(
+          (error) =>
+            new SkillSourceError({
+              source: sourcePath,
+              message: error.message,
+              cause: error,
+            })
+        )
+      );
+    } else {
+      // Infer manifest from SKILL.md frontmatter
+      const content = yield* Effect.promise(() => skillMdFile.text());
+      const inferred = yield* parseSkillMdFrontmatter(content, fallbackName).pipe(
+        Effect.mapError(
+          (error) =>
+            new SkillSourceError({
+              source: sourcePath,
+              message: error.message,
+            })
+        )
+      );
+      manifest = inferredToManifest(inferred);
+    }
+
+    // Create skill cache directory
+    const skillCacheDir = getSkillCacheDir(manifest.name);
+
+    // Recursively copy entire directory
+    yield* copyDirectoryRecursive(sourcePath, skillCacheDir);
+
+    // If we inferred manifest from SKILL.md, generate skill.yaml
+    if (!hasManifest) {
+      const generatedManifest = yaml.dump(manifest);
+      const destManifestPath = join(skillCacheDir, "skill.yaml");
+      yield* Effect.promise(() => Bun.write(destManifestPath, generatedManifest));
+    }
+
+    // Write .meta.json
+    const meta: CacheMeta = {
+      source: sourcePath,
+      cachedAt: new Date().toISOString(),
+      version: manifest.version,
+    };
+    const metaPath = join(skillCacheDir, ".meta.json");
+    yield* Effect.promise(() => Bun.write(metaPath, JSON.stringify(meta, null, 2)));
+
+    // Check for optional files in destination
+    const destSkillMdPath = join(skillCacheDir, "SKILL.md");
+    const destReadmePath = join(skillCacheDir, "README.md");
+    const destSkillMdFile = Bun.file(destSkillMdPath);
+    const destReadmeFile = Bun.file(destReadmePath);
+
+    return {
+      manifest,
+      skillMdPath: (yield* Effect.promise(() => destSkillMdFile.exists())) ? destSkillMdPath : undefined,
+      readmePath: (yield* Effect.promise(() => destReadmeFile.exists())) ? destReadmePath : undefined,
+      cachedAt: new Date(),
+      source: sourcePath,
     };
   });
 
@@ -680,6 +1128,9 @@ interface SkillCacheServiceImpl {
   readonly fetchFromGitHub: (source: GitHubSource) => Effect.Effect<CachedSkill, SkillSourceError>;
   readonly fetchFromLocal: (path: string) => Effect.Effect<CachedSkill, SkillSourceError>;
 
+  // Type detection
+  readonly detectRepoType: (source: GitHubSource) => Effect.Effect<RepoType, SkillSourceError>;
+
   // Validation
   readonly validateManifest: (path: string) => Effect.Effect<SkillManifest, SkillManifestError>;
 
@@ -708,6 +1159,8 @@ const makeSkillCacheService = (): SkillCacheServiceImpl => ({
   fetchFromGitHub: (source: GitHubSource) => fetchFromGitHubAPI(source),
 
   fetchFromLocal: (path: string) => fetchFromLocalPath(path),
+
+  detectRepoType: (source: GitHubSource) => detectRepoTypeFromGitHub(source),
 
   validateManifest: (path: string) => validateManifestAtPath(path),
 
