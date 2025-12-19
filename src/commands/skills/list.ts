@@ -107,7 +107,7 @@ export const skillsList = (args: ParsedArgs) =>
         a.manifest.name.localeCompare(b.manifest.name)
       )) {
         const line = formatSkillLine(skill.manifest.name, skill.manifest.description, maxWidth);
-        console.log(`${colors.green}●${colors.reset}${line}`);
+        console.log(`${colors.green}*${colors.reset}${line}`);
       }
       console.log();
     } else if (showEnabled && enabledSkills.length === 0) {
@@ -124,7 +124,7 @@ export const skillsList = (args: ParsedArgs) =>
         a.manifest.name.localeCompare(b.manifest.name)
       )) {
         const line = formatSkillLine(skill.manifest.name, skill.manifest.description, maxWidth);
-        console.log(`${colors.gray}○${colors.reset}${line}`);
+        console.log(`${colors.gray}o${colors.reset}${line}`);
       }
       console.log();
     } else if (showAvailable && availableSkills.length === 0) {

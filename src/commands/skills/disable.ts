@@ -110,28 +110,28 @@ const disableSkill = (
     const agentType = projectState?.agent || "claude_code";
 
     // Display success message
-    console.log(`${colors.green}✓${colors.reset} Disabled ${skillName}`);
+    console.log(`${colors.green}+${colors.reset} Disabled ${skillName}`);
 
     if (agentType === "claude_code") {
-      console.log(`  ${colors.gray}• Removed from CLAUDE.md${colors.reset}`);
+      console.log(`  ${colors.gray}- Removed from CLAUDE.md${colors.reset}`);
     } else if (agentType === "opencode") {
-      console.log(`  ${colors.gray}• Removed from AGENTS.md${colors.reset}`);
+      console.log(`  ${colors.gray}- Removed from AGENTS.md${colors.reset}`);
     }
 
-    console.log(`  ${colors.gray}• Removed .claude/skills/${skillName}.md${colors.reset}`);
+    console.log(`  ${colors.gray}- Removed .claude/skills/${skillName}.md${colors.reset}`);
 
     // Handle purge option
     if (purge) {
       const purged = yield* purgeArtifacts(projectPath, skillName);
       if (purged) {
-        console.log(`  ${colors.gray}• Removed project artifacts${colors.reset}`);
+        console.log(`  ${colors.gray}- Removed project artifacts${colors.reset}`);
       }
     }
   }).pipe(
     Effect.catchAll((error) => {
       // Handle any unexpected errors
       return Effect.sync(() => {
-        console.log(`${colors.gray}✗ Error during disable: ${String(error)}${colors.reset}`);
+        console.log(`${colors.gray}x Error during disable: ${String(error)}${colors.reset}`);
       });
     })
   );
@@ -164,7 +164,7 @@ export const skillsDisable = (args: ParsedArgs) =>
     for (const skillName of skillNames) {
       yield* disableSkill(projectPath, skillName, purgeFlag, yesFlag).pipe(
         Effect.catchAll((error) => {
-          console.log(`${colors.gray}✗ Failed to disable ${skillName}${colors.reset}`);
+          console.log(`${colors.gray}x Failed to disable ${skillName}${colors.reset}`);
           console.log(`  ${colors.gray}Error: ${String(error)}${colors.reset}`);
           return Effect.void;
         })

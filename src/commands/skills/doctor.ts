@@ -15,6 +15,10 @@ import {
   AgentAdapterService,
 } from "../../services";
 import { hasManagedSection, addManagedSection } from "../../services/skills/injection-utils";
+import {
+  hasYamlFrontmatter,
+  generateSkillFrontmatter,
+} from "../../services/skills/agent-adapter";
 
 /**
  * ANSI color codes for terminal output
@@ -211,6 +215,7 @@ const checkAgentMdFile = (
 
 /**
  * Check if all enabled skills have files in skills directory
+ * Supports both directory structure (.claude/skills/<name>/SKILL.md) and legacy file structure
  */
 const checkEnabledSkillsHaveFiles = (
   projectPath: string
@@ -235,25 +240,191 @@ const checkEnabledSkillsHaveFiles = (
     );
 
     for (const skillName of enabledSkills) {
-      const skillFilePath = join(skillsDir, `${skillName}.md`);
+      // Check new directory structure first: .claude/skills/<name>/SKILL.md
+      const skillDirPath = join(skillsDir, skillName, "SKILL.md");
+      // Then check legacy file structure: .claude/skills/<name>.md
+      const legacyFilePath = join(skillsDir, `${skillName}.md`);
 
-      const fileExists = yield* Effect.tryPromise({
+      const dirStructureExists = yield* Effect.tryPromise({
         try: async () => {
-          const file = Bun.file(skillFilePath);
+          const file = Bun.file(skillDirPath);
           return await file.exists();
+        },
+        catch: () => new DoctorError({ message: "Failed to check skill file" }),
+      }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+
+      const legacyExists = yield* Effect.tryPromise({
+        try: async () => {
+          const file = Bun.file(legacyFilePath);
+          return await file.exists();
+        },
+        catch: () => new DoctorError({ message: "Failed to check skill file" }),
+      }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+
+      if (!dirStructureExists && !legacyExists) {
+        issues.push({
+          severity: "error" as const,
+          message: `Enabled skill '${skillName}' missing file (checked ${skillDirPath} and ${legacyFilePath})`,
+        });
+      }
+    }
+
+    return issues;
+  });
+
+/**
+ * Parse simple YAML frontmatter from content
+ */
+function parseSimpleFrontmatter(content: string): Record<string, string> | null {
+  const trimmed = content.trimStart();
+  if (!trimmed.startsWith("---")) return null;
+
+  const endIndex = trimmed.indexOf("\n---", 3);
+  if (endIndex === -1) return null;
+
+  const yamlBlock = trimmed.slice(4, endIndex);
+  const result: Record<string, string> = {};
+
+  for (const line of yamlBlock.split("\n")) {
+    const match = line.match(/^(\w[\w-]*?):\s*(.*)$/);
+    if (match) {
+      result[match[1]] = match[2];
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Check SKILL.md files have valid frontmatter for Claude Code discovery
+ */
+const checkSkillMdFrontmatter = (
+  projectPath: string
+): Effect.Effect<DiagnosticIssue[], DoctorError, SkillStateService | AgentAdapterService | SkillCacheService> =>
+  Effect.gen(function* () {
+    const stateService = yield* SkillStateService;
+    const cacheService = yield* SkillCacheService;
+    const issues: DiagnosticIssue[] = [];
+    const projectState = yield* stateService.getProjectState(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
+
+    if (!projectState) {
+      return issues;
+    }
+
+    // Only check frontmatter for Claude Code (it's the one that uses semantic discovery)
+    if (projectState.agent !== "claude_code") {
+      return issues;
+    }
+
+    const adapterService = yield* AgentAdapterService;
+    const adapter = adapterService.getAdapter(projectState.agent);
+    const skillsDir = adapter.getSkillsDir(projectPath);
+
+    const enabledSkills = yield* stateService.getEnabled(projectPath).pipe(
+      Effect.mapError((e) => new DoctorError({ message: e.message }))
+    );
+
+    for (const skillName of enabledSkills) {
+      // Find the skill file (check both structures)
+      const skillDirPath = join(skillsDir, skillName, "SKILL.md");
+      const legacyFilePath = join(skillsDir, `${skillName}.md`);
+
+      let skillFilePath: string | null = null;
+
+      const dirStructureExists = yield* Effect.tryPromise({
+        try: async () => {
+          const file = Bun.file(skillDirPath);
+          return await file.exists();
+        },
+        catch: () => new DoctorError({ message: "Failed to check skill file" }),
+      }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+
+      if (dirStructureExists) {
+        skillFilePath = skillDirPath;
+      } else {
+        const legacyExists = yield* Effect.tryPromise({
+          try: async () => {
+            const file = Bun.file(legacyFilePath);
+            return await file.exists();
+          },
+          catch: () => new DoctorError({ message: "Failed to check skill file" }),
+        }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+        if (legacyExists) {
+          skillFilePath = legacyFilePath;
+        }
+      }
+
+      if (!skillFilePath) {
+        continue; // Already reported by checkEnabledSkillsHaveFiles
+      }
+
+      // Read the skill file
+      const content = yield* Effect.tryPromise({
+        try: async () => {
+          const file = Bun.file(skillFilePath!);
+          return await file.text();
         },
         catch: (error) =>
           new DoctorError({
-            message: `Failed to check skill file: ${error instanceof Error ? error.message : String(error)}`,
+            message: `Failed to read skill file: ${error instanceof Error ? error.message : String(error)}`,
             cause: error,
           }),
       });
 
-      if (!fileExists) {
+      // Check for frontmatter
+      if (!hasYamlFrontmatter(content)) {
+        // Try to get manifest from cache for auto-fix
+        const cachedSkill = yield* cacheService.getCached(skillName).pipe(
+          Effect.catchAll(() => Effect.succeed(null))
+        );
+
         issues.push({
-          severity: "error" as const,
-          message: `Enabled skill '${skillName}' missing file: ${skillFilePath}`,
+          severity: "warning" as const,
+          message: `Skill '${skillName}' missing YAML frontmatter (won't be discovered by Claude)`,
+          fix: cachedSkill
+            ? () =>
+                Effect.tryPromise({
+                  try: async () => {
+                    const frontmatter = generateSkillFrontmatter(cachedSkill.manifest);
+                    const newContent = frontmatter + content;
+                    await Bun.write(skillFilePath!, newContent);
+                  },
+                  catch: (error) =>
+                    new DoctorError({
+                      message: `Failed to add frontmatter: ${error instanceof Error ? error.message : String(error)}`,
+                      cause: error,
+                    }),
+                })
+            : undefined,
         });
+        continue;
+      }
+
+      // Parse frontmatter and check quality
+      const frontmatter = parseSimpleFrontmatter(content);
+      if (frontmatter) {
+        // Check name field
+        if (!frontmatter.name) {
+          issues.push({
+            severity: "warning" as const,
+            message: `Skill '${skillName}' frontmatter missing 'name' field`,
+          });
+        }
+
+        // Check description field
+        if (!frontmatter.description) {
+          issues.push({
+            severity: "warning" as const,
+            message: `Skill '${skillName}' frontmatter missing 'description' field (critical for discovery)`,
+          });
+        } else if (frontmatter.description.length < 20) {
+          issues.push({
+            severity: "warning" as const,
+            message: `Skill '${skillName}' description too short (${frontmatter.description.length} chars) - recommend 20+ for better discovery`,
+          });
+        }
       }
     }
 
@@ -440,6 +611,14 @@ export const skillsDoctor = (args: ParsedArgs) =>
       console.log(`${colors.green}✓${colors.reset} State file consistent`);
     } else {
       allIssues.push(...stateIssues);
+    }
+
+    // Check SKILL.md frontmatter (Claude Code only)
+    const frontmatterIssues = yield* checkSkillMdFrontmatter(projectPath);
+    if (frontmatterIssues.length === 0) {
+      console.log(`${colors.green}✓${colors.reset} SKILL.md files have valid frontmatter`);
+    } else {
+      allIssues.push(...frontmatterIssues);
     }
 
     // Display all issues

@@ -36,7 +36,7 @@ const colors = {
  */
 const formatErrorMessage = (skillName: string, error: SkillError): string => {
   const lines: string[] = [];
-  lines.push(`${colors.red}✗${colors.reset} Failed to enable ${colors.bold}${skillName}${colors.reset}`);
+  lines.push(`${colors.red}x${colors.reset} Failed to enable ${colors.bold}${skillName}${colors.reset}`);
 
   let message = "";
   switch (error._tag) {
@@ -44,7 +44,7 @@ const formatErrorMessage = (skillName: string, error: SkillError): string => {
       message = `Skill not found in cache. Run: grimoire skills add <source>`;
       break;
     case "SkillAlreadyEnabledError":
-      return `${colors.gray}○${colors.reset} ${skillName} is already enabled`;
+      return `${colors.gray}-${colors.reset} ${skillName} is already enabled`;
     case "ProjectNotInitializedError":
       message = `Project not initialized. Run: grimoire skills init`;
       break;
@@ -70,7 +70,7 @@ const formatErrorMessage = (skillName: string, error: SkillError): string => {
  */
 const formatSuccessMessage = (result: EnableResult): string => {
   const lines: string[] = [];
-  lines.push(`${colors.green}✓${colors.reset} Enabled ${colors.bold}${result.skillName}${colors.reset}`);
+  lines.push(`${colors.green}+${colors.reset} Enabled ${colors.bold}${result.skillName}${colors.reset}`);
 
   const details: string[] = [];
   if (result.cliInstalled && result.cliInstalled.length > 0) {
@@ -90,7 +90,7 @@ const formatSuccessMessage = (result: EnableResult): string => {
   }
 
   for (const detail of details) {
-    lines.push(`  ${colors.gray}•${colors.reset} ${detail}`);
+    lines.push(`  ${colors.gray}-${colors.reset} ${detail}`);
   }
 
   return lines.join("\n");
@@ -198,7 +198,7 @@ export const skillsEnable = (args: ParsedArgs) =>
     const anyPluginInstalled = results.some((r) => r.pluginInstalled);
     if (anyPluginInstalled) {
       console.log(
-        `${colors.yellow}⚠${colors.reset}  Restart your agent to activate installed plugins`
+        `${colors.yellow}!${colors.reset}  Restart your agent to activate installed plugins`
       );
     }
 
