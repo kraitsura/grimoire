@@ -275,3 +275,38 @@ export const RollbackCommandArgsSchema = Schema.Struct({
   force: Schema.optional(Schema.Boolean),
 });
 export type RollbackCommandArgs = Schema.Schema.Type<typeof RollbackCommandArgsSchema>;
+
+// ============================================================================
+// STASH COMMAND SCHEMAS
+// ============================================================================
+
+/**
+ * Stash name - alphanumeric with dashes/underscores, 1-100 chars
+ */
+export const StashNameSchema = Schema.String.pipe(
+  Schema.minLength(1),
+  Schema.maxLength(100),
+  Schema.pattern(/^[\w\-. ]+$/, {
+    message: () => "Stash name can only contain letters, numbers, spaces, dashes, underscores, and dots",
+  })
+);
+
+/**
+ * Stash command arguments
+ */
+export const StashCommandArgsSchema = Schema.Struct({
+  name: Schema.optional(StashNameSchema),
+  list: Schema.optional(Schema.Boolean),
+  clear: Schema.optional(Schema.Boolean),
+});
+export type StashCommandArgs = Schema.Schema.Type<typeof StashCommandArgsSchema>;
+
+/**
+ * Pop command arguments
+ */
+export const PopCommandArgsSchema = Schema.Struct({
+  name: Schema.optional(StashNameSchema),
+  peek: Schema.optional(Schema.Boolean),
+  stdout: Schema.optional(Schema.Boolean),
+});
+export type PopCommandArgs = Schema.Schema.Type<typeof PopCommandArgsSchema>;

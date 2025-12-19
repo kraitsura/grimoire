@@ -75,3 +75,17 @@ export class RateLimitError extends Data.TaggedError("RateLimitError")<{
   message: string;
   retryAfter?: Date;
 }> {}
+
+/**
+ * Error when stash item is not found by name or id
+ */
+export class StashItemNotFoundError extends Data.TaggedError("StashItemNotFoundError")<{
+  identifier: string;
+}> {}
+
+/**
+ * Error when stash is empty (for pop operation)
+ */
+export class StashEmptyError extends Data.TaggedError("StashEmptyError")<{
+  message: string;
+}> {}
