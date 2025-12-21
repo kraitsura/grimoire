@@ -18,6 +18,7 @@ import { useEffectRun, useEffectCallback } from "../context/runtime-context.js";
 import { ApiKeyService } from "../../services/api-key-service.js";
 import { ActionBar } from "../components/layout/action-bar.js";
 import { TextInput } from "../components/input/text-input.js";
+import { safeBorderStyle } from "../components/theme.js";
 
 type ConfigMode = "list" | "edit" | "add";
 
@@ -172,7 +173,7 @@ export const LLMConfigScreen: React.FC = () => {
   if (mode === "list") {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             LLM Providers
           </Text>
@@ -238,7 +239,7 @@ export const LLMConfigScreen: React.FC = () => {
 
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             Configure: {providerName}
           </Text>
@@ -290,15 +291,15 @@ export const LLMConfigScreen: React.FC = () => {
         )}
 
         <Box marginTop={2} gap={2}>
-          <Box borderStyle="round" paddingX={2}>
+          <Box borderStyle={safeBorderStyle} paddingX={2}>
             <Text color="blue">[t] Test Connection</Text>
           </Box>
-          <Box borderStyle="round" borderColor="green" paddingX={2}>
+          <Box borderStyle={safeBorderStyle} borderColor="green" paddingX={2}>
             <Text color="green" bold>
               [Enter] Save
             </Text>
           </Box>
-          <Box borderStyle="round" paddingX={2}>
+          <Box borderStyle={safeBorderStyle} paddingX={2}>
             <Text dimColor>[Esc] Cancel</Text>
           </Box>
         </Box>

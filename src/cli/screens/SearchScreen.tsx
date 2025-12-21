@@ -353,13 +353,13 @@ export const SearchScreen: React.FC = () => {
     const actions = [];
 
     if (inputMode === "search") {
-      actions.push({ key: "↓", label: "Results" });
+      actions.push({ key: "j", label: "Results" });
       if (availableTags.length > 0) {
         actions.push({ key: "Tab", label: "Filter Tags" });
       }
       actions.push({ key: "Esc", label: "Back" });
     } else if (inputMode === "results") {
-      actions.push({ key: "↑/↓", label: "Navigate" });
+      actions.push({ key: "j/k", label: "Navigate" });
       actions.push({ key: "Enter", label: "View" });
       if (availableTags.length > 0) {
         actions.push({ key: "Tab", label: "Filter Tags" });
@@ -367,7 +367,7 @@ export const SearchScreen: React.FC = () => {
       actions.push({ key: "/", label: "Search" });
       actions.push({ key: "Esc", label: "Back" });
     } else if (inputMode === "tags") {
-      actions.push({ key: "←/→", label: "Navigate" });
+      actions.push({ key: "h/l", label: "Navigate" });
       actions.push({ key: "Space", label: "Toggle" });
       actions.push({ key: "Tab", label: "Search" });
       actions.push({ key: "Esc", label: "Back" });

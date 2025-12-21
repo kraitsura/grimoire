@@ -14,6 +14,7 @@ import { Box, Text, useInput } from "ink";
 import { useAppState } from "../context/app-context.js";
 import { ActionBar } from "../components/layout/action-bar.js";
 import { ScrollableBox } from "../components/input/scrollable-box.js";
+import { safeBorderStyle } from "../components/theme.js";
 
 type BenchmarkMode = "select" | "configure" | "running" | "results";
 
@@ -194,7 +195,7 @@ export const BenchmarkScreen: React.FC = () => {
   if (mode === "select") {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             Benchmark Suites
           </Text>
@@ -231,7 +232,7 @@ export const BenchmarkScreen: React.FC = () => {
   if (mode === "configure" && selectedBenchmark) {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             Configure: {selectedBenchmark.name}
           </Text>
@@ -254,7 +255,7 @@ export const BenchmarkScreen: React.FC = () => {
         </Box>
 
         <Box marginTop={2} gap={2}>
-          <Box borderStyle="round" borderColor="green" paddingX={2}>
+          <Box borderStyle={safeBorderStyle} borderColor="green" paddingX={2}>
             <Text color="green" bold>
               [Enter] Run Benchmark
             </Text>
@@ -286,7 +287,7 @@ export const BenchmarkScreen: React.FC = () => {
         </Box>
 
         <Box marginY={1}>
-          <Text dimColor>{"─".repeat(60)}</Text>
+          <Text dimColor>{"-".repeat(60)}</Text>
         </Box>
 
         <Box flexDirection="column">
@@ -326,7 +327,7 @@ export const BenchmarkScreen: React.FC = () => {
         </Box>
 
         <Box marginY={1}>
-          <Text dimColor>{"─".repeat(60)}</Text>
+          <Text dimColor>{"-".repeat(60)}</Text>
         </Box>
 
         <Box gap={3}>
@@ -385,7 +386,7 @@ export const BenchmarkScreen: React.FC = () => {
         </ScrollableBox>
 
         <Box marginY={1}>
-          <Text dimColor>{"─".repeat(60)}</Text>
+          <Text dimColor>{"-".repeat(60)}</Text>
         </Box>
 
         <Box gap={3}>

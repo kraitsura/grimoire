@@ -20,6 +20,7 @@ import { ActionBar } from "../components/layout/action-bar.js";
 import { TextInput } from "../components/input/text-input.js";
 import { ScrollableBox } from "../components/input/scrollable-box.js";
 import type { Prompt } from "../../models/prompt.js";
+import { safeBorderStyle } from "../components/theme.js";
 
 type TemplateMode = "list" | "apply" | "preview";
 
@@ -175,7 +176,7 @@ export const TemplatesScreen: React.FC = () => {
   if (mode === "list") {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             Templates
           </Text>
@@ -229,7 +230,7 @@ export const TemplatesScreen: React.FC = () => {
   if (mode === "apply" && selectedTemplate) {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             Apply Template: {selectedTemplate.name}
           </Text>
@@ -275,7 +276,7 @@ export const TemplatesScreen: React.FC = () => {
         {/* Mini preview */}
         <Box marginTop={2} flexDirection="column">
           <Text bold>Preview:</Text>
-          <Box borderStyle="single" paddingX={1} marginTop={1}>
+          <Box borderStyle={safeBorderStyle} paddingX={1} marginTop={1}>
             <Text dimColor>
               {previewContent.slice(0, 200)}
               {previewContent.length > 200 ? "..." : ""}
@@ -301,7 +302,7 @@ export const TemplatesScreen: React.FC = () => {
   if (mode === "preview" && selectedTemplate) {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             Preview: {outputName}
           </Text>

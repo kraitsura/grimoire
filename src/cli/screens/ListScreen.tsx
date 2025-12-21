@@ -19,6 +19,7 @@ import { useEffectRun, useEffectCallback } from "../context/runtime-context.js";
 import { StorageService, Clipboard } from "../../services/index.js";
 import { ActionBar } from "../components/layout/action-bar.js";
 import { TextInput } from "../components/input/text-input.js";
+import { safeBorderStyle } from "../components/theme.js";
 
 /**
  * Input mode for keyboard focus management
@@ -457,7 +458,8 @@ export const ListScreen: React.FC = () => {
         <Box flexDirection="column">
           {paginatedPrompts.map((prompt, index) => {
             const isSelected = index === selectedIndex;
-            const prefix = prompt.isPinned ? "📌" : prompt.isFavorite ? "⭐" : "  ";
+            // Use text markers instead of emojis for consistent terminal rendering
+            const prefix = prompt.isPinned ? "# " : prompt.isFavorite ? "* " : "  ";
             const tags = prompt.tags?.join(", ") ?? "";
 
             return (
@@ -479,7 +481,7 @@ export const ListScreen: React.FC = () => {
 
       {/* Tag Filter (if shown) */}
       {showTagFilter && (
-        <Box marginTop={1} borderStyle="single" paddingX={1} flexDirection="column">
+        <Box marginTop={1} borderStyle={safeBorderStyle} paddingX={1} flexDirection="column">
           <Box marginBottom={1}>
             <Text color="cyan">Filter tags: </Text>
             <TextInput
@@ -515,7 +517,7 @@ export const ListScreen: React.FC = () => {
           </Box>
           <Box marginTop={1}>
             <Text color="gray" dimColor>
-              ←/→ navigate | Space/Enter toggle | Tab/Esc exit
+              h/l navigate | Space/Enter toggle | Tab/Esc exit
             </Text>
           </Box>
         </Box>
@@ -525,7 +527,7 @@ export const ListScreen: React.FC = () => {
       <Box marginTop={1}>
         <ActionBar
           actions={[
-            { key: "↑↓", label: "Nav" },
+            { key: "j/k", label: "Nav" },
             { key: "Enter", label: "View" },
             { key: "e", label: "Edit" },
             { key: "c", label: "Copy" },

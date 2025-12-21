@@ -2,11 +2,11 @@
  * Edit Screen - Create or edit prompts in terminal
  *
  * Features:
+ * - VIM-like modes: INSERT (typing), NORMAL (navigation), COMMAND (:w, :q, etc.)
  * - Name input field with Tab navigation
  * - Multi-line content editor with cursor and line numbers
  * - Tag editor (comma-separated or chips)
- * - Save (Ctrl+S) / Cancel (Esc)
- * - Unsaved changes warning on exit
+ * - VIM commands: :w (save), :q (quit), :wq (save+quit), :q! (force quit)
  */
 
 import React, { useState, useEffect } from "react";
@@ -19,12 +19,14 @@ import { MultiLineInput } from "../components/input/multi-line-input.js";
 import { TagEditor } from "../components/input/tag-editor.js";
 import { TextInput } from "../components/input/text-input.js";
 import { ActionBar } from "../components/layout/action-bar.js";
+import { safeBorderStyle } from "../components/theme.js";
 
 export interface EditScreenProps {
   promptId?: string; // undefined = new prompt
 }
 
 type FocusedField = "name" | "content" | "tags";
+type VimMode = "insert" | "normal" | "command";
 
 export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
   const { actions } = useAppState();
@@ -34,11 +36,21 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
 
+  // Original values for change detection
+  const [originalName, setOriginalName] = useState("");
+  const [originalContent, setOriginalContent] = useState("");
+  const [originalTags, setOriginalTags] = useState<string[]>([]);
+
   // UI state
   const [focusedField, setFocusedField] = useState<FocusedField>("name");
   const [isDirty, setIsDirty] = useState(false);
   const [showExitWarning, setShowExitWarning] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // VIM mode state
+  const [vimMode, setVimMode] = useState<VimMode>("insert");
+  const [commandBuffer, setCommandBuffer] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
 
   // Load existing prompt if editing
   const {
@@ -61,8 +73,28 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
       setName(existingPrompt.name);
       setContent(existingPrompt.content);
       setTags([...(existingPrompt.tags ?? [])]);
+      // Store original values for change detection
+      setOriginalName(existingPrompt.name);
+      setOriginalContent(existingPrompt.content);
+      setOriginalTags([...(existingPrompt.tags ?? [])]);
     }
   }, [existingPrompt]);
+
+  // Set editing mode on mount, clear on unmount
+  useEffect(() => {
+    actions.setEditing(true);
+    return () => {
+      actions.setEditing(false);
+    };
+  }, [actions]);
+
+  // Clear status message after delay
+  useEffect(() => {
+    if (statusMessage) {
+      const timer = setTimeout(() => setStatusMessage(""), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [statusMessage]);
 
   // Save callback
   const { execute: savePrompt } = useEffectCallback(() =>
@@ -112,14 +144,40 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
     }
   };
 
+  // Check if there are actual changes compared to original values
+  const hasActualChanges = (): boolean => {
+    // For new prompts, always consider it as having changes if there's content
+    if (!promptId) {
+      return name.trim() !== "" || content !== "" || tags.length > 0;
+    }
+    // For existing prompts, compare to original values
+    const nameChanged = name.trim() !== originalName;
+    const contentChanged = content !== originalContent;
+    const tagsChanged =
+      JSON.stringify([...tags].sort()) !== JSON.stringify([...originalTags].sort());
+    return nameChanged || contentChanged || tagsChanged;
+  };
+
   // Handle save
-  const handleSave = async () => {
+  const handleSave = async (andQuit = false): Promise<boolean> => {
     if (!name.trim()) {
+      setStatusMessage("E: Name is required");
       actions.showNotification({
         type: "error",
         message: "Name is required",
       });
-      return;
+      return false;
+    }
+
+    // Skip save if no actual changes (for existing prompts)
+    if (promptId && !hasActualChanges()) {
+      setStatusMessage("No changes");
+      setIsDirty(false);
+      actions.setDirty(false);
+      if (andQuit) {
+        actions.goBack();
+      }
+      return true;
     }
 
     setIsSaving(true);
@@ -127,24 +185,35 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
       await savePrompt();
       setIsDirty(false);
       actions.setDirty(false);
+      // Update original values after successful save
+      setOriginalName(name.trim());
+      setOriginalContent(content);
+      setOriginalTags([...tags]);
+      setStatusMessage("Written");
       actions.showNotification({
         type: "success",
         message: promptId ? "Prompt updated" : "Prompt created",
       });
-      actions.goBack();
+      if (andQuit) {
+        actions.goBack();
+      }
+      return true;
     } catch (err) {
+      setStatusMessage(`E: ${String(err)}`);
       actions.showNotification({
         type: "error",
         message: `Failed to save: ${String(err)}`,
       });
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Handle cancel
-  const handleCancel = () => {
-    if (isDirty) {
+  // Handle quit
+  const handleQuit = (force = false) => {
+    // Use actual change detection instead of isDirty flag
+    if (hasActualChanges() && !force) {
       setShowExitWarning(true);
     } else {
       actions.setDirty(false);
@@ -159,6 +228,32 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
     actions.goBack();
   };
 
+  // Execute VIM command
+  const executeCommand = async (cmd: string) => {
+    const trimmed = cmd.trim();
+
+    switch (trimmed) {
+      case "w":
+        await handleSave(false);
+        setVimMode("normal");
+        break;
+      case "q":
+        handleQuit(false);
+        break;
+      case "wq":
+      case "x":
+        await handleSave(true);
+        break;
+      case "q!":
+        handleQuit(true);
+        break;
+      default:
+        setStatusMessage(`E: Unknown command: ${trimmed}`);
+        setVimMode("normal");
+    }
+    setCommandBuffer("");
+  };
+
   // Keyboard input handler
   useInput(
     (input, key) => {
@@ -168,46 +263,117 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
           handleConfirmExit();
         } else if (input === "n" || input === "N" || key.escape) {
           setShowExitWarning(false);
+          setVimMode("normal");
         }
         return;
       }
 
-      // Global shortcuts
-      if (key.ctrl && input === "s") {
-        void handleSave();
-        return;
-      }
-
-      if (key.escape) {
-        handleCancel();
-        return;
-      }
-
-      // Field navigation with Tab
-      if (key.tab) {
-        if (key.shift) {
-          // Shift+Tab: cycle backward
-          if (focusedField === "name") {
-            setFocusedField("tags");
-          } else if (focusedField === "content") {
-            setFocusedField("name");
+      // COMMAND mode
+      if (vimMode === "command") {
+        if (key.escape) {
+          setCommandBuffer("");
+          setVimMode("normal");
+          return;
+        }
+        if (key.return) {
+          void executeCommand(commandBuffer);
+          return;
+        }
+        if (key.backspace || key.delete) {
+          if (commandBuffer.length > 0) {
+            setCommandBuffer(commandBuffer.slice(0, -1));
           } else {
-            setFocusedField("content");
+            setVimMode("normal");
           }
-        } else {
-          // Tab: cycle forward
-          if (focusedField === "name") {
-            setFocusedField("content");
-          } else if (focusedField === "content") {
-            setFocusedField("tags");
-          } else {
-            setFocusedField("name");
-          }
+          return;
+        }
+        if (input && !key.ctrl && !key.meta) {
+          setCommandBuffer(commandBuffer + input);
+          return;
         }
         return;
+      }
+
+      // NORMAL mode
+      if (vimMode === "normal") {
+        // : starts command mode
+        if (input === ":") {
+          setVimMode("command");
+          setCommandBuffer("");
+          return;
+        }
+        // i enters insert mode
+        if (input === "i") {
+          setVimMode("insert");
+          return;
+        }
+        // a enters insert mode (append)
+        if (input === "a") {
+          setVimMode("insert");
+          return;
+        }
+        // Esc in normal mode with dirty = show exit warning
+        if (key.escape) {
+          handleQuit(false);
+          return;
+        }
+        // j/k for field navigation in normal mode
+        if (input === "j" || key.downArrow) {
+          if (focusedField === "name") {
+            setFocusedField("content");
+          } else if (focusedField === "content") {
+            setFocusedField("tags");
+          }
+          return;
+        }
+        if (input === "k" || key.upArrow) {
+          if (focusedField === "tags") {
+            setFocusedField("content");
+          } else if (focusedField === "content") {
+            setFocusedField("name");
+          }
+          return;
+        }
+        return;
+      }
+
+      // INSERT mode
+      if (vimMode === "insert") {
+        // Esc exits insert mode
+        if (key.escape) {
+          setVimMode("normal");
+          return;
+        }
+        // Ctrl+S or Ctrl+Enter to save
+        if (key.ctrl && (input === "s" || key.return)) {
+          void handleSave(false);
+          return;
+        }
+        // Tab for field navigation in insert mode
+        if (key.tab) {
+          if (key.shift) {
+            if (focusedField === "name") {
+              setFocusedField("tags");
+            } else if (focusedField === "content") {
+              setFocusedField("name");
+            } else {
+              setFocusedField("content");
+            }
+          } else {
+            if (focusedField === "name") {
+              setFocusedField("content");
+            } else if (focusedField === "content") {
+              setFocusedField("tags");
+            } else {
+              setFocusedField("name");
+            }
+          }
+          return;
+        }
+        // Let the focused field handle other input
       }
     },
-    { isActive: !loading && !showExitWarning }
+    { isActive: !loading }
   );
 
   // Loading state
@@ -232,7 +398,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
   // Exit warning modal
   if (showExitWarning) {
     return (
-      <Box flexDirection="column" padding={1} borderStyle="round" borderColor="yellow">
+      <Box flexDirection="column" padding={1} borderStyle={safeBorderStyle} borderColor="yellow">
         <Text bold color="yellow">
           Unsaved Changes
         </Text>
@@ -247,9 +413,16 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
             <Text color="red">[N]</Text> No, go back
           </Text>
         </Box>
+        <Box marginTop={1}>
+          <Text dimColor>Tip: Use :q! to force quit, :wq to save and quit</Text>
+        </Box>
       </Box>
     );
   }
+
+  // Mode indicator color
+  const modeColor = vimMode === "insert" ? "green" : vimMode === "command" ? "yellow" : "blue";
+  const modeLabel = vimMode.toUpperCase();
 
   // Main editor UI
   return (
@@ -260,10 +433,15 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
           {promptId ? "Edit Prompt" : "Create New Prompt"}
         </Text>
         {isDirty && (
-          <Box marginLeft={2}>
-            <Text color="yellow">*</Text>
+          <Box marginLeft={1}>
+            <Text color="yellow">[+]</Text>
           </Box>
         )}
+        <Box marginLeft={2}>
+          <Text color={modeColor} bold>
+            -- {modeLabel} --
+          </Text>
+        </Box>
       </Box>
 
       {/* Name field */}
@@ -276,7 +454,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
             value={name}
             onChange={handleNameChange}
             placeholder="Enter prompt name..."
-            focused={focusedField === "name"}
+            focused={focusedField === "name" && vimMode === "insert"}
           />
         </Box>
       </Box>
@@ -295,7 +473,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
             onChange={handleContentChange}
             height={15}
             showLineNumbers={true}
-            focused={focusedField === "content"}
+            focused={focusedField === "content" && vimMode === "insert"}
           />
         </Box>
       </Box>
@@ -306,34 +484,46 @@ export const EditScreen: React.FC<EditScreenProps> = ({ promptId }) => {
           Tags:
         </Text>
         <Box marginLeft={2}>
-          <TagEditor tags={tags} onChange={handleTagsChange} focused={focusedField === "tags"} />
+          <TagEditor
+            tags={tags}
+            onChange={handleTagsChange}
+            focused={focusedField === "tags" && vimMode === "insert"}
+          />
         </Box>
       </Box>
 
-      {/* Status message */}
-      {isSaving && (
-        <Box marginTop={1}>
+      {/* Command line / Status */}
+      <Box marginTop={1} borderStyle={safeBorderStyle} borderColor="gray" paddingX={1}>
+        {vimMode === "command" ? (
+          <Text>
+            <Text color="yellow">:</Text>
+            <Text>{commandBuffer}</Text>
+            <Text inverse> </Text>
+          </Text>
+        ) : isSaving ? (
           <Text color="yellow">Saving...</Text>
-        </Box>
-      )}
+        ) : statusMessage ? (
+          <Text color={statusMessage.startsWith("E:") ? "red" : "green"}>{statusMessage}</Text>
+        ) : (
+          <Text dimColor>
+            {vimMode === "insert"
+              ? "INSERT: Type to edit | Esc: normal mode | Tab: next field | :w save | :q quit"
+              : "NORMAL: i: insert | j/k: navigate | :w save | :q quit | :wq save+quit"}
+          </Text>
+        )}
+      </Box>
 
       {/* Action bar */}
-      <Box marginTop={1} borderStyle="single" borderColor="gray" padding={1}>
+      <Box marginTop={1}>
         <ActionBar
           actions={[
-            { key: "Ctrl+S", label: "Save" },
-            { key: "Esc", label: "Cancel" },
-            { key: "Tab", label: "Next Field" },
-            { key: "Shift+Tab", label: "Previous Field" },
+            { key: ":w", label: "Save" },
+            { key: ":q", label: "Quit" },
+            { key: ":wq", label: "Save+Quit" },
+            { key: "Esc", label: vimMode === "insert" ? "Normal" : "Quit" },
+            { key: "i", label: "Insert" },
           ]}
         />
-      </Box>
-
-      {/* Field indicator */}
-      <Box marginTop={1}>
-        <Text dimColor>
-          Editing: <Text color="green">{focusedField}</Text>
-        </Text>
       </Box>
     </Box>
   );

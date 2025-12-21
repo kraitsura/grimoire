@@ -18,6 +18,7 @@ import { ChainService } from "../../services/chain-service.js";
 import { ActionBar } from "../components/layout/action-bar.js";
 import { TextInput } from "../components/input/text-input.js";
 import { ScrollableBox } from "../components/input/scrollable-box.js";
+import { safeBorderStyle } from "../components/theme.js";
 
 export interface ChainScreenProps {
   chainName?: string;
@@ -209,7 +210,7 @@ export const ChainScreen: React.FC<ChainScreenProps> = ({ chainName }) => {
   if (mode === "list") {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             Prompt Chains
           </Text>
@@ -272,7 +273,7 @@ export const ChainScreen: React.FC<ChainScreenProps> = ({ chainName }) => {
             <Box key={step.id} flexDirection="column">
               <Box>
                 <Text color="cyan">{"  "}</Text>
-                <Box borderStyle="round" paddingX={1}>
+                <Box borderStyle={safeBorderStyle} paddingX={1}>
                   <Text>
                     Step {index + 1}: {step.id}
                   </Text>
@@ -376,7 +377,7 @@ export const ChainScreen: React.FC<ChainScreenProps> = ({ chainName }) => {
         </Box>
 
         <Box marginY={1}>
-          <Text dimColor>{"─".repeat(60)}</Text>
+          <Text dimColor>{"-".repeat(60)}</Text>
         </Box>
 
         <Box flexDirection="column">
@@ -399,7 +400,7 @@ export const ChainScreen: React.FC<ChainScreenProps> = ({ chainName }) => {
         </Box>
 
         <Box marginY={1}>
-          <Text dimColor>{"─".repeat(60)}</Text>
+          <Text dimColor>{"-".repeat(60)}</Text>
         </Box>
 
         <Box gap={3}>
@@ -424,7 +425,7 @@ export const ChainScreen: React.FC<ChainScreenProps> = ({ chainName }) => {
         </Box>
 
         <Box marginY={1}>
-          <Text dimColor>{"─".repeat(60)}</Text>
+          <Text dimColor>{"-".repeat(60)}</Text>
         </Box>
 
         <ScrollableBox height={12} focused={true}>
@@ -432,7 +433,7 @@ export const ChainScreen: React.FC<ChainScreenProps> = ({ chainName }) => {
         </ScrollableBox>
 
         <Box marginY={1}>
-          <Text dimColor>{"─".repeat(60)}</Text>
+          <Text dimColor>{"-".repeat(60)}</Text>
         </Box>
 
         <Box gap={3}>

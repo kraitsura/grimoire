@@ -18,6 +18,7 @@ import { useEffectRun } from "../context/runtime-context.js";
 import { StorageService } from "../../services/index.js";
 import { ActionBar } from "../components/layout/action-bar.js";
 import { ScrollableBox } from "../components/input/scrollable-box.js";
+import { safeBorderStyle } from "../components/theme.js";
 
 type CompareMode = "select" | "configure" | "running" | "results";
 
@@ -215,7 +216,7 @@ export const CompareScreen: React.FC = () => {
   if (mode === "select") {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             Compare Prompts
           </Text>
@@ -265,7 +266,7 @@ export const CompareScreen: React.FC = () => {
   if (mode === "configure") {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             Configure Comparison
           </Text>
@@ -293,7 +294,7 @@ export const CompareScreen: React.FC = () => {
         </Box>
 
         <Box marginTop={2} gap={2}>
-          <Box borderStyle="round" borderColor="green" paddingX={2}>
+          <Box borderStyle={safeBorderStyle} borderColor="green" paddingX={2}>
             <Text color="green" bold>
               [Enter] Compare
             </Text>
@@ -358,7 +359,7 @@ export const CompareScreen: React.FC = () => {
               key={result.promptId}
               flexDirection="column"
               width="50%"
-              borderStyle="single"
+              borderStyle={safeBorderStyle}
               borderColor={
                 winner === result.promptId ? "green" : focusedPanel === index ? "cyan" : undefined
               }

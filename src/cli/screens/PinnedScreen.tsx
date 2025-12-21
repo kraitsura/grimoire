@@ -16,6 +16,7 @@ import { useAppState } from "../context/app-context.js";
 import { useEffectRun, useEffectCallback } from "../context/runtime-context.js";
 import { PinService } from "../../services/favorite-pin-service.js";
 import { ActionBar } from "../components/layout/action-bar.js";
+import { safeBorderStyle } from "../components/theme.js";
 
 export const PinnedScreen: React.FC = () => {
   const { actions } = useAppState();
@@ -141,7 +142,7 @@ export const PinnedScreen: React.FC = () => {
   if (!pinnedPrompts || pinnedPrompts.length === 0) {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             Pinned Prompts
           </Text>
@@ -173,7 +174,7 @@ export const PinnedScreen: React.FC = () => {
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Box marginBottom={1} borderStyle="single" paddingX={2}>
+      <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
         <Text bold color="cyan">
           Pinned Prompts ({pinnedPrompts.length})
         </Text>

@@ -24,6 +24,7 @@ import {
 import { StorageService } from "../../services/index.js";
 import { ActionBar } from "../components/layout/action-bar.js";
 import { ScrollableBox } from "../components/input/scrollable-box.js";
+import { safeBorderStyle } from "../components/theme.js";
 
 export interface HistoryScreenProps {
   promptId: string;
@@ -176,7 +177,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ promptId }) => {
   if (!versions || versions.length === 0) {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             History: {prompt?.name}
           </Text>
@@ -196,7 +197,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ promptId }) => {
   if (mode === "timeline") {
     return (
       <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1} borderStyle="single" paddingX={2}>
+        <Box marginBottom={1} borderStyle={safeBorderStyle} paddingX={2}>
           <Text bold color="cyan">
             History: {prompt?.name}
           </Text>
@@ -262,7 +263,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ promptId }) => {
         </Box>
 
         <Box marginY={1}>
-          <Text dimColor>{"─".repeat(60)}</Text>
+          <Text dimColor>{"-".repeat(60)}</Text>
         </Box>
 
         <ScrollableBox height={15} focused={true}>
@@ -280,7 +281,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ promptId }) => {
         </ScrollableBox>
 
         <Box marginY={1}>
-          <Text dimColor>{"─".repeat(60)}</Text>
+          <Text dimColor>{"-".repeat(60)}</Text>
         </Box>
 
         <Box gap={3}>
@@ -319,7 +320,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ promptId }) => {
         )}
 
         <Box marginY={1}>
-          <Text dimColor>{"─".repeat(60)}</Text>
+          <Text dimColor>{"-".repeat(60)}</Text>
         </Box>
 
         <ScrollableBox height={15} focused={true}>

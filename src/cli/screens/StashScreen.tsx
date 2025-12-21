@@ -16,6 +16,7 @@ import { useEffectRun, useEffectCallback } from "../context/runtime-context.js";
 import { StashService, Clipboard } from "../../services/index.js";
 import { ActionBar } from "../components/layout/action-bar.js";
 import type { StashItem } from "../../models/stash.js";
+import { safeBorderStyle } from "../components/theme.js";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -203,7 +204,7 @@ export const StashScreen: React.FC = () => {
       {/* Two-panel layout */}
       <Box flexDirection="row" height={16}>
         {/* Left panel: List */}
-        <Box flexDirection="column" width="40%" borderStyle="single" paddingX={1}>
+        <Box flexDirection="column" width="40%" borderStyle={safeBorderStyle} paddingX={1}>
           <Box marginBottom={1}>
             <Text bold dimColor>Items</Text>
           </Box>
@@ -227,7 +228,7 @@ export const StashScreen: React.FC = () => {
         </Box>
 
         {/* Right panel: Preview */}
-        <Box flexDirection="column" width="60%" borderStyle="single" paddingX={1}>
+        <Box flexDirection="column" width="60%" borderStyle={safeBorderStyle} paddingX={1}>
           {selectedItem ? (
             <>
               <Box marginBottom={1}>
