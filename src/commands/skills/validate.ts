@@ -29,7 +29,7 @@ const colors = {
  * Format a validation issue for display
  */
 const formatIssue = (issue: ValidationIssue): string => {
-  const icon = issue.severity === "error" ? `${colors.red}✗${colors.reset}` : `${colors.yellow}!${colors.reset}`;
+  const icon = issue.severity === "error" ? `${colors.red}[!!]${colors.reset}` : `${colors.yellow}[!]${colors.reset}`;
   const color = issue.severity === "error" ? colors.red : colors.yellow;
 
   return `  ${icon} ${color}${issue.field}${colors.reset}: ${issue.message}`;
@@ -40,14 +40,14 @@ const formatIssue = (issue: ValidationIssue): string => {
  */
 const formatResult = (result: ValidationResult): void => {
   if (result.valid && result.warnings.length === 0) {
-    console.log(`${colors.green}✓ Valid${colors.reset} - Skill passes agentskills.io standard validation`);
+    console.log(`${colors.green}[ok] Valid${colors.reset} - Skill passes agentskills.io standard validation`);
     return;
   }
 
   if (result.valid) {
-    console.log(`${colors.green}✓ Valid${colors.reset} ${colors.yellow}(with warnings)${colors.reset}`);
+    console.log(`${colors.green}[ok] Valid${colors.reset} ${colors.yellow}(with warnings)${colors.reset}`);
   } else {
-    console.log(`${colors.red}✗ Invalid${colors.reset} - Skill does not pass agentskills.io standard validation`);
+    console.log(`${colors.red}[!!] Invalid${colors.reset} - Skill does not pass agentskills.io standard validation`);
   }
 
   console.log();

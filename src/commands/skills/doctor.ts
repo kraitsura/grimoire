@@ -559,7 +559,7 @@ const checkStateConsistency = (
  * Format issue output
  */
 const formatIssue = (issue: DiagnosticIssue): string => {
-  const symbol = issue.severity === "error" ? `${colors.red}✗${colors.reset}` : `${colors.yellow}⚠${colors.reset}`;
+  const symbol = issue.severity === "error" ? `${colors.red}[!!]${colors.reset}` : `${colors.yellow}[!]${colors.reset}`;
   return `${symbol} ${issue.message}`;
 };
 
@@ -582,33 +582,33 @@ export const skillsDoctor = (args: ParsedArgs) =>
     if (initIssue) {
       allIssues.push(initIssue);
     } else {
-      console.log(`${colors.green}✓${colors.reset} Project initialized`);
+      console.log(`${colors.green}[ok]${colors.reset} Project initialized`);
     }
 
     const mdIssue = yield* checkAgentMdFile(projectPath);
     if (mdIssue) {
       allIssues.push(mdIssue);
     } else {
-      console.log(`${colors.green}✓${colors.reset} Agent MD file has valid managed section`);
+      console.log(`${colors.green}[ok]${colors.reset} Agent MD file has valid managed section`);
     }
 
     const enabledIssues = yield* checkEnabledSkillsHaveFiles(projectPath);
     if (enabledIssues.length === 0) {
-      console.log(`${colors.green}✓${colors.reset} All enabled skills have files`);
+      console.log(`${colors.green}[ok]${colors.reset} All enabled skills have files`);
     } else {
       allIssues.push(...enabledIssues);
     }
 
     const orphanedIssues = yield* checkOrphanedSkillFiles(projectPath);
     if (orphanedIssues.length === 0) {
-      console.log(`${colors.green}✓${colors.reset} No orphaned skill files`);
+      console.log(`${colors.green}[ok]${colors.reset} No orphaned skill files`);
     } else {
       allIssues.push(...orphanedIssues);
     }
 
     const stateIssues = yield* checkStateConsistency(projectPath);
     if (stateIssues.length === 0) {
-      console.log(`${colors.green}✓${colors.reset} State file consistent`);
+      console.log(`${colors.green}[ok]${colors.reset} State file consistent`);
     } else {
       allIssues.push(...stateIssues);
     }
@@ -616,7 +616,7 @@ export const skillsDoctor = (args: ParsedArgs) =>
     // Check SKILL.md frontmatter (Claude Code only)
     const frontmatterIssues = yield* checkSkillMdFrontmatter(projectPath);
     if (frontmatterIssues.length === 0) {
-      console.log(`${colors.green}✓${colors.reset} SKILL.md files have valid frontmatter`);
+      console.log(`${colors.green}[ok]${colors.reset} SKILL.md files have valid frontmatter`);
     } else {
       allIssues.push(...frontmatterIssues);
     }
@@ -643,10 +643,10 @@ export const skillsDoctor = (args: ParsedArgs) =>
             const result = yield* issue.fix().pipe(Effect.either);
 
             if (result._tag === "Right") {
-              console.log(`${colors.green}✓${colors.reset} Fixed: ${issue.message}`);
+              console.log(`${colors.green}[ok]${colors.reset} Fixed: ${issue.message}`);
               fixedCount++;
             } else {
-              console.log(`${colors.red}✗${colors.reset} Failed to fix: ${issue.message}`);
+              console.log(`${colors.red}[!!]${colors.reset} Failed to fix: ${issue.message}`);
               console.log(`  ${colors.gray}${result.left.message}${colors.reset}`);
               failedCount++;
             }

@@ -5,14 +5,12 @@
  * validating manifests, and maintaining a quick-lookup index.
  */
 
-import { Context, Effect, Layer, Data } from "effect";
-import { Schema } from "@effect/schema";
+import { Context, Effect, Layer } from "effect";
 import { join } from "path";
 import { homedir } from "os";
 import * as yaml from "js-yaml";
 import {
-  SkillManifest,
-  SkillManifestSchema,
+  type SkillManifest,
   type SkillInfo,
   type PluginInfo,
   type RepoType,
@@ -21,7 +19,6 @@ import {
 import {
   SkillNotCachedError,
   SkillSourceError,
-  SkillManifestError,
   SkillMdFrontmatterError,
 } from "../../models/skill-errors";
 
@@ -95,7 +92,7 @@ const getSkillCacheDir = (name: string): string => {
 /**
  * Directories and files to exclude when copying skill directories
  */
-const EXCLUDED_PATHS = [".git", "node_modules", ".DS_Store", ".gitignore"];
+const EXCLUDED_PATHS = [".git", "node_modules", ".DS_Store", ".gitignore", "skill.yaml"];
 
 /**
  * Check if a path should be excluded from copying
@@ -184,10 +181,7 @@ const parseSkillMdFrontmatter = (
 
       return {
         name,
-        version: typeof parsed.version === "string" ? parsed.version : "1.0.0",
         description,
-        type: "prompt" as const,
-        trigger_description: description,
         allowed_tools: allowedTools,
       };
     } catch (error) {
@@ -205,10 +199,7 @@ const parseSkillMdFrontmatter = (
  */
 const inferredToManifest = (inferred: InferredManifest): SkillManifest => ({
   name: inferred.name,
-  version: inferred.version,
   description: inferred.description,
-  type: inferred.type,
-  trigger_description: inferred.trigger_description,
   allowed_tools: inferred.allowed_tools,
 });
 
@@ -255,22 +246,20 @@ const detectRepoTypeFromGitHub = (
     })) as Array<{ name: string; type: string }>;
 
     // Check for root-level markers
-    const hasSkillYaml = contents.some((f) => f.name === "skill.yaml");
+    // Skills are defined by SKILL.md only (no more skill.yaml)
     const hasSkillMd = contents.some((f) => f.name === "SKILL.md");
     const hasPluginDir = contents.some(
       (f) => f.name === ".claude-plugin" && f.type === "dir"
     );
 
-    // If root has skill markers, it's a single skill
-    if (hasSkillYaml || hasSkillMd) {
+    // If root has SKILL.md, it's a single skill
+    if (hasSkillMd) {
       return {
         type: "skill" as const,
         skill: {
           name: subdir || repo,
           description: "",
           path: subdir || "",
-          hasYaml: hasSkillYaml,
-          hasMd: hasSkillMd,
         },
       };
     }
@@ -315,19 +304,16 @@ const detectRepoTypeFromGitHub = (
         Effect.orElse(() => Effect.succeed([] as Array<{ name: string; type: string }>))
       )) as Array<{ name: string; type: string }>;
 
-      const subdirHasSkillYaml = subdirContents.some((f) => f.name === "skill.yaml");
       const subdirHasSkillMd = subdirContents.some((f) => f.name === "SKILL.md");
       const subdirHasPlugin = subdirContents.some(
         (f) => f.name === ".claude-plugin" && f.type === "dir"
       );
 
-      if (subdirHasSkillYaml || subdirHasSkillMd) {
+      if (subdirHasSkillMd) {
         skills.push({
           name: dir.name,
           description: "",
           path: dir.name,
-          hasYaml: subdirHasSkillYaml,
-          hasMd: subdirHasSkillMd,
         });
       } else if (subdirHasPlugin) {
         plugins.push({
@@ -500,54 +486,6 @@ const writeCacheIndex = (index: CacheIndex): Effect.Effect<void, SkillSourceErro
   });
 
 /**
- * Validate skill manifest from path
- */
-const validateManifestAtPath = (
-  path: string
-): Effect.Effect<SkillManifest, SkillManifestError> =>
-  Effect.gen(function* () {
-    try {
-      const file = Bun.file(path);
-      const exists = yield* Effect.promise(() => file.exists());
-
-      if (!exists) {
-        return yield* Effect.fail(
-          new SkillManifestError({
-            name: path,
-            message: "Manifest file not found",
-            path,
-          })
-        );
-      }
-
-      const content = yield* Effect.promise(() => file.text());
-      const parsed = yaml.load(content);
-
-      // Validate against schema
-      const decoded = Schema.decodeUnknownSync(SkillManifestSchema);
-      const manifest = yield* Effect.try({
-        try: () => decoded(parsed),
-        catch: (error) =>
-          new SkillManifestError({
-            name: path,
-            message: `Invalid manifest schema: ${error instanceof Error ? error.message : String(error)}`,
-            path,
-          }),
-      });
-
-      return manifest;
-    } catch (error) {
-      return yield* Effect.fail(
-        new SkillManifestError({
-          name: path,
-          message: `Failed to read manifest: ${error instanceof Error ? error.message : String(error)}`,
-          path,
-        })
-      );
-    }
-  });
-
-/**
  * GitHub file entry from API response
  */
 interface GitHubFileEntry {
@@ -665,8 +603,8 @@ const fetchGitHubDirectoryRecursive = (
 
 /**
  * Fetch skill from GitHub using API
- * Supports both skill.yaml and SKILL.md-only skills
- * Now recursively fetches ALL files in the skill directory
+ * Skills are defined by SKILL.md with frontmatter only (no skill.yaml)
+ * Recursively fetches ALL files in the skill directory
  */
 const fetchFromGitHubAPI = (
   source: GitHubSource
@@ -687,46 +625,29 @@ const fetchFromGitHubAPI = (
       baseUrl
     );
 
-    // Check for required files
-    const manifestContent = allFiles.get("skill.yaml");
+    // Check for required SKILL.md
     const skillMdContent = allFiles.get("SKILL.md");
 
-    if (!manifestContent && !skillMdContent) {
+    if (!skillMdContent) {
       return yield* Effect.fail(
         new SkillSourceError({
           source: sourceStr,
-          message: `No skill.yaml or SKILL.md found in repository`,
+          message: `No SKILL.md found in repository. Skills must have a SKILL.md with frontmatter.`,
         })
       );
     }
 
-    // Parse manifest
-    let manifest: SkillManifest;
-    if (manifestContent) {
-      const parsed = yaml.load(manifestContent);
-      const decoded = Schema.decodeUnknownSync(SkillManifestSchema);
-      manifest = yield* Effect.try({
-        try: () => decoded(parsed),
-        catch: (error) =>
+    // Parse manifest from SKILL.md frontmatter
+    const inferred = yield* parseSkillMdFrontmatter(skillMdContent, fallbackName).pipe(
+      Effect.mapError(
+        (error) =>
           new SkillSourceError({
             source: sourceStr,
-            message: `Invalid manifest: ${error instanceof Error ? error.message : String(error)}`,
-            cause: error,
-          }),
-      });
-    } else {
-      // Infer manifest from SKILL.md frontmatter
-      const inferred = yield* parseSkillMdFrontmatter(skillMdContent!, fallbackName).pipe(
-        Effect.mapError(
-          (error) =>
-            new SkillSourceError({
-              source: sourceStr,
-              message: error.message,
-            })
-        )
-      );
-      manifest = inferredToManifest(inferred);
-    }
+            message: error.message,
+          })
+      )
+    );
+    const manifest = inferredToManifest(inferred);
 
     // Create skill cache directory
     const skillCacheDir = getSkillCacheDir(manifest.name);
@@ -734,9 +655,12 @@ const fetchFromGitHubAPI = (
       import("fs/promises").then((fs) => fs.mkdir(skillCacheDir, { recursive: true }))
     );
 
-    // Write ALL files to cache
+    // Write ALL files to cache (excluding skill.yaml if present - we don't use it)
     const fs = yield* Effect.promise(() => import("fs/promises"));
     for (const [relativePath, content] of allFiles) {
+      // Skip skill.yaml - we don't use it anymore
+      if (relativePath === "skill.yaml") continue;
+
       const destPath = join(skillCacheDir, relativePath);
       const destDir = join(skillCacheDir, relativePath.split("/").slice(0, -1).join("/"));
 
@@ -748,24 +672,17 @@ const fetchFromGitHubAPI = (
       yield* Effect.promise(() => Bun.write(destPath, content));
     }
 
-    // If we inferred manifest from SKILL.md, generate skill.yaml
-    if (!manifestContent) {
-      const generatedManifest = yaml.dump(manifest);
-      const manifestPath = join(skillCacheDir, "skill.yaml");
-      yield* Effect.promise(() => Bun.write(manifestPath, generatedManifest));
-    }
-
     // Write .meta.json
     const meta: CacheMeta = {
       source: sourceStr,
       cachedAt: new Date().toISOString(),
-      version: manifest.version,
+      version: "1.0.0", // Version is no longer in manifest
     };
     const metaPath = join(skillCacheDir, ".meta.json");
     yield* Effect.promise(() => Bun.write(metaPath, JSON.stringify(meta, null, 2)));
 
     // Determine paths for optional files
-    const skillMdPath = skillMdContent ? join(skillCacheDir, "SKILL.md") : undefined;
+    const skillMdPath = join(skillCacheDir, "SKILL.md");
     const readmePath = allFiles.has("README.md") ? join(skillCacheDir, "README.md") : undefined;
 
     return {
@@ -839,76 +756,51 @@ const copyDirectoryRecursive = (
 
 /**
  * Fetch skill from local path
- * Supports both skill.yaml and SKILL.md-only skills
- * Now recursively copies ALL files in the skill directory
+ * Skills are defined by SKILL.md with frontmatter only (no skill.yaml)
+ * Recursively copies ALL files in the skill directory
  */
 const fetchFromLocalPath = (sourcePath: string): Effect.Effect<CachedSkill, SkillSourceError> =>
   Effect.gen(function* () {
-    const manifestPath = join(sourcePath, "skill.yaml");
     const skillMdPath = join(sourcePath, "SKILL.md");
     const fallbackName = sourcePath.split("/").pop() || "unknown";
 
-    // Check what files exist
-    const manifestFile = Bun.file(manifestPath);
+    // Check for required SKILL.md
     const skillMdFile = Bun.file(skillMdPath);
-    const hasManifest = yield* Effect.promise(() => manifestFile.exists());
     const hasSkillMd = yield* Effect.promise(() => skillMdFile.exists());
 
-    if (!hasManifest && !hasSkillMd) {
+    if (!hasSkillMd) {
       return yield* Effect.fail(
         new SkillSourceError({
           source: sourcePath,
-          message: `No skill.yaml or SKILL.md found in directory`,
+          message: `No SKILL.md found in directory. Skills must have a SKILL.md with frontmatter.`,
         })
       );
     }
 
-    // Parse manifest
-    let manifest: SkillManifest;
-    if (hasManifest) {
-      manifest = yield* validateManifestAtPath(manifestPath).pipe(
-        Effect.mapError(
-          (error) =>
-            new SkillSourceError({
-              source: sourcePath,
-              message: error.message,
-              cause: error,
-            })
-        )
-      );
-    } else {
-      // Infer manifest from SKILL.md frontmatter
-      const content = yield* Effect.promise(() => skillMdFile.text());
-      const inferred = yield* parseSkillMdFrontmatter(content, fallbackName).pipe(
-        Effect.mapError(
-          (error) =>
-            new SkillSourceError({
-              source: sourcePath,
-              message: error.message,
-            })
-        )
-      );
-      manifest = inferredToManifest(inferred);
-    }
+    // Parse manifest from SKILL.md frontmatter
+    const content = yield* Effect.promise(() => skillMdFile.text());
+    const inferred = yield* parseSkillMdFrontmatter(content, fallbackName).pipe(
+      Effect.mapError(
+        (error) =>
+          new SkillSourceError({
+            source: sourcePath,
+            message: error.message,
+          })
+      )
+    );
+    const manifest = inferredToManifest(inferred);
 
     // Create skill cache directory
     const skillCacheDir = getSkillCacheDir(manifest.name);
 
-    // Recursively copy entire directory
+    // Recursively copy entire directory (copyDirectoryRecursive already excludes skill.yaml via shouldExcludePath)
     yield* copyDirectoryRecursive(sourcePath, skillCacheDir);
-
-    // If we inferred manifest from SKILL.md, generate skill.yaml
-    if (!hasManifest) {
-      const generatedManifest = yaml.dump(manifest);
-      const destManifestPath = join(skillCacheDir, "skill.yaml");
-      yield* Effect.promise(() => Bun.write(destManifestPath, generatedManifest));
-    }
 
     // Write .meta.json
     const meta: CacheMeta = {
       source: sourcePath,
       cachedAt: new Date().toISOString(),
-      version: manifest.version,
+      version: "1.0.0", // Version is no longer in manifest
     };
     const metaPath = join(skillCacheDir, ".meta.json");
     yield* Effect.promise(() => Bun.write(metaPath, JSON.stringify(meta, null, 2)));
@@ -934,23 +826,23 @@ const fetchFromLocalPath = (sourcePath: string): Effect.Effect<CachedSkill, Skil
 const readCachedSkill = (name: string): Effect.Effect<CachedSkill, SkillNotCachedError> =>
   Effect.gen(function* () {
     const skillCacheDir = getSkillCacheDir(name);
-    const manifestPath = join(skillCacheDir, "skill.yaml");
+    const skillMdPath = join(skillCacheDir, "SKILL.md");
     const metaPath = join(skillCacheDir, ".meta.json");
 
-    // Check if manifest exists
-    const manifestFile = Bun.file(manifestPath);
-    const exists = yield* Effect.promise(() => manifestFile.exists());
+    // Check if SKILL.md exists
+    const skillMdFile = Bun.file(skillMdPath);
+    const exists = yield* Effect.promise(() => skillMdFile.exists());
 
     if (!exists) {
       return yield* Effect.fail(new SkillNotCachedError({ name }));
     }
 
-    // Read and validate manifest
-    const manifest = yield* validateManifestAtPath(manifestPath).pipe(
-      Effect.mapError(
-        () => new SkillNotCachedError({ name })
-      )
+    // Read and parse manifest from SKILL.md frontmatter
+    const content = yield* Effect.promise(() => skillMdFile.text());
+    const inferred = yield* parseSkillMdFrontmatter(content, name).pipe(
+      Effect.mapError(() => new SkillNotCachedError({ name }))
     );
+    const manifest = inferredToManifest(inferred);
 
     // Read meta
     const metaFile = Bun.file(metaPath);
@@ -970,19 +862,14 @@ const readCachedSkill = (name: string): Effect.Effect<CachedSkill, SkillNotCache
       }
     }
 
-    // Check for optional files
-    const skillMdPath = join(skillCacheDir, "SKILL.md");
+    // Check for optional README file
     const readmePath = join(skillCacheDir, "README.md");
-
-    const skillMdFile = Bun.file(skillMdPath);
     const readmeFile = Bun.file(readmePath);
-
-    const skillMdExists = yield* Effect.promise(() => skillMdFile.exists());
     const readmeExists = yield* Effect.promise(() => readmeFile.exists());
 
     return {
       manifest,
-      skillMdPath: skillMdExists ? skillMdPath : undefined,
+      skillMdPath, // Already confirmed to exist
       readmePath: readmeExists ? readmePath : undefined,
       cachedAt,
       source,
@@ -1041,8 +928,8 @@ const listCachedSkills = (): Effect.Effect<CachedSkill[]> =>
 const isSkillCached = (name: string): Effect.Effect<boolean> =>
   Effect.gen(function* () {
     const skillCacheDir = getSkillCacheDir(name);
-    const manifestPath = join(skillCacheDir, "skill.yaml");
-    const file = Bun.file(manifestPath);
+    const skillMdPath = join(skillCacheDir, "SKILL.md");
+    const file = Bun.file(skillMdPath);
     return yield* Effect.promise(() => file.exists());
   });
 
@@ -1108,7 +995,7 @@ const updateCacheIndex = (): Effect.Effect<void, SkillSourceError> =>
 
     for (const skill of skills) {
       index.skills[skill.manifest.name] = {
-        version: skill.manifest.version,
+        version: "1.0.0", // Version is no longer in manifest
         source: skill.source,
         cachedAt: skill.cachedAt.toISOString(),
       };
@@ -1130,9 +1017,6 @@ interface SkillCacheServiceImpl {
 
   // Type detection
   readonly detectRepoType: (source: GitHubSource) => Effect.Effect<RepoType, SkillSourceError>;
-
-  // Validation
-  readonly validateManifest: (path: string) => Effect.Effect<SkillManifest, SkillManifestError>;
 
   // Cache operations
   readonly remove: (name: string) => Effect.Effect<void, SkillNotCachedError>;
@@ -1161,8 +1045,6 @@ const makeSkillCacheService = (): SkillCacheServiceImpl => ({
   fetchFromLocal: (path: string) => fetchFromLocalPath(path),
 
   detectRepoType: (source: GitHubSource) => detectRepoTypeFromGitHub(source),
-
-  validateManifest: (path: string) => validateManifestAtPath(path),
 
   remove: (name: string) => removeCachedSkill(name),
 

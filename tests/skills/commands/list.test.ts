@@ -5,25 +5,22 @@
 import { describe, expect, it } from "bun:test";
 import { Effect, Layer } from "effect";
 import { skillsList } from "../../../src/commands/skills/list";
-import { SkillCacheService } from "../../../src/services/skills/skill-cache-service";
+import { SkillCacheService, type CachedSkill } from "../../../src/services/skills/skill-cache-service";
 import { SkillStateService } from "../../../src/services/skills/skill-state-service";
 import type { ParsedArgs } from "../../../src/cli/parser";
-import type { CachedSkill, SkillManifest } from "../../../src/services/skills/skill-cache-service";
+import type { SkillManifest, AgentType, RepoType } from "../../../src/models/skill";
 
 const createParsedArgs = (overrides?: Partial<ParsedArgs>): ParsedArgs => ({
   command: "skills",
-  subcommand: "list",
-  args: [],
   flags: {},
+  positional: ["list"],
   ...overrides,
 });
 
 const createMockCachedSkill = (name: string): CachedSkill => ({
   manifest: {
     name,
-    version: "1.0.0",
     description: `Test skill ${name}`,
-    type: "prompt",
   },
   cachedAt: new Date(),
   source: "test",
@@ -41,15 +38,15 @@ const createMockCacheService = (
     ),
   listCached: () => Effect.succeed(cachedSkills),
   updateIndex: () => Effect.void,
-  validateManifest: () => Effect.succeed({} as SkillManifest),
-  installFromGitHub: () => Effect.succeed(createMockCachedSkill("test")),
-  installFromLocal: () => Effect.succeed(createMockCachedSkill("test")),
-  uninstall: () => Effect.void,
+  fetchFromGitHub: () => Effect.succeed(createMockCachedSkill("test")),
+  fetchFromLocal: () => Effect.succeed(createMockCachedSkill("test")),
+  detectRepoType: () => Effect.succeed({ type: "skill", skill: { name: "test", description: "test", path: "" } } as RepoType),
+  remove: () => Effect.void,
   clear: () => Effect.void,
 });
 
 const createMockStateService = (
-  projects: Map<string, { agent: "claude_code" | "opencode" | "generic"; enabled: string[] }>
+  projects: Map<string, { agent: AgentType; enabled: string[] }>
 ): typeof SkillStateService.Service => ({
   getProjectState: (projectPath: string) =>
     Effect.succeed(
@@ -58,10 +55,11 @@ const createMockStateService = (
             ...projects.get(projectPath)!,
             disabled_at: {},
             initialized_at: new Date().toISOString(),
+            enabledSkills: projects.get(projectPath)!.enabled,
           }
         : null
     ),
-  initProject: (projectPath: string, agent) =>
+  initProject: (projectPath: string, agent: AgentType) =>
     Effect.sync(() => {
       projects.set(projectPath, { agent, enabled: [] });
     }),
@@ -100,7 +98,7 @@ describe("skills list command", () => {
       createMockCachedSkill("skill2"),
       createMockCachedSkill("skill3"),
     ];
-    const projects = new Map([
+    const projects = new Map<string, { agent: AgentType; enabled: string[] }>([
       [process.cwd(), { agent: "claude_code" as const, enabled: ["skill1"] }],
     ]);
 
@@ -124,7 +122,7 @@ describe("skills list command", () => {
       createMockCachedSkill("skill1"),
       createMockCachedSkill("skill2"),
     ];
-    const projects = new Map([
+    const projects = new Map<string, { agent: AgentType; enabled: string[] }>([
       [process.cwd(), { agent: "claude_code" as const, enabled: [] }],
     ]);
 
@@ -144,7 +142,7 @@ describe("skills list command", () => {
 
   it("should handle empty cache", async () => {
     const cachedSkills: CachedSkill[] = [];
-    const projects = new Map([
+    const projects = new Map<string, { agent: AgentType; enabled: string[] }>([
       [process.cwd(), { agent: "claude_code" as const, enabled: [] }],
     ]);
 
@@ -167,7 +165,7 @@ describe("skills list command", () => {
       createMockCachedSkill("skill1"),
       createMockCachedSkill("skill2"),
     ];
-    const projects = new Map([
+    const projects = new Map<string, { agent: AgentType; enabled: string[] }>([
       [process.cwd(), { agent: "claude_code" as const, enabled: ["skill1"] }],
     ]);
 
@@ -192,7 +190,7 @@ describe("skills list command", () => {
       createMockCachedSkill("skill1"),
       createMockCachedSkill("skill2"),
     ];
-    const projects = new Map([
+    const projects = new Map<string, { agent: AgentType; enabled: string[] }>([
       [process.cwd(), { agent: "claude_code" as const, enabled: ["skill1"] }],
     ]);
 

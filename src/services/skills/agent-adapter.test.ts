@@ -12,7 +12,6 @@ import {
   hasYamlFrontmatter,
   generateSkillFrontmatter,
   ensureSkillFrontmatter,
-  type AgentAdapter,
 } from "./agent-adapter";
 
 describe("AgentAdapter", () => {
@@ -128,9 +127,7 @@ describe("AgentAdapter", () => {
         adapter.enableSkill("/test/path", {
           manifest: {
             name: "test-skill",
-            version: "1.0.0",
             description: "Test skill",
-            type: "prompt",
           },
           cachedAt: new Date(),
           source: "test",
@@ -198,9 +195,7 @@ Some separator`;
       test("should generate frontmatter with name and description", () => {
         const manifest = {
           name: "test-skill",
-          version: "1.0.0",
           description: "A test skill for testing",
-          type: "prompt" as const,
         };
 
         const frontmatter = generateSkillFrontmatter(manifest);
@@ -210,27 +205,21 @@ Some separator`;
         expect(frontmatter).toContain("description: A test skill for testing");
       });
 
-      test("should use trigger_description when available", () => {
+      test("should use description in frontmatter", () => {
         const manifest = {
           name: "test-skill",
-          version: "1.0.0",
-          description: "Basic description",
-          type: "prompt" as const,
-          trigger_description: "Use when testing skills",
+          description: "Use when testing skills",
         };
 
         const frontmatter = generateSkillFrontmatter(manifest);
 
         expect(frontmatter).toContain("description: Use when testing skills");
-        expect(frontmatter).not.toContain("Basic description");
       });
 
       test("should include allowed-tools when specified", () => {
         const manifest = {
           name: "test-skill",
-          version: "1.0.0",
           description: "Test",
-          type: "prompt" as const,
           allowed_tools: ["Read", "Write", "Bash"],
         };
 
@@ -242,9 +231,7 @@ Some separator`;
       test("should handle multi-line descriptions", () => {
         const manifest = {
           name: "test-skill",
-          version: "1.0.0",
           description: "Line 1\nLine 2\nLine 3",
-          type: "prompt" as const,
         };
 
         const frontmatter = generateSkillFrontmatter(manifest);
@@ -262,9 +249,7 @@ Some separator`;
 Instructions here.`;
         const manifest = {
           name: "my-skill",
-          version: "1.0.0",
           description: "A great skill",
-          type: "prompt" as const,
         };
 
         const result = ensureSkillFrontmatter(content, manifest);
@@ -281,9 +266,7 @@ name: existing
 # My Skill`;
         const manifest = {
           name: "my-skill",
-          version: "1.0.0",
           description: "A great skill",
-          type: "prompt" as const,
         };
 
         const result = ensureSkillFrontmatter(content, manifest);

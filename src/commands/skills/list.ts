@@ -63,16 +63,12 @@ export const skillsList = (args: ParsedArgs) =>
       const output = {
         enabled: enabledSkills.map((skill) => ({
           name: skill.manifest.name,
-          version: skill.manifest.version,
           description: skill.manifest.description,
-          type: skill.manifest.type,
           source: skill.source,
         })),
         available: availableSkills.map((skill) => ({
           name: skill.manifest.name,
-          version: skill.manifest.version,
           description: skill.manifest.description,
-          type: skill.manifest.type,
           source: skill.source,
         })),
       };

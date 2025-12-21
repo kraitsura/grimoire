@@ -130,49 +130,26 @@ export const InitConfigSchema = Schema.Struct({
 export const SkillTypeSchema = Schema.Literal("prompt", "plugin", "mcp", "tool");
 
 /**
- * Skill manifest schema (parsed from skill.yaml or SKILL.md frontmatter)
+ * Skill manifest schema (parsed from SKILL.md frontmatter only)
  *
- * Complete specification of a skill including metadata, dependencies,
- * agent configurations, and initialization steps.
+ * Skills are defined by SKILL.md with YAML frontmatter.
+ * We no longer support skill.yaml - real plugins like beads use
+ * plugin.json for MCP/hooks and SKILL.md for instructions.
  *
  * Aligned with agentskills.io standard:
  * - Required: name, description
- * - Optional: license, compatibility, metadata, allowed-tools
+ * - Optional: allowed-tools
  */
 export const SkillManifestSchema = Schema.Struct({
   // Required fields (agentskills.io standard)
   name: Schema.String.pipe(Schema.minLength(1)),
   description: Schema.String,
 
-  // Optional fields (agentskills.io standard)
-  /** Skill licensing terms */
-  license: Schema.optional(Schema.String),
-  /** Environment requirements (system packages, network access, etc.) */
-  compatibility: Schema.optional(Schema.String),
-  /** Arbitrary key-value metadata (agentskills.io standard) */
-  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
-
-  // Extended fields (grimoire-specific, backwards compatible)
-  version: Schema.optional(Schema.String),
-  type: Schema.optional(SkillTypeSchema),
-  tags: Schema.optional(Schema.Array(Schema.String)),
-  author: Schema.optional(Schema.String),
-  repository: Schema.optional(Schema.String),
-  cli: Schema.optional(Schema.Record({ key: Schema.String, value: CliDependencySchema })),
-  agents: Schema.optional(AgentConfigsSchema),
-  init: Schema.optional(InitConfigSchema),
-  prompt: Schema.optional(Schema.String),
-  /**
-   * Trigger description for Claude Code skill discovery.
-   * This text helps Claude understand WHEN to use the skill.
-   * Should describe use cases and trigger phrases.
-   * Example: "Use this skill when managing tasks, tracking issues, or planning work"
-   */
-  trigger_description: Schema.optional(Schema.String),
+  // Optional fields from SKILL.md frontmatter
   /**
    * List of allowed tools for this skill in Claude Code.
    * Restricts which tools the skill can use for security.
-   * Can be space-delimited string or array (agentskills.io uses space-delimited).
+   * Can be comma-delimited string or array in frontmatter.
    * Example: ["Read", "Write", "Bash", "Glob", "Grep"]
    */
   allowed_tools: Schema.optional(Schema.Array(Schema.String)),
@@ -366,8 +343,6 @@ export interface SkillInfo {
   name: string;
   description: string;
   path: string; // subdirectory path (empty string for root)
-  hasYaml: boolean;
-  hasMd: boolean;
 }
 
 /**
@@ -388,13 +363,10 @@ export type RepoType =
   | { type: "empty" };
 
 /**
- * Partial manifest inferred from SKILL.md frontmatter
+ * Manifest parsed from SKILL.md frontmatter
  */
 export interface InferredManifest {
   name: string;
-  version: string;
   description: string;
-  type: SkillType;
-  trigger_description?: string;
   allowed_tools?: string[];
 }

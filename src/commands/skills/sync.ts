@@ -83,100 +83,7 @@ const isLocalPath = (source: string): boolean => {
   return source.startsWith("./") || source.startsWith("../") || source.startsWith("/");
 };
 
-/**
- * Fetch latest version from GitHub source
- */
-const fetchLatestVersion = (
-  source: GitHubSource
-): Effect.Effect<string, SkillSourceError> =>
-  Effect.gen(function* () {
-    const { owner, repo, ref = "main", subdir } = source;
-    const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents`;
-    const path = subdir ? `/${subdir}` : "";
-    const manifestUrl = `${baseUrl}${path}/skill.yaml?ref=${ref}`;
 
-    try {
-      const manifestResponse = yield* Effect.tryPromise({
-        try: () => fetch(manifestUrl),
-        catch: (error) =>
-          new SkillSourceError({
-            source: `github:${owner}/${repo}`,
-            message: `Failed to fetch from GitHub: ${error instanceof Error ? error.message : String(error)}`,
-            cause: error,
-          }),
-      });
-
-      if (!manifestResponse.ok) {
-        return yield* Effect.fail(
-          new SkillSourceError({
-            source: `github:${owner}/${repo}`,
-            message: `GitHub API error: ${manifestResponse.status} ${manifestResponse.statusText}`,
-          })
-        );
-      }
-
-      const manifestDataRaw = yield* Effect.tryPromise({
-        try: () => manifestResponse.json(),
-        catch: (error) =>
-          new SkillSourceError({
-            source: `github:${owner}/${repo}`,
-            message: `Failed to parse GitHub response: ${error instanceof Error ? error.message : String(error)}`,
-            cause: error,
-          }),
-      });
-
-      const manifestData = manifestDataRaw as { content: string };
-
-      // Decode base64 content
-      const manifestContent = atob(manifestData.content);
-      const parsed = yaml.load(manifestContent);
-
-      if (!parsed || typeof parsed !== "object" || !("version" in parsed)) {
-        return yield* Effect.fail(
-          new SkillSourceError({
-            source: `github:${owner}/${repo}`,
-            message: "Invalid manifest: missing version field",
-          })
-        );
-      }
-
-      return (parsed as { version: string }).version;
-    } catch (error) {
-      return yield* Effect.fail(
-        new SkillSourceError({
-          source: `github:${owner}/${repo}`,
-          message: `Failed to fetch from GitHub: ${error instanceof Error ? error.message : String(error)}`,
-          cause: error,
-        })
-      );
-    }
-  });
-
-/**
- * Compare semantic versions
- * Returns true if newVersion is newer than currentVersion
- */
-const isNewerVersion = (currentVersion: string, newVersion: string): boolean => {
-  if (currentVersion === newVersion) {
-    return false;
-  }
-
-  const parseVersion = (v: string) => {
-    const cleaned = v.replace(/^v/, "");
-    const parts = cleaned.split(".").map((n) => parseInt(n, 10) || 0);
-    return { major: parts[0] || 0, minor: parts[1] || 0, patch: parts[2] || 0 };
-  };
-
-  const current = parseVersion(currentVersion);
-  const latest = parseVersion(newVersion);
-
-  if (latest.major > current.major) return true;
-  if (latest.major < current.major) return false;
-  if (latest.minor > current.minor) return true;
-  if (latest.minor < current.minor) return false;
-  if (latest.patch > current.patch) return true;
-  return false;
-};
 
 /**
  * Sync result for a single skill
@@ -184,8 +91,6 @@ const isNewerVersion = (currentVersion: string, newVersion: string): boolean => 
 interface SyncResult {
   skillName: string;
   status: "updated" | "up-to-date" | "error" | "local-source";
-  currentVersion?: string;
-  newVersion?: string;
   error?: string;
 }
 
@@ -248,7 +153,6 @@ export const skillsSync = (args: ParsedArgs) =>
       }
 
       const cachedSkill = cachedResult.right;
-      const currentVersion = cachedSkill.manifest.version;
       const source = cachedSkill.source;
 
       // Check if source is a local path (skip sync for local sources)
@@ -256,7 +160,6 @@ export const skillsSync = (args: ParsedArgs) =>
         results.push({
           skillName,
           status: "local-source",
-          currentVersion,
         });
         continue;
       }
@@ -266,7 +169,6 @@ export const skillsSync = (args: ParsedArgs) =>
         results.push({
           skillName,
           status: "local-source",
-          currentVersion,
         });
         continue;
       }
@@ -278,7 +180,6 @@ export const skillsSync = (args: ParsedArgs) =>
         results.push({
           skillName,
           status: "error",
-          currentVersion,
           error: "Failed to parse GitHub source",
         });
         continue;
@@ -286,38 +187,11 @@ export const skillsSync = (args: ParsedArgs) =>
 
       const githubSource = githubSourceResult.right;
 
-      // Fetch latest version from GitHub
-      const latestVersionResult = yield* fetchLatestVersion(githubSource).pipe(Effect.either);
-
-      if (latestVersionResult._tag === "Left") {
-        results.push({
-          skillName,
-          status: "error",
-          currentVersion,
-          error: `Failed to fetch latest version: ${latestVersionResult.left.message}`,
-        });
-        continue;
-      }
-
-      const latestVersion = latestVersionResult.right;
-
-      // Check if update is needed
-      if (!isNewerVersion(currentVersion, latestVersion)) {
-        results.push({
-          skillName,
-          status: "up-to-date",
-          currentVersion,
-        });
-        continue;
-      }
-
-      // New version available
+      // For sync, always re-fetch from GitHub (no version checking since we don't track versions anymore)
       if (dryRun) {
         results.push({
           skillName,
           status: "updated",
-          currentVersion,
-          newVersion: latestVersion,
         });
         continue;
       }
@@ -338,8 +212,6 @@ export const skillsSync = (args: ParsedArgs) =>
         results.push({
           skillName,
           status: "error",
-          currentVersion,
-          newVersion: latestVersion,
           error: "Failed to disable old version",
         });
         continue;
@@ -355,8 +227,6 @@ export const skillsSync = (args: ParsedArgs) =>
         results.push({
           skillName,
           status: "error",
-          currentVersion,
-          newVersion: latestVersion,
           error: `Failed to fetch update: ${updateResult.left.message}`,
         });
         continue;
@@ -378,8 +248,6 @@ export const skillsSync = (args: ParsedArgs) =>
         results.push({
           skillName,
           status: "error",
-          currentVersion,
-          newVersion: latestVersion,
           error: "Failed to re-enable skill with new version",
         });
         continue;
@@ -388,8 +256,6 @@ export const skillsSync = (args: ParsedArgs) =>
       results.push({
         skillName,
         status: "updated",
-        currentVersion,
-        newVersion: updateResult.right.manifest.version,
       });
     }
 
@@ -408,24 +274,24 @@ export const skillsSync = (args: ParsedArgs) =>
       switch (result.status) {
         case "updated":
           console.log(
-            `${colors.green}✓${colors.reset} ${colors.bold}${result.skillName}${colors.reset}: ${result.currentVersion} → ${result.newVersion}`
+            `${colors.green}[ok]${colors.reset} ${colors.bold}${result.skillName}${colors.reset}: updated`
           );
           updatedCount++;
           break;
         case "up-to-date":
           console.log(
-            `  ${colors.gray}○${colors.reset} ${result.skillName}: up to date`
+            `  ${colors.gray}o${colors.reset} ${result.skillName}: up to date`
           );
           upToDateCount++;
           break;
         case "local-source":
           console.log(
-            `  ${colors.gray}○${colors.reset} ${result.skillName}: no remote source`
+            `  ${colors.gray}o${colors.reset} ${result.skillName}: no remote source`
           );
           localCount++;
           break;
         case "error":
-          console.log(`${colors.red}✗${colors.reset} ${result.skillName}: ${result.error}`);
+          console.log(`${colors.red}[!!]${colors.reset} ${result.skillName}: ${result.error}`);
           errorCount++;
           break;
       }

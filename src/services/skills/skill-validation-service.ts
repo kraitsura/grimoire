@@ -315,11 +315,6 @@ export const validateManifest = (
   // Validate description
   issues.push(...validateDescription(manifest.description));
 
-  // Validate compatibility if present (only on full manifests)
-  if ("compatibility" in manifest && manifest.compatibility) {
-    issues.push(...validateCompatibility(manifest.compatibility));
-  }
-
   // Validate SKILL.md size if content provided
   if (options?.skillMdContent) {
     issues.push(...validateSkillMdSize(options.skillMdContent));
@@ -358,20 +353,15 @@ export const validateSkillAtPath = (
     // Get directory name for comparison
     const directoryName = skillPath.split("/").pop() || "";
 
-    // Check for skill.yaml
-    const manifestPath = join(skillPath, "skill.yaml");
+    // Check for SKILL.md (skills are now SKILL.md-only, no more skill.yaml)
     const skillMdPath = join(skillPath, "SKILL.md");
-
-    const manifestFile = Bun.file(manifestPath);
     const skillMdFile = Bun.file(skillMdPath);
-
-    const hasManifest = yield* Effect.promise(() => manifestFile.exists());
     const hasSkillMd = yield* Effect.promise(() => skillMdFile.exists());
 
-    if (!hasManifest && !hasSkillMd) {
+    if (!hasSkillMd) {
       issues.push({
         field: "files",
-        message: "Skill must have either skill.yaml or SKILL.md",
+        message: "Skill must have a SKILL.md file with frontmatter",
         severity: "error",
       });
       return {
@@ -384,22 +374,8 @@ export const validateSkillAtPath = (
 
     let skillMdContent: string | undefined;
 
-    // Parse manifest
-    if (hasManifest) {
-      try {
-        const content = yield* Effect.promise(() => manifestFile.text());
-        manifest = yaml.default.load(content) as SkillManifest;
-      } catch (error) {
-        issues.push({
-          field: "skill.yaml",
-          message: `Failed to parse skill.yaml: ${error instanceof Error ? error.message : String(error)}`,
-          severity: "error",
-        });
-      }
-    }
-
-    // Parse SKILL.md frontmatter if no manifest
-    if (!manifest && hasSkillMd) {
+    // Parse SKILL.md frontmatter
+    if (hasSkillMd) {
       try {
         skillMdContent = yield* Effect.promise(() => skillMdFile.text());
 
@@ -409,11 +385,20 @@ export const validateSkillAtPath = (
             const frontmatter = skillMdContent.slice(3, endMarker).trim();
             const parsed = yaml.default.load(frontmatter) as Record<string, unknown>;
 
+            // Parse allowed-tools (can be comma-separated string or array)
+            let allowedTools: string[] | undefined;
+            if (parsed["allowed-tools"]) {
+              if (typeof parsed["allowed-tools"] === "string") {
+                allowedTools = parsed["allowed-tools"].split(",").map((t: string) => t.trim());
+              } else if (Array.isArray(parsed["allowed-tools"])) {
+                allowedTools = parsed["allowed-tools"].map(String);
+              }
+            }
+
             manifest = {
               name: typeof parsed.name === "string" ? parsed.name : directoryName,
               description: typeof parsed.description === "string" ? parsed.description : "",
-              version: typeof parsed.version === "string" ? parsed.version : "1.0.0",
-              type: "prompt" as const,
+              allowed_tools: allowedTools,
             };
           }
         }
@@ -424,8 +409,6 @@ export const validateSkillAtPath = (
           severity: "error",
         });
       }
-    } else if (hasSkillMd) {
-      skillMdContent = yield* Effect.promise(() => skillMdFile.text());
     }
 
     // If we still don't have a manifest, return early with errors

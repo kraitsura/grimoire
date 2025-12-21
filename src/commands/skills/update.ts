@@ -241,7 +241,7 @@ export const skillsUpdate = (args: ParsedArgs) =>
     });
 
     // Output success
-    console.log(`${colors.green}✓${colors.reset} Updated ${colors.bold}${skillName}${colors.reset}`);
+    console.log(`${colors.green}[ok]${colors.reset} Updated ${colors.bold}${skillName}${colors.reset}`);
     for (const change of changes) {
       console.log(`  ${colors.gray}•${colors.reset} ${change}`);
     }

@@ -46,8 +46,8 @@ export function generateSkillFrontmatter(manifest: SkillManifest): string {
   // Name (required)
   lines.push(`name: ${manifest.name}`);
 
-  // Description for discovery (use trigger_description if available, else description)
-  const description = manifest.trigger_description || manifest.description;
+  // Description for discovery (required)
+  const description = manifest.description;
   if (description) {
     // Handle multi-line descriptions
     if (description.includes("\n")) {
@@ -388,57 +388,9 @@ const ClaudeCodeAdapter: AgentAdapter = {
         result.skillFileCopied = true;
       }
 
-      // Check for additional agent-specific config (plugins, MCP, injection)
-      const agentConfig = skill.manifest.agents?.claude_code;
-
-      // Install plugin if configured
-      if (agentConfig?.plugin && ClaudeCodeAdapter.installPlugin) {
-        yield* ClaudeCodeAdapter.installPlugin(
-          agentConfig.plugin.marketplace,
-          agentConfig.plugin.name
-        ).pipe(
-          Effect.mapError(
-            (error) =>
-              new AgentAdapterError({
-                agent: "claude_code",
-                operation: "enableSkill",
-                message: `Failed to install plugin: ${error.plugin}`,
-                cause: error,
-              })
-          )
-        );
-        result.pluginInstalled = true;
-      }
-
-      // Configure MCP if configured
-      if (agentConfig?.mcp && ClaudeCodeAdapter.configureMcp) {
-        yield* ClaudeCodeAdapter.configureMcp(
-          projectPath,
-          skill.manifest.name,
-          agentConfig.mcp
-        );
-        result.mcpConfigured = true;
-      }
-
-      // Inject content if configured
-      if (agentConfig?.inject) {
-        yield* ClaudeCodeAdapter.injectContent(
-          projectPath,
-          skill.manifest.name,
-          agentConfig.inject.content
-        ).pipe(
-          Effect.mapError(
-            (error) =>
-              new AgentAdapterError({
-                agent: "claude_code",
-                operation: "enableSkill",
-                message: `Failed to inject content: ${error.message}`,
-                cause: error,
-              })
-          )
-        );
-        result.injected = true;
-      }
+      // Skills no longer have agent-specific config (plugins, MCP, injection)
+      // Real plugins like beads use plugin.json for MCP/hooks and SKILL.md for instructions
+      // Skills just copy SKILL.md now
 
       return result;
     }),
@@ -781,38 +733,9 @@ const OpenCodeAdapter: AgentAdapter = {
         result.skillFileCopied = true;
       }
 
-      // Check for additional agent-specific config (MCP, injection)
-      const agentConfig = skill.manifest.agents?.opencode;
-
-      // Configure MCP if configured
-      if (agentConfig?.mcp && OpenCodeAdapter.configureMcp) {
-        yield* OpenCodeAdapter.configureMcp(
-          projectPath,
-          skill.manifest.name,
-          agentConfig.mcp
-        );
-        result.mcpConfigured = true;
-      }
-
-      // Inject content if configured
-      if (agentConfig?.inject) {
-        yield* OpenCodeAdapter.injectContent(
-          projectPath,
-          skill.manifest.name,
-          agentConfig.inject.content
-        ).pipe(
-          Effect.mapError(
-            (error) =>
-              new AgentAdapterError({
-                agent: "opencode",
-                operation: "enableSkill",
-                message: `Failed to inject content: ${error.message}`,
-                cause: error,
-              })
-          )
-        );
-        result.injected = true;
-      }
+      // Skills no longer have agent-specific config (MCP, injection)
+      // Real plugins use their own configuration mechanisms
+      // Skills just copy SKILL.md now
 
       return result;
     }),
@@ -1102,25 +1025,8 @@ const GenericAdapter: AgentAdapter = {
         result.skillFileCopied = true;
       }
 
-      // Inject content from skill manifest prompt if available
-      if (skill.manifest.prompt) {
-        yield* GenericAdapter.injectContent(
-          projectPath,
-          skill.manifest.name,
-          skill.manifest.prompt
-        ).pipe(
-          Effect.mapError(
-            (error) =>
-              new AgentAdapterError({
-                agent: "generic",
-                operation: "enableSkill",
-                message: `Failed to inject content: ${error.message}`,
-                cause: error,
-              })
-          )
-        );
-        result.injected = true;
-      }
+      // Skills no longer have prompt field in manifest
+      // Content is in SKILL.md which was already copied above
 
       return result;
     }),
@@ -1314,10 +1220,9 @@ Instructions for AI coding assistants.
       // For Codex, we inject skill content into AGENTS.md rather than copying files
       // Read SKILL.md content and inject it
       if (skill.skillMdPath) {
-        const skillContent = yield* Effect.tryPromise({
-          try: () => readFile(skill.skillMdPath!, "utf-8"),
-          catch: () => "",
-        });
+        const skillContent = yield* Effect.tryPromise(() =>
+          readFile(skill.skillMdPath!, "utf-8")
+        ).pipe(Effect.orElse(() => Effect.succeed("")));
 
         if (skillContent) {
           // Strip frontmatter before injection
@@ -1662,10 +1567,9 @@ Coding guidelines and conventions for this project.
 
       // Inject skill content into CONVENTIONS.md
       if (skill.skillMdPath) {
-        const skillContent = yield* Effect.tryPromise({
-          try: () => readFile(skill.skillMdPath!, "utf-8"),
-          catch: () => "",
-        });
+        const skillContent = yield* Effect.tryPromise(() =>
+          readFile(skill.skillMdPath!, "utf-8")
+        ).pipe(Effect.orElse(() => Effect.succeed("")));
 
         if (skillContent) {
           // Strip frontmatter before injection
@@ -1852,10 +1756,9 @@ Instructions for Amp AI coding assistant.
 
       // Inject skill content into AGENT.md
       if (skill.skillMdPath) {
-        const skillContent = yield* Effect.tryPromise({
-          try: () => readFile(skill.skillMdPath!, "utf-8"),
-          catch: () => "",
-        });
+        const skillContent = yield* Effect.tryPromise(() =>
+          readFile(skill.skillMdPath!, "utf-8")
+        ).pipe(Effect.orElse(() => Effect.succeed("")));
 
         if (skillContent) {
           // Strip frontmatter before injection

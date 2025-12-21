@@ -5,7 +5,7 @@
 import { Effect } from "effect";
 import * as yaml from "js-yaml";
 import type { ParsedArgs } from "../../cli/parser";
-import { SkillCacheService } from "../../services";
+import { SkillCacheService, SkillValidationService } from "../../services";
 import type { GitHubSource } from "../../services";
 import {
   SkillSourceError,
@@ -147,18 +147,37 @@ export const skillsAdd = (args: ParsedArgs) =>
 
     if (!force) {
       if (isLocalPath(source)) {
-        // Try to get the skill name from manifest if it's a local path
-        const manifestPath = `${source}/skill.yaml`;
-        const manifestResult = yield* cacheService
-          .validateManifest(manifestPath)
-          .pipe(Effect.either);
+        // Try to get the skill name from SKILL.md if it's a local path
+        const skillMdPath = `${source}/SKILL.md`;
+        const skillMdResult = yield* Effect.gen(function* () {
+          try {
+            const file = Bun.file(skillMdPath);
+            const exists = yield* Effect.promise(() => file.exists());
+            if (exists) {
+              const content = yield* Effect.promise(() => file.text());
+              // Parse frontmatter to get name
+              if (content.startsWith("---")) {
+                const endMarkerIndex = content.indexOf("---", 3);
+                if (endMarkerIndex !== -1) {
+                  const frontmatter = content.slice(3, endMarkerIndex).trim();
+                  const parsed = yaml.load(frontmatter) as Record<string, unknown>;
+                  if (parsed && typeof parsed.name === "string") {
+                    return parsed.name;
+                  }
+                }
+              }
+            }
+          } catch {
+            // Ignore errors
+          }
+          return undefined;
+        }).pipe(Effect.either);
 
-        if (manifestResult._tag === "Right") {
-          skillNameForCacheCheck = manifestResult.right.name;
+        if (skillMdResult._tag === "Right") {
+          skillNameForCacheCheck = skillMdResult.right;
         }
       } else {
-        // For GitHub sources, we need to fetch the manifest first to get the name
-        // We'll do a quick manifest-only fetch to check the cache
+        // For GitHub sources, we need to fetch SKILL.md first to get the name
         const githubSourceResult = yield* parseGitHubSource(source).pipe(Effect.either);
 
         if (githubSourceResult._tag === "Right") {
@@ -166,22 +185,31 @@ export const skillsAdd = (args: ParsedArgs) =>
           const { owner, repo, ref = "main", subdir } = githubSource;
           const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents`;
           const path = subdir ? `/${subdir}` : "";
-          const manifestUrl = `${baseUrl}${path}/skill.yaml?ref=${ref}`;
+          const skillMdUrl = `${baseUrl}${path}/SKILL.md?ref=${ref}`;
 
-          // Try to fetch just the manifest to get the skill name
-          const manifestCheckResult = yield* Effect.gen(function* () {
-            const response = yield* Effect.promise(() => fetch(manifestUrl));
+          // Try to fetch just SKILL.md to get the skill name
+          const skillMdCheckResult = yield* Effect.gen(function* () {
+            const response = yield* Effect.promise(() => fetch(skillMdUrl));
             if (response.ok) {
               const data = (yield* Effect.promise(() => response.json())) as { content: string };
-              const manifestContent = atob(data.content);
-              const parsed = yield* Effect.try(() => yaml.load(manifestContent));
-              return parsed as { name: string };
+              const content = atob(data.content);
+              // Parse frontmatter
+              if (content.startsWith("---")) {
+                const endMarkerIndex = content.indexOf("---", 3);
+                if (endMarkerIndex !== -1) {
+                  const frontmatter = content.slice(3, endMarkerIndex).trim();
+                  const parsed = yaml.load(frontmatter) as Record<string, unknown>;
+                  if (parsed && typeof parsed.name === "string") {
+                    return parsed.name;
+                  }
+                }
+              }
             }
             return undefined;
           }).pipe(Effect.either);
 
-          if (manifestCheckResult._tag === "Right" && manifestCheckResult.right) {
-            skillNameForCacheCheck = manifestCheckResult.right.name;
+          if (skillMdCheckResult._tag === "Right" && skillMdCheckResult.right) {
+            skillNameForCacheCheck = skillMdCheckResult.right;
           }
         }
       }
@@ -262,17 +290,68 @@ export const skillsAdd = (args: ParsedArgs) =>
 
     const cachedSkill = fetchResult.right;
 
+    // Perform validation unless --no-validate is specified
+    if (!noValidate) {
+      const validationService = yield* SkillValidationService;
+
+      // Get directory name for validation (from source path or manifest name)
+      const directoryName = isLocalPath(source)
+        ? source.split("/").pop() || cachedSkill.manifest.name
+        : cachedSkill.manifest.name;
+
+      // Read SKILL.md content for size validation
+      let skillMdContent: string | undefined;
+      if (cachedSkill.skillMdPath) {
+        const skillMdFile = Bun.file(cachedSkill.skillMdPath);
+        const exists = yield* Effect.promise(() => skillMdFile.exists());
+        if (exists) {
+          skillMdContent = yield* Effect.promise(() => skillMdFile.text());
+        }
+      }
+
+      // Validate the manifest
+      const validationResult = validationService.validateManifest(
+        cachedSkill.manifest,
+        { directoryName, skillMdContent }
+      );
+
+      // Report validation issues
+      if (validationResult.errors.length > 0) {
+        console.log(`\nValidation errors:`);
+        for (const error of validationResult.errors) {
+          console.log(`  ✖ ${error.field}: ${error.message}`);
+        }
+
+        // Remove the cached skill since validation failed
+        yield* cacheService.remove(cachedSkill.manifest.name).pipe(
+          Effect.catchAll(() => Effect.void)
+        );
+
+        console.log(`\nSkill not added due to validation errors.`);
+        console.log(`Use --no-validate to skip validation.`);
+        return;
+      }
+
+      // Report warnings
+      if (validationResult.warnings.length > 0) {
+        console.log(`\nValidation warnings:`);
+        for (const warning of validationResult.warnings) {
+          console.log(`  ⚠ ${warning.field}: ${warning.message}`);
+        }
+      }
+    }
+
     // Update cache index
     yield* cacheService.updateIndex();
 
     // Provide appropriate success message
     if (force) {
       console.log(
-        `Successfully updated skill: ${cachedSkill.manifest.name} (v${cachedSkill.manifest.version})`
+        `Successfully updated skill: ${cachedSkill.manifest.name}`
       );
     } else {
       console.log(
-        `Successfully added skill: ${cachedSkill.manifest.name} (v${cachedSkill.manifest.version})`
+        `Successfully added skill: ${cachedSkill.manifest.name}`
       );
     }
 

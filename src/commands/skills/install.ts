@@ -279,9 +279,10 @@ export const skillsInstall = (args: ParsedArgs) =>
       }
 
       if (repoType.type === "plugin") {
-        console.log(`${colors.yellow}Warning:${colors.reset} This is a Claude Code plugin, not a skill.`);
+        console.log(`${colors.yellow}Notice:${colors.reset} This repository contains a Claude Code plugin.`);
         console.log(`\nTo install plugins, use:`);
-        console.log(`  claude plugin install ${repoType.plugin.name}`);
+        console.log(`  ${colors.cyan}grimoire plugins add ${source}${colors.reset}`);
+        console.log(`\nThis will add the marketplace and let you select plugins to install.`);
         return yield* Effect.fail(
           new PluginDetectedError({
             source,
@@ -289,6 +290,27 @@ export const skillsInstall = (args: ParsedArgs) =>
             message: "Repository is a plugin, not a skill",
           })
         );
+      }
+
+      // Check for collection with plugins
+      if (repoType.type === "collection" && repoType.plugins.length > 0) {
+        if (repoType.skills.length === 0) {
+          // Only plugins, no skills
+          console.log(`${colors.yellow}Notice:${colors.reset} This repository contains ${repoType.plugins.length} plugin(s) but no skills.`);
+          console.log(`\nTo install plugins, use:`);
+          console.log(`  ${colors.cyan}grimoire plugins add ${source}${colors.reset}`);
+          return yield* Effect.fail(
+            new PluginDetectedError({
+              source,
+              pluginName: repoType.plugins[0].name,
+              message: "Repository contains plugins, not skills",
+            })
+          );
+        }
+
+        // Mixed repo - inform about plugins
+        console.log(`${colors.cyan}Mixed repository:${colors.reset} ${repoType.skills.length} skill(s), ${repoType.plugins.length} plugin(s)`);
+        console.log(`${colors.dim}To also install plugins: grimoire plugins add ${source}${colors.reset}\n`);
       }
 
       if (repoType.type === "collection") {
@@ -413,7 +435,7 @@ const installSingleSkill = (opts: InstallOptions) =>
       })
     );
 
-    console.log(`${colors.green}+${colors.reset} Cached: ${cachedSkill.manifest.name} v${cachedSkill.manifest.version}`);
+    console.log(`${colors.green}+${colors.reset} Cached: ${cachedSkill.manifest.name}`);
 
     // Step 2: Ensure project is initialized
     const isInitialized = yield* stateService.isInitialized(projectPath);
@@ -447,7 +469,7 @@ const installSingleSkill = (opts: InstallOptions) =>
         Effect.catchAll((error: unknown) => {
           // Check for already enabled
           if (error && typeof error === "object" && "_tag" in error && error._tag === "SkillAlreadyEnabledError") {
-            console.log(`${colors.gray}○${colors.reset} ${cachedSkill.manifest.name} is already enabled`);
+            console.log(`${colors.gray}o${colors.reset} ${cachedSkill.manifest.name} is already enabled`);
             return Effect.succeed({ skillName: cachedSkill.manifest.name, alreadyEnabled: true });
           }
 

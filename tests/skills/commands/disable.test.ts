@@ -6,15 +6,35 @@ import { describe, expect, it } from "bun:test";
 import { Effect, Layer } from "effect";
 import { skillsDisable } from "../../../src/commands/skills/disable";
 import { SkillEngineService } from "../../../src/services/skills/skill-engine-service";
+import { SkillStateService } from "../../../src/services/skills/skill-state-service";
 import type { ParsedArgs } from "../../../src/cli/parser";
 import { SkillNotEnabledError } from "../../../src/models/skill-errors";
 
 const createParsedArgs = (overrides?: Partial<ParsedArgs>): ParsedArgs => ({
   command: "skills",
-  subcommand: "disable",
-  args: [],
   flags: {},
+  positional: ["disable"],
   ...overrides,
+});
+
+const createMockStateService = (
+  enabledSkills: string[] = []
+): typeof SkillStateService.Service => ({
+  getProjectState: () => Effect.succeed({
+    agent: "claude_code" as const,
+    enabled: enabledSkills,
+    disabled_at: {},
+    initialized_at: new Date().toISOString(),
+    enabledSkills,
+  }),
+  initProject: () => Effect.void,
+  isInitialized: () => Effect.succeed(true),
+  getEnabled: () => Effect.succeed(enabledSkills),
+  setEnabled: () => Effect.void,
+  addEnabled: () => Effect.void,
+  removeEnabled: () => Effect.void,
+  recordDisable: () => Effect.void,
+  updateLastSync: () => Effect.void,
 });
 
 const createMockEngineService = (
@@ -25,7 +45,9 @@ const createMockEngineService = (
       skillName: "test-skill",
       cliInstalled: [],
     }),
-  disable: disableFn ? (projectPath, skillName) => disableFn(skillName) : () => Effect.void,
+  disable: disableFn
+    ? (_projectPath, skillName) => disableFn(skillName)
+    : () => Effect.void,
   canEnable: () =>
     Effect.succeed({
       canEnable: true,
@@ -37,14 +59,18 @@ const createMockEngineService = (
 describe("skills disable command", () => {
   it("should disable a single skill", async () => {
     let disabledSkill: string | undefined;
+    const mockState = createMockStateService(["test-skill"]);
     const mockEngine = createMockEngineService((skillName) => {
       disabledSkill = skillName;
       return Effect.void;
     });
-    const TestLayer = Layer.succeed(SkillEngineService, mockEngine);
+    const TestLayer = Layer.mergeAll(
+      Layer.succeed(SkillStateService, mockState),
+      Layer.succeed(SkillEngineService, mockEngine)
+    );
 
     const args = createParsedArgs({
-      args: ["test-skill"],
+      positional: ["disable", "test-skill"],
     });
 
     const program = skillsDisable(args).pipe(Effect.provide(TestLayer));
@@ -55,14 +81,18 @@ describe("skills disable command", () => {
 
   it("should disable multiple skills", async () => {
     const disabledSkills: string[] = [];
+    const mockState = createMockStateService(["skill1", "skill2", "skill3"]);
     const mockEngine = createMockEngineService((skillName) => {
       disabledSkills.push(skillName);
       return Effect.void;
     });
-    const TestLayer = Layer.succeed(SkillEngineService, mockEngine);
+    const TestLayer = Layer.mergeAll(
+      Layer.succeed(SkillStateService, mockState),
+      Layer.succeed(SkillEngineService, mockEngine)
+    );
 
     const args = createParsedArgs({
-      args: ["skill1", "skill2", "skill3"],
+      positional: ["disable", "skill1", "skill2", "skill3"],
     });
 
     const program = skillsDisable(args).pipe(Effect.provide(TestLayer));
@@ -71,29 +101,46 @@ describe("skills disable command", () => {
     expect(disabledSkills).toEqual(["skill1", "skill2", "skill3"]);
   });
 
-  it("should fail with no skill names", async () => {
+  it("should exit with no skill names", async () => {
+    const mockState = createMockStateService();
     const mockEngine = createMockEngineService();
-    const TestLayer = Layer.succeed(SkillEngineService, mockEngine);
+    const TestLayer = Layer.mergeAll(
+      Layer.succeed(SkillStateService, mockState),
+      Layer.succeed(SkillEngineService, mockEngine)
+    );
 
     const args = createParsedArgs({
-      args: [],
+      positional: ["disable"],
     });
 
-    const program = skillsDisable(args).pipe(Effect.provide(TestLayer));
+    // Mock process.exit to prevent actual exit
+    const originalExit = process.exit;
+    let exitCalled = false;
+    process.exit = (() => {
+      exitCalled = true;
+    }) as typeof process.exit;
 
-    const result = await Effect.runPromise(Effect.either(program));
-
-    expect(result._tag).toBe("Left");
+    try {
+      const program = skillsDisable(args).pipe(Effect.provide(TestLayer));
+      await Effect.runPromise(program);
+      expect(exitCalled).toBe(true);
+    } finally {
+      process.exit = originalExit;
+    }
   });
 
   it("should handle SkillNotEnabledError gracefully", async () => {
+    const mockState = createMockStateService(["not-enabled"]);
     const mockEngine = createMockEngineService(() =>
       Effect.fail(new SkillNotEnabledError({ name: "not-enabled" }))
     );
-    const TestLayer = Layer.succeed(SkillEngineService, mockEngine);
+    const TestLayer = Layer.mergeAll(
+      Layer.succeed(SkillStateService, mockState),
+      Layer.succeed(SkillEngineService, mockEngine)
+    );
 
     const args = createParsedArgs({
-      args: ["not-enabled"],
+      positional: ["disable", "not-enabled"],
     });
 
     const program = skillsDisable(args).pipe(Effect.provide(TestLayer));
@@ -104,6 +151,7 @@ describe("skills disable command", () => {
 
   it("should continue disabling remaining skills if one fails", async () => {
     const disabledSkills: string[] = [];
+    const mockState = createMockStateService(["skill1", "fail-skill", "skill2"]);
     const mockEngine = createMockEngineService((skillName) => {
       if (skillName === "fail-skill") {
         return Effect.fail(new SkillNotEnabledError({ name: skillName }));
@@ -111,10 +159,13 @@ describe("skills disable command", () => {
       disabledSkills.push(skillName);
       return Effect.void;
     });
-    const TestLayer = Layer.succeed(SkillEngineService, mockEngine);
+    const TestLayer = Layer.mergeAll(
+      Layer.succeed(SkillStateService, mockState),
+      Layer.succeed(SkillEngineService, mockEngine)
+    );
 
     const args = createParsedArgs({
-      args: ["skill1", "fail-skill", "skill2"],
+      positional: ["disable", "skill1", "fail-skill", "skill2"],
     });
 
     const program = skillsDisable(args).pipe(Effect.provide(TestLayer));

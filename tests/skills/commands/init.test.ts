@@ -7,6 +7,7 @@ import { Effect, Layer } from "effect";
 import { skillsInit, InitError } from "../../../src/commands/skills/init";
 import { SkillStateService } from "../../../src/services/skills/skill-state-service";
 import type { ParsedArgs } from "../../../src/cli/parser";
+import type { AgentType } from "../../../src/models/skill";
 import { join } from "path";
 import { existsSync } from "fs";
 import { unlink, rm, mkdir, writeFile } from "fs/promises";
@@ -17,14 +18,13 @@ const testStatePath = join(testStateDir, "state.json");
 
 const createParsedArgs = (overrides?: Partial<ParsedArgs>): ParsedArgs => ({
   command: "skills",
-  subcommand: "init",
-  args: [],
   flags: {},
+  positional: ["init"],
   ...overrides,
 });
 
 const createMockStateService = (
-  projects: Map<string, { agent: "claude_code" | "opencode" | "generic"; enabled: string[] }>
+  projects: Map<string, { agent: AgentType; enabled: string[] }>
 ): typeof SkillStateService.Service => ({
   getProjectState: (projectPath: string) =>
     Effect.succeed(
@@ -33,10 +33,11 @@ const createMockStateService = (
             ...projects.get(projectPath)!,
             disabled_at: {},
             initialized_at: new Date().toISOString(),
+            enabledSkills: projects.get(projectPath)!.enabled,
           }
         : null
     ),
-  initProject: (projectPath: string, agent) =>
+  initProject: (projectPath: string, agent: AgentType) =>
     Effect.sync(() => {
       projects.set(projectPath, { agent, enabled: [] });
     }),
@@ -112,7 +113,7 @@ describe("skills init command", () => {
 
   describe("with mocked state service", () => {
     it("should initialize project with claude_code agent", async () => {
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 
@@ -129,7 +130,7 @@ describe("skills init command", () => {
     });
 
     it("should initialize project with opencode agent", async () => {
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 
@@ -146,7 +147,7 @@ describe("skills init command", () => {
     });
 
     it("should not reinitialize already initialized project", async () => {
-      const projects = new Map([
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>([
         [testDir, { agent: "claude_code" as const, enabled: ["beads"] }],
       ]);
       const mockState = createMockStateService(projects);
@@ -167,7 +168,7 @@ describe("skills init command", () => {
     });
 
     it("should fail with invalid agent type", async () => {
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 
@@ -187,7 +188,7 @@ describe("skills init command", () => {
     });
 
     it("should default to claude_code with auto flag when no agent detected", async () => {
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 
@@ -207,7 +208,7 @@ describe("skills init command", () => {
       // Create .claude directory
       await mkdir(join(testDir, ".claude"), { recursive: true });
 
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 
@@ -226,7 +227,7 @@ describe("skills init command", () => {
       // Create .opencode directory
       await mkdir(join(testDir, ".opencode"), { recursive: true });
 
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 
@@ -246,7 +247,7 @@ describe("skills init command", () => {
       await mkdir(join(testDir, ".claude"), { recursive: true });
       await mkdir(join(testDir, ".opencode"), { recursive: true });
 
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 
@@ -267,7 +268,7 @@ describe("skills init command", () => {
     it("should create .claude directory and CLAUDE.md", async () => {
       cleanupNeeded = true;
 
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 
@@ -294,7 +295,7 @@ describe("skills init command", () => {
     it("should create .opencode directory and AGENTS.md", async () => {
       cleanupNeeded = true;
 
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 
@@ -329,7 +330,7 @@ describe("skills init command", () => {
         "utf-8"
       );
 
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 
@@ -368,7 +369,7 @@ Some content here.
         "utf-8"
       );
 
-      const projects = new Map();
+      const projects = new Map<string, { agent: AgentType; enabled: string[] }>();
       const mockState = createMockStateService(projects);
       const TestLayer = Layer.succeed(SkillStateService, mockState);
 

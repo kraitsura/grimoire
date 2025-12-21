@@ -98,44 +98,6 @@ interface RollbackState {
   projectPath: string;
 }
 
-/**
- * Run initialization commands for a skill
- */
-const runInitCommands = (
-  projectPath: string,
-  commands: string[]
-): Effect.Effect<void, CliDependencyError> =>
-  Effect.gen(function* () {
-    for (const command of commands) {
-      try {
-        // Parse command string into args
-        const args = command.split(" ");
-        const proc = Bun.spawn(args, {
-          cwd: projectPath,
-          stdout: "inherit",
-          stderr: "inherit",
-        });
-
-        const exitCode = yield* Effect.promise(() => proc.exited);
-
-        if (exitCode !== 0) {
-          return yield* Effect.fail(
-            new CliDependencyError({
-              binary: args[0],
-              message: `Init command failed with exit code ${exitCode}: ${command}`,
-            })
-          );
-        }
-      } catch (error) {
-        return yield* Effect.fail(
-          new CliDependencyError({
-            binary: "init",
-            message: `Failed to run init command: ${command}. Error: ${error instanceof Error ? error.message : String(error)}`,
-          })
-        );
-      }
-    }
-  });
 
 /**
  * Copy skill file to project skills directory
@@ -301,24 +263,8 @@ const makeSkillEngineService = (
           );
         }
 
-        // 4. Install CLI dependencies (if any, unless options.noDeps)
-        if (!options?.noDeps && skill.manifest.cli) {
-          const cliInstalled: string[] = [];
-
-          for (const [binary, dep] of Object.entries(skill.manifest.cli)) {
-            const isInstalled = yield* cliInstaller.check(binary, dep.check);
-
-            if (!isInstalled) {
-              yield* cliInstaller.install(binary, dep);
-              cliInstalled.push(binary);
-              rollbackState.installedCli.push(binary);
-            }
-          }
-
-          if (cliInstalled.length > 0) {
-            result.cliInstalled = cliInstalled;
-          }
-        }
+        // 4. Skills no longer have CLI dependencies
+        // Real plugins manage their own dependencies
 
         // 5. Get agent adapter for project
         const projectState = yield* state.getProjectState(projectPath);
@@ -348,11 +294,8 @@ const makeSkillEngineService = (
           result.injected = true;
         }
 
-        // 7. Run init commands (if any, unless options.noInit)
-        if (!options?.noInit && skill.manifest.init?.commands) {
-          yield* runInitCommands(projectPath, [...skill.manifest.init.commands]);
-          result.initRan = true;
-        }
+        // 7. Skills no longer have init commands
+        // Real plugins manage their own initialization
 
         // 8. Update state
         yield* state.addEnabled(projectPath, skillName);
@@ -430,22 +373,8 @@ const makeSkillEngineService = (
         return result;
       }
 
-      // Check for missing CLI dependencies
-      const skill = yield* cache.getCached(skillName);
-      const missingDeps: string[] = [];
-
-      if (skill.manifest.cli) {
-        for (const [binary, dep] of Object.entries(skill.manifest.cli)) {
-          const isInstalled = yield* cliInstaller.check(binary, dep.check);
-          if (!isInstalled) {
-            missingDeps.push(binary);
-          }
-        }
-      }
-
-      if (missingDeps.length > 0) {
-        result.missingDeps = missingDeps;
-      }
+      // Skills no longer have CLI dependencies
+      // Real plugins manage their own dependencies
 
       result.canEnable = true;
       return result;

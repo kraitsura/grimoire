@@ -21,8 +21,6 @@ import { AgentAdapterService, type AgentAdapter } from "./agent-adapter";
 import { CliInstallerService } from "./cli-installer-service";
 import {
   SkillNotCachedError,
-  SkillAlreadyEnabledError,
-  SkillNotEnabledError,
   ProjectNotInitializedError,
 } from "../../models/skill-errors";
 import type { AgentType } from "../../models/skill";
@@ -33,9 +31,7 @@ import type { AgentType } from "../../models/skill";
 const createMockSkill = (name: string, partial?: Partial<CachedSkill>): CachedSkill => ({
   manifest: {
     name,
-    version: "1.0.0",
     description: `Test skill ${name}`,
-    type: "prompt" as const,
     ...partial?.manifest,
   },
   cachedAt: new Date(),
@@ -74,9 +70,11 @@ const createTestLayers = (config: {
         return skill;
       }),
     listCached: () => Effect.succeed(Array.from(cachedSkills.values())),
-    cache: () => Effect.void,
     updateIndex: () => Effect.void,
-    validateManifest: () => Effect.void,
+    fetchFromGitHub: () => Effect.succeed(createMockSkill("test")),
+    fetchFromLocal: () => Effect.succeed(createMockSkill("test")),
+    detectRepoType: () => Effect.succeed({ type: "empty" as const }),
+    remove: () => Effect.void,
     clear: () => Effect.void,
   });
 
@@ -86,25 +84,26 @@ const createTestLayers = (config: {
         path === projectPath
           ? {
               agent,
-              enabled: Array.from(enabled),
-              disabled_at: {},
+              enabled: Array.from(enabled) as readonly string[],
+              disabled_at: {} as Record<string, string>,
               initialized_at: new Date().toISOString(),
+              enabledSkills: Array.from(enabled),
             }
           : null
       ),
     initProject: () => Effect.void,
     isInitialized: (path: string) => Effect.succeed(path === projectPath),
     getEnabled: () => Effect.succeed(Array.from(enabled)),
-    setEnabled: (path: string, skills: string[]) =>
+    setEnabled: (_path: string, skills: string[]) =>
       Effect.sync(() => {
         enabled.clear();
         skills.forEach((s) => enabled.add(s));
       }),
-    addEnabled: (path: string, skill: string) =>
+    addEnabled: (_path: string, skill: string) =>
       Effect.sync(() => {
         enabled.add(skill);
       }),
-    removeEnabled: (path: string, skill: string) =>
+    removeEnabled: (_path: string, skill: string) =>
       Effect.sync(() => {
         enabled.delete(skill);
       }),
@@ -125,6 +124,7 @@ const createTestLayers = (config: {
           skillFileCopied: false,
         }),
       disableSkill: () => Effect.void,
+      injectContent: () => Effect.void,
       removeInjection: () => Effect.void,
     }),
     detectAgent: () => Effect.succeed(agent),
@@ -133,6 +133,7 @@ const createTestLayers = (config: {
   const mockCliLayer = Layer.succeed(CliInstallerService, {
     check: () => Effect.succeed(true),
     install: () => Effect.void,
+    availableInstallers: () => Effect.succeed([]),
   });
 
   return Layer.mergeAll(
