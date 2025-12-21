@@ -116,7 +116,7 @@ Skills are reusable AI agent capabilities that can be enabled in projects. Skill
 | Aspect | Skills | Claude Code Plugins |
 |--------|--------|---------------------|
 | **Purpose** | Inject instructions/context | Provide tools, commands, hooks |
-| **Format** | `skill.yaml` + `SKILL.md` | `.claude-plugin/plugin.json` + directories |
+| **Format** | `SKILL.md` with frontmatter | `.claude-plugin/plugin.json` |
 | **Location** | `.claude/skills/<name>/SKILL.md` | Separate repository |
 | **Install** | `grimoire skills enable` | `claude plugin install` |
 | **Discovery** | By description in frontmatter | By Skill tool invocation |
@@ -124,19 +124,18 @@ Skills are reusable AI agent capabilities that can be enabled in projects. Skill
 
 **Use skills when**: You want to add knowledge, instructions, or context to the agent.
 
-**Use plugins when**: You want to add tools, slash commands, hooks, or MCP servers.
+**Use plugins when**: You want to add tools, slash commands, hooks, MCP servers, or CLI tools.
 
 ### Overview
 
-A skill can provide:
-- **Instructions/Documentation**: Inject context into CLAUDE.md via SKILL.md
-- **CLI Tools**: Install command-line dependencies (via brew, npm, cargo, etc.)
-- **MCP Servers**: Configure Model Context Protocol servers
-- **Init Scripts**: Run setup commands when first enabled
+A skill is simply a `SKILL.md` file with YAML frontmatter that provides:
+- **Instructions/Documentation**: Inject context into CLAUDE.md
 
-See `examples/example-skill.yaml` for a complete skill manifest example.
+Skills do NOT provide CLI tools, MCP servers, or init scripts. For those capabilities, create a full Claude Code plugin with `.claude-plugin/plugin.json`.
 
-### Skill Discovery (trigger_description)
+See `examples/SKILL.md` for an example skill file.
+
+### Skill Discovery
 
 For Claude Code to automatically discover and use a skill, the SKILL.md file needs YAML frontmatter:
 
@@ -218,18 +217,13 @@ Enable one or more skills in the current project:
 grimoire skills enable beads
 grimoire skills enable beads typescript-strict  # Multiple skills
 grimoire skills enable beads -y                 # Auto-confirm prompts
-grimoire skills enable beads --no-deps          # Skip CLI dependency installation
-grimoire skills enable beads --no-init          # Skip init commands
 ```
 
 When enabling a skill:
 1. Checks if skill is cached (use `skills add` first)
 2. Checks if project is initialized (use `skills init` first)
-3. Installs CLI dependencies (unless --no-deps)
-4. Runs init commands (unless --no-init, only on first enable)
-5. Installs plugins (if configured)
-6. Configures MCP servers (if configured)
-7. Injects documentation into agent config
+3. Copies SKILL.md to `.claude/skills/`
+4. Injects documentation into agent config (CLAUDE.md)
 
 ### Disable Skills
 
@@ -244,11 +238,9 @@ grimoire skills disable beads --purge -y         # Skip confirmation
 
 When disabling a skill:
 1. Removes injected documentation from agent config
-2. Removes skill file from .claude/skills/
+2. Removes skill file from `.claude/skills/`
 3. Updates skills state
 4. Optionally purges project artifacts (--purge)
-
-Note: Disabling does NOT uninstall CLI tools or plugins, as these may be shared by other skills or projects.
 
 ### List Skills
 
@@ -315,10 +307,8 @@ grimoire skills doctor --fix       # Auto-fix issues
 
 Checks:
 - Skills state file integrity
-- CLI dependencies installation
 - Agent config injection markers
 - Skill file existence
-- MCP server configuration
 
 ### Validate
 
@@ -339,27 +329,22 @@ Validation rules (per agentskills.io specification):
 
 ### Skill Structure
 
-A skill is a directory containing:
+A skill is a directory containing a single required file:
 
 ```
 skill-name/
-├── skill.yaml          # Manifest (required)
-├── SKILL.md            # Documentation (optional)
-├── init/               # Init scripts (optional)
-│   ├── setup.sh
-│   └── config.json
-└── templates/          # File templates (optional)
-    └── .example.yaml
+├── SKILL.md            # Required: frontmatter + instructions
+└── README.md           # Optional: additional documentation
 ```
 
-The `skill.yaml` manifest defines:
-- Metadata (name, version, description, tags)
-- Skill type (prompt, plugin, mcp, tool)
-- CLI dependencies
-- Agent-specific configurations
-- Initialization steps
+The `SKILL.md` file must have YAML frontmatter with:
+- `name`: Skill identifier (kebab-case)
+- `description`: When to use the skill (critical for discovery)
+- `allowed-tools`: Optional list of allowed tools
 
-See `examples/example-skill.yaml` for a complete example.
+See `examples/SKILL.md` for a complete example.
+
+**Note**: Skills no longer use `skill.yaml`. For CLI tools, MCP servers, or hooks, create a Claude Code plugin with `.claude-plugin/plugin.json` instead.
 
 ## Issue Tracking (Beads)
 
@@ -517,3 +502,70 @@ bv --robot-diff --diff-since HEAD~5   # Track structural changes since commit
 **bv vs bd:**
 - `bd` - CRUD operations (create, update, close, sync)
 - `bv` - Read-only analysis (insights, planning, visualization)
+
+<!-- bv-agent-instructions-v1 -->
+
+---
+
+## Beads Workflow Integration
+
+This project uses [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) for issue tracking. Issues are stored in `.beads/` and tracked in git.
+
+### Essential Commands
+
+```bash
+# View issues (launches TUI - avoid in automated sessions)
+bv
+
+# CLI commands for agents (use these instead)
+bd ready              # Show issues ready to work (no blockers)
+bd list --status=open # All open issues
+bd show <id>          # Full issue details with dependencies
+bd create --title="..." --type=task --priority=2
+bd update <id> --status=in_progress
+bd close <id> --reason="Completed"
+bd close <id1> <id2>  # Close multiple issues at once
+bd sync               # Commit and push changes
+```
+
+### Workflow Pattern
+
+1. **Start**: Run `bd ready` to find actionable work
+2. **Claim**: Use `bd update <id> --status=in_progress`
+3. **Work**: Implement the task
+4. **Complete**: Use `bd close <id>`
+5. **Sync**: Always run `bd sync` at session end
+
+### Key Concepts
+
+- **Dependencies**: Issues can block other issues. `bd ready` shows only unblocked work.
+- **Priority**: P0=critical, P1=high, P2=medium, P3=low, P4=backlog (use numbers, not words)
+- **Types**: task, bug, feature, epic, question, docs
+- **Blocking**: `bd dep add <issue> <depends-on>` to add dependencies
+
+### Session Protocol
+
+**Before ending any session, run this checklist:**
+
+```bash
+git status              # Check what changed
+git add <files>         # Stage code changes
+bd sync                 # Commit beads changes
+git commit -m "..."     # Commit code
+bd sync                 # Commit any new beads changes
+git push                # Push to remote
+```
+
+### Best Practices
+
+- Check `bd ready` at session start to find available work
+- Update status as you work (in_progress → closed)
+- Create new issues with `bd create` when you discover tasks
+- Use descriptive titles and set appropriate priority/type
+- Always `bd sync` before ending session
+
+<!-- end-bv-agent-instructions -->
+
+<!-- skills:managed:start -->
+<!-- This section is managed by grimoire skills -->
+<!-- skills:managed:end -->
