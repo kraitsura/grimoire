@@ -66,8 +66,29 @@ export type { ConflictStrategy, ImportPreview, ImportResult, ConflictInfo } from
 export { TokenCounterService, TokenCounterServiceLive } from "./token-counter-service";
 
 // Re-export LLM service (LLMService is a Context.Tag class)
-export { LLMService, LLMServiceLive, LLMError } from "./llm-service";
-export type { LLMProvider, StreamChunk, Message, LLMRequest, LLMResponse } from "./llm-service";
+export {
+  LLMService,
+  LLMServiceLive,
+  LLMError,
+  LLMAuthError,
+  LLMRateLimitError,
+  LLMTimeoutError,
+  LLMModelError,
+  LLMContentFilterError,
+  parseProviderError,
+  streamFromAsyncIterator,
+} from "./llm-service";
+export type {
+  LLMProvider,
+  StreamChunk,
+  Message,
+  LLMRequest,
+  LLMResponse,
+  LLMErrors,
+  TokenUsage,
+  FinishReason,
+  RetryOptions,
+} from "./llm-service";
 
 // Re-export API Key service (ApiKeyService is a Context.Tag class)
 export {
@@ -77,6 +98,15 @@ export {
   EnvFileWriteError,
   getEnvVarName,
 } from "./api-key-service";
+
+// Re-export Config service (ConfigService is a Context.Tag class)
+export {
+  ConfigService,
+  ConfigServiceLive,
+  ConfigReadError,
+  ConfigWriteError,
+} from "./config-service";
+export type { GrimoireConfig } from "./config-service";
 
 // Re-export Search service (SearchService is a Context.Tag class)
 export { SearchService, SearchServiceLive } from "./search-service";
@@ -89,7 +119,7 @@ export {
   ChainNotFoundError,
   ChainValidationError,
 } from "./chain-service";
-export type { ChainDefinition, ChainStep, VariableSpec, ValidationResult } from "./chain-service";
+export type { ChainDefinition, ChainStep, VariableSpec, ValidationResult as ChainValidationResult } from "./chain-service";
 
 // Re-export Alias service (AliasService is a Context.Tag class)
 export {
@@ -233,6 +263,27 @@ export {
   replaceSkillInjection,
   listInjectedSkills,
 } from "./skills/injection-utils";
+
+// Re-export Skill Validation service (SkillValidationService is a Context.Tag class)
+export { SkillValidationService, SkillValidationServiceLive } from "./skills/skill-validation-service";
+export type { ValidationResult, ValidationIssue } from "../models/skill-errors";
+
+// Re-export Plugin services
+export {
+  ClaudeCliService,
+  ClaudeCliServiceLive,
+} from "./plugins/claude-cli-service";
+export {
+  MarketplaceDetectionService,
+  MarketplaceDetectionServiceLive,
+  parseGitHubSource as parsePluginGitHubSource,
+  type GitHubSource as PluginGitHubSource,
+  type MarketplaceType,
+} from "./plugins/marketplace-detection-service";
+export {
+  MarketplaceService,
+  MarketplaceServiceLive,
+} from "./plugins/marketplace-service";
 
 // ============================================================================
 // PATTERN PART 1: Service Interface Definition
@@ -386,6 +437,10 @@ import { SkillConfigServiceLive as SkillConfigServiceLiveImport } from "./skills
 import { AgentAdapterServiceLive as AgentAdapterServiceLiveImport } from "./skills/agent-adapter";
 import { CliInstallerServiceLive as CliInstallerServiceLiveImport } from "./skills/cli-installer-service";
 import { SkillEngineServiceLive as SkillEngineServiceLiveImport } from "./skills/skill-engine-service";
+import { SkillValidationServiceLive as SkillValidationServiceLiveImport } from "./skills/skill-validation-service";
+import { ClaudeCliServiceLive as ClaudeCliServiceLiveImport } from "./plugins/claude-cli-service";
+import { MarketplaceDetectionServiceLive as MarketplaceDetectionServiceLiveImport } from "./plugins/marketplace-detection-service";
+import { MarketplaceServiceLive as MarketplaceServiceLiveImport } from "./plugins/marketplace-service";
 
 /**
  * LLM Layer - Provides LLM services with all providers
@@ -473,7 +528,8 @@ const IndependentServices = Layer.mergeAll(
   SkillStateServiceLiveImport,
   SkillConfigServiceLiveImport,
   AgentAdapterServiceLiveImport,
-  CliInstallerServiceLiveImport
+  CliInstallerServiceLiveImport,
+  SkillValidationServiceLiveImport
 );
 
 // SkillEngineService needs SkillCache, SkillState, AgentAdapter, CliInstaller
@@ -487,6 +543,16 @@ const SkillEngineLayer = SkillEngineServiceLiveImport.pipe(
     )
   )
 );
+
+// Plugin Services Layer (no dependencies)
+const PluginServicesLayer = Layer.mergeAll(
+  ClaudeCliServiceLiveImport,
+  MarketplaceDetectionServiceLiveImport,
+  MarketplaceServiceLiveImport
+);
+
+// Import ConfigServiceLive
+import { ConfigServiceLive as ConfigServiceLiveImport } from "./config-service";
 
 export const MainLive = Layer.mergeAll(
   SqlLayer,
@@ -502,8 +568,12 @@ export const MainLive = Layer.mergeAll(
   StorageDependentServices,
   IndependentServices,
   SkillEngineLayer,
+  PluginServicesLayer,
   LLMLive,
-  ApiKeyServiceLive
+  LLMServiceLive,
+  TokenCounterServiceLive,
+  ApiKeyServiceLive,
+  ConfigServiceLiveImport
 );
 
 export const MainLiveWithEditor = Layer.mergeAll(MainLive, EditorServiceLiveImport);

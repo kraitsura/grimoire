@@ -9,6 +9,7 @@ import { AppProvider, useAppState } from "./context/app-context.js";
 import { RuntimeProvider } from "./context/runtime-context.js";
 import { Router } from "./components/Router.js";
 import { ModelSwitcherOverlay } from "./components/ModelSwitcherOverlay.js";
+import { safeBorderStyle } from "./components/theme.js";
 
 /**
  * Help Overlay Component
@@ -24,7 +25,7 @@ const HelpOverlay: React.FC<{ onDismiss: () => void }> = ({ onDismiss }) => {
   return (
     <Box position="absolute" width="100%" height="100%" alignItems="center" justifyContent="center">
       {/* Semi-transparent background */}
-      <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1}>
+      <Box flexDirection="column" borderStyle={safeBorderStyle} borderColor="cyan" paddingX={2} paddingY={1}>
         <Box marginBottom={1}>
           <Text bold color="cyan">
             Keyboard Shortcuts
@@ -58,11 +59,11 @@ const HelpOverlay: React.FC<{ onDismiss: () => void }> = ({ onDismiss }) => {
         <Box flexDirection="column" gap={0} marginTop={1}>
           <Text bold>Navigation:</Text>
           <Text>
-            <Text color="green"> j/↓ </Text>
+            <Text color="green"> j </Text>
             <Text dimColor>Move down</Text>
           </Text>
           <Text>
-            <Text color="green"> k/↑ </Text>
+            <Text color="green"> k </Text>
             <Text dimColor>Move up</Text>
           </Text>
           <Text>
@@ -125,7 +126,7 @@ const QuitConfirmation: React.FC<{
     <Box position="absolute" width="100%" height="100%" alignItems="center" justifyContent="center">
       <Box
         flexDirection="column"
-        borderStyle="round"
+        borderStyle={safeBorderStyle}
         borderColor="yellow"
         paddingX={2}
         paddingY={1}
@@ -142,7 +143,7 @@ const QuitConfirmation: React.FC<{
 
         <Box gap={2}>
           <Box
-            borderStyle="round"
+            borderStyle={safeBorderStyle}
             borderColor={selectedAction === "cancel" ? "blue" : undefined}
             paddingX={1}
           >
@@ -150,13 +151,13 @@ const QuitConfirmation: React.FC<{
               color={selectedAction === "cancel" ? "blue" : undefined}
               bold={selectedAction === "cancel"}
             >
-              {selectedAction === "cancel" ? "▶ " : "  "}
+              {selectedAction === "cancel" ? "> " : "  "}
               Cancel (n)
             </Text>
           </Box>
 
           <Box
-            borderStyle="round"
+            borderStyle={safeBorderStyle}
             borderColor={selectedAction === "quit" ? "red" : undefined}
             paddingX={1}
           >
@@ -164,14 +165,14 @@ const QuitConfirmation: React.FC<{
               color={selectedAction === "quit" ? "red" : undefined}
               bold={selectedAction === "quit"}
             >
-              {selectedAction === "quit" ? "▶ " : "  "}
+              {selectedAction === "quit" ? "> " : "  "}
               Quit (y)
             </Text>
           </Box>
         </Box>
 
         <Box marginTop={1} justifyContent="center">
-          <Text dimColor>h/l or ←/→: select | Enter: execute | Esc: cancel</Text>
+          <Text dimColor>h/l: select | Enter: execute | Esc: cancel</Text>
         </Box>
       </Box>
     </Box>
@@ -195,8 +196,8 @@ const AppInner: React.FC = () => {
   // Global keyboard shortcuts
   useInput(
     (input, key) => {
-      // Don't handle global shortcuts when overlays are shown
-      if (showHelp || showQuitConfirm || showModelSwitcher) {
+      // Don't handle global shortcuts when overlays are shown or when editing text
+      if (showHelp || showQuitConfirm || showModelSwitcher || state.isEditing) {
         return;
       }
 
@@ -237,7 +238,7 @@ const AppInner: React.FC = () => {
         return;
       }
     },
-    { isActive: !showHelp && !showQuitConfirm && !showModelSwitcher }
+    { isActive: !showHelp && !showQuitConfirm && !showModelSwitcher && !state.isEditing }
   );
 
   const handleQuitConfirm = () => {
@@ -297,6 +298,8 @@ export const App: React.FC = () => {
  */
 export const runInteractive = (): Effect.Effect<void, never> => {
   return Effect.sync(() => {
+    // Move cursor to home position (top-left) without clearing terminal
+    process.stdout.write("\x1b[H");
     const { waitUntilExit } = render(<App />);
     return waitUntilExit();
   }).pipe(Effect.flatMap((promise) => Effect.promise(() => promise)));

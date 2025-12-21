@@ -57,6 +57,7 @@ export interface AppState {
   history: Screen[];
   statusMessage: string | null;
   isDirty: boolean;
+  isEditing: boolean; // True when a text input is focused (disables global shortcuts)
   notification: Notification | null;
   llmConfig: LLMConfig;
 }
@@ -69,6 +70,7 @@ export interface AppActions {
   goBack: () => void;
   setStatus: (message: string | null) => void;
   setDirty: (dirty: boolean) => void;
+  setEditing: (editing: boolean) => void;
   showNotification: (notification: Notification) => void;
   dismissNotification: () => void;
   setLLMConfig: (provider: string, model: string) => void;
@@ -111,6 +113,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [history, setHistory] = useState<Screen[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [notification, setNotification] = useState<Notification | null>(null);
   const [llmConfig, setLLMConfigState] = useState<LLMConfig>({
     currentProvider: "openai",
@@ -168,6 +171,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   /**
+   * Set editing state (text input focused - disables global shortcuts)
+   */
+  const setEditing = useCallback((editing: boolean) => {
+    setIsEditing(editing);
+  }, []);
+
+  /**
    * Show a notification (auto-dismisses after timeout)
    */
   const showNotification = useCallback((notif: Notification) => {
@@ -193,6 +203,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     history,
     statusMessage,
     isDirty,
+    isEditing,
     notification,
     llmConfig,
   };
@@ -202,6 +213,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     goBack,
     setStatus,
     setDirty,
+    setEditing,
     showNotification,
     dismissNotification,
     setLLMConfig,

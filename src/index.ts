@@ -73,6 +73,7 @@ import {
   importCommand,
   listCommand,
   pinCommand,
+  pluginsCommand,
   popCommand,
   reindexCommand,
   rmCommand,
@@ -141,6 +142,7 @@ COMMANDS:
   completion <shell>  Generate shell completions (bash/zsh/fish)
   config llm          Manage LLM provider configuration
   skills              Package manager for agent context
+  plugins             Claude Code plugin management
   stash [name]        Stash clipboard content
   pop [name]          Pop from stash to clipboard
 
@@ -259,6 +261,9 @@ Run 'grimoire' with no arguments to launch interactive mode.
         break;
       case "skills":
         yield* skillsCommand(parsedArgs);
+        break;
+      case "plugins":
+        yield* pluginsCommand(parsedArgs);
         break;
       case "stash":
         yield* stashCommand(parsedArgs);
