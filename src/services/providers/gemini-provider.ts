@@ -1,23 +1,55 @@
-import { Effect, Stream, Either } from "effect";
+/**
+ * Gemini Provider - Google's Gemini models via TanStack AI
+ *
+ * Uses proper Effect patterns for streaming and error handling.
+ */
+
+import { Effect, Stream, Either, Duration } from "effect";
 import { chat } from "@tanstack/ai";
 import { createGemini } from "@tanstack/ai-gemini";
-import type { LLMProvider, LLMRequest, LLMResponse, StreamChunk } from "../llm-service";
-import { LLMError } from "../llm-service";
+import type { LLMProvider, LLMRequest, LLMResponse, StreamChunk, LLMErrors, TokenUsage } from "../llm-service";
+import {
+  LLMError,
+  LLMAuthError,
+  LLMTimeoutError,
+  parseProviderError,
+  streamFromAsyncIterator,
+} from "../llm-service";
 import { ApiKeyService, ApiKeyNotFoundError } from "../api-key-service";
 
-// Supported models (matching TanStack AI Gemini adapter types)
+// ============================================================================
+// Constants
+// ============================================================================
+
+const PROVIDER_NAME = "google";
+const DEFAULT_TIMEOUT_MS = 180000; // 3 minutes
+
+// Supported models (matching TanStack AI Gemini adapter - December 2025)
 const SUPPORTED_MODELS = [
+  // Gemini 3 preview
+  "gemini-3-pro-preview",
+  // Gemini 2.5 family
   "gemini-2.5-pro",
   "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  // Gemini 2.0 family
   "gemini-2.0-flash",
   "gemini-2.0-flash-lite",
 ] as const;
 
 type GeminiModel = (typeof SUPPORTED_MODELS)[number];
 
-// Helper to convert our messages to TanStack AI format
-// Gemini doesn't support system messages directly - we prepend to first user message
-const convertMessages = (messages: { role: string; content: string }[]) => {
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Convert messages to TanStack AI format.
+ * Gemini doesn't support system messages directly - we prepend to first user message.
+ */
+const convertMessages = (
+  messages: { role: string; content: string }[]
+): { role: "user" | "assistant"; content: string }[] => {
   const result: { role: "user" | "assistant"; content: string }[] = [];
   let systemContent = "";
 
@@ -43,144 +75,157 @@ const convertMessages = (messages: { role: string; content: string }[]) => {
   return result;
 };
 
-// Helper to validate model name
-const isValidModel = (model: string): model is GeminiModel => {
-  return SUPPORTED_MODELS.includes(model as GeminiModel);
-};
+/** Check if model is valid */
+const isValidModel = (model: string): model is GeminiModel =>
+  SUPPORTED_MODELS.includes(model as GeminiModel);
 
-// Create the Gemini provider
+/** Resolve model name with fallback */
+const resolveModel = (model: string): GeminiModel =>
+  isValidModel(model) ? model : "gemini-2.0-flash";
+
+/** Parse TanStack AI usage to our TokenUsage format */
+const parseUsage = (usage?: { promptTokens?: number; completionTokens?: number }): TokenUsage => ({
+  inputTokens: usage?.promptTokens ?? 0,
+  outputTokens: usage?.completionTokens ?? 0,
+});
+
+/** Create provider-specific error from raw error */
+const toProviderError = (error: unknown): LLMErrors =>
+  parseProviderError(error, PROVIDER_NAME, "Gemini API error");
+
+// ============================================================================
+// Provider Implementation
+// ============================================================================
+
 export const makeGeminiProvider = Effect.gen(function* () {
   const apiKeyService = yield* ApiKeyService;
 
-  const getApiKey = (): Effect.Effect<string, LLMError> =>
+  // Get API key with proper error handling
+  const getApiKey = (): Effect.Effect<string, LLMErrors> =>
     apiKeyService.get("google").pipe(
       Effect.mapError((error) => {
         if (error instanceof ApiKeyNotFoundError) {
-          return new LLMError({
-            message:
-              "Google Gemini API key not found. Set it using GOOGLE_API_KEY environment variable or grimoire config.",
-            provider: "google",
-            cause: error,
+          return new LLMAuthError({
+            message: "Google Gemini API key not found. Set GOOGLE_API_KEY or use 'grimoire config set google <key>'",
+            provider: PROVIDER_NAME,
           });
         }
         return new LLMError({
           message: "Failed to retrieve Google API key",
-          provider: "google",
+          provider: PROVIDER_NAME,
           cause: error,
         });
-      })
+      }),
+      Effect.withSpan("GeminiProvider.getApiKey")
     );
 
-  const complete = (request: LLMRequest): Effect.Effect<LLMResponse, LLMError, never> =>
+  // Non-streaming completion
+  const complete = (request: LLMRequest): Effect.Effect<LLMResponse, LLMErrors> =>
     Effect.gen(function* () {
       const apiKey = yield* getApiKey();
-
-      // Map model names - default to gemini-2.0-flash if not in our list
-      const modelToUse: GeminiModel = isValidModel(request.model)
-        ? request.model
-        : "gemini-2.0-flash";
-
+      const modelToUse = resolveModel(request.model);
       const messages = convertMessages(request.messages);
 
       const result = yield* Effect.tryPromise({
         try: async () => {
           const adapter = createGemini(apiKey);
-
           const chatStream = chat({
             adapter,
             model: modelToUse,
             messages,
-            // Note: TanStack AI Gemini adapter doesn't expose maxOutputTokens directly
-            // Temperature and other options would go in providerOptions if needed
           });
 
-          // Collect all chunks for non-streaming response
           let content = "";
-          let inputTokens = 0;
-          let outputTokens = 0;
+          let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
           for await (const chunk of chatStream) {
-            if (chunk.type === "content" && chunk.content) {
-              content += chunk.content;
+            // TanStack AI uses `delta` for incremental content
+            if (chunk.type === "content" && chunk.delta) {
+              content += chunk.delta;
             }
             if (chunk.type === "done" && chunk.usage) {
-              // TanStack AI uses promptTokens/completionTokens
-              inputTokens = chunk.usage.promptTokens ?? 0;
-              outputTokens = chunk.usage.completionTokens ?? 0;
+              usage = parseUsage(chunk.usage);
             }
           }
 
           return {
             content,
-            model: request.model,
-            usage: {
-              inputTokens,
-              outputTokens,
-            },
+            model: modelToUse,
+            usage,
             finishReason: "stop" as const,
           };
         },
-        catch: (error) =>
-          new LLMError({
-            message: `Gemini API error: ${error instanceof Error ? error.message : String(error)}`,
-            provider: "google",
-            cause: error,
-          }),
-      });
+        catch: toProviderError,
+      }).pipe(
+        Effect.timeout(Duration.millis(DEFAULT_TIMEOUT_MS)),
+        Effect.catchTag("TimeoutException", () =>
+          Effect.fail(
+            new LLMTimeoutError({
+              message: `Gemini API request timed out after ${DEFAULT_TIMEOUT_MS / 1000} seconds`,
+              provider: PROVIDER_NAME,
+              timeoutMs: DEFAULT_TIMEOUT_MS,
+            })
+          )
+        )
+      );
 
       return result;
-    });
-
-  const stream = (request: LLMRequest): Stream.Stream<StreamChunk, LLMError, never> =>
-    Stream.asyncEffect<StreamChunk, LLMError>(
-      (emit) =>
-        Effect.gen(function* () {
-          const apiKey = yield* getApiKey();
-
-          // Map model names
-          const modelToUse: GeminiModel = isValidModel(request.model)
-            ? request.model
-            : "gemini-2.0-flash";
-
-          const messages = convertMessages(request.messages);
-
-          yield* Effect.tryPromise({
-            try: async () => {
-              const adapter = createGemini(apiKey);
-
-              const chatStream = chat({
-                adapter,
-                model: modelToUse,
-                messages,
-              });
-
-              for await (const chunk of chatStream) {
-                if (chunk.type === "content" && chunk.content) {
-                  await emit.single({
-                    content: chunk.content,
-                    done: false,
-                  });
-                }
-                if (chunk.type === "done") {
-                  await emit.single({ content: "", done: true });
-                }
-              }
-            },
-            catch: (error) =>
-              new LLMError({
-                message: `Gemini streaming error: ${error instanceof Error ? error.message : String(error)}`,
-                provider: "google",
-                cause: error,
-              }),
-          });
-        })
+    }).pipe(
+      Effect.withSpan("GeminiProvider.complete", {
+        attributes: { model: request.model },
+      })
     );
 
-  const listModels = (): Effect.Effect<string[], LLMError> => Effect.succeed([...SUPPORTED_MODELS]);
+  // Streaming completion
+  const stream = (request: LLMRequest): Stream.Stream<StreamChunk, LLMErrors> => {
+    const modelToUse = resolveModel(request.model);
+    const messages = convertMessages(request.messages);
 
-  const validateApiKey = (): Effect.Effect<boolean, LLMError, never> =>
+    let usageData: { promptTokens?: number; completionTokens?: number } | undefined;
+
+    return streamFromAsyncIterator<
+      { type: string; delta?: string; usage?: { promptTokens?: number; completionTokens?: number } },
+      LLMErrors
+    >(
+      async () => {
+        const apiKey = await Effect.runPromise(getApiKey());
+        const adapter = createGemini(apiKey);
+        return chat({
+          adapter,
+          model: modelToUse,
+          messages,
+        });
+      },
+      (chunk) => {
+        // TanStack AI uses `delta` for incremental content
+        if (chunk.type === "content" && chunk.delta) {
+          return { content: chunk.delta, done: false };
+        }
+        if (chunk.type === "done") {
+          usageData = chunk.usage;
+        }
+        return null;
+      },
+      () => ({
+        content: "",
+        done: true,
+        usage: usageData ? parseUsage(usageData) : undefined,
+        model: modelToUse,
+      }),
+      toProviderError,
+      DEFAULT_TIMEOUT_MS
+    );
+  };
+
+  // List available models
+  const listModels = (): Effect.Effect<string[], LLMErrors> =>
+    Effect.succeed([...SUPPORTED_MODELS]).pipe(
+      Effect.withSpan("GeminiProvider.listModels")
+    );
+
+  // Validate API key
+  const validateApiKey = (): Effect.Effect<boolean, LLMErrors> =>
     Effect.gen(function* () {
-      // Try to get API key
       const apiKeyResult = yield* Effect.either(getApiKey());
 
       if (Either.isLeft(apiKeyResult)) {
@@ -189,32 +234,50 @@ export const makeGeminiProvider = Effect.gen(function* () {
 
       const apiKey = apiKeyResult.right;
 
-      // Make a minimal request to validate the key
       const result = yield* Effect.tryPromise({
         try: async () => {
           const adapter = createGemini(apiKey);
-
-          const stream = chat({
+          const chatStream = chat({
             adapter,
             model: "gemini-2.0-flash",
-            messages: [{ role: "user", content: "test" }],
+            messages: [{ role: "user", content: "hi" }],
           });
 
-          // Just try to get first chunk to validate
-          for await (const _ of stream) {
-            break;
+          let gotContent = false;
+          for await (const chunk of chatStream) {
+            if (chunk.type === "content" && chunk.delta) {
+              gotContent = true;
+            }
+            if (chunk.type === "done") {
+              break;
+            }
           }
-
-          return true;
+          return gotContent;
         },
-        catch: () => false as boolean,
+        catch: (error) => {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          if (
+            errorMessage.includes("401") ||
+            errorMessage.includes("API_KEY_INVALID") ||
+            errorMessage.includes("authentication")
+          ) {
+            return false;
+          }
+          if (errorMessage.includes("404") || errorMessage.includes("not_found")) {
+            return true;
+          }
+          return false;
+        },
       });
 
       return result;
-    }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+    }).pipe(
+      Effect.catchAll(() => Effect.succeed(false)),
+      Effect.withSpan("GeminiProvider.validateApiKey")
+    );
 
   return {
-    name: "google",
+    name: PROVIDER_NAME,
     complete,
     stream,
     listModels,

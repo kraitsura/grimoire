@@ -1,82 +1,125 @@
-import { Effect, Stream, Either } from "effect";
+/**
+ * OpenAI Provider - GPT models via TanStack AI
+ *
+ * Uses proper Effect patterns for streaming and error handling.
+ */
+
+import { Effect, Stream, Either, Duration } from "effect";
 import { chat } from "@tanstack/ai";
 import { createOpenAI } from "@tanstack/ai-openai";
-import type { LLMProvider, LLMRequest, LLMResponse, StreamChunk } from "../llm-service";
-import { LLMError } from "../llm-service";
+import type { LLMProvider, LLMRequest, LLMResponse, StreamChunk, LLMErrors, TokenUsage } from "../llm-service";
+import {
+  LLMError,
+  LLMAuthError,
+  LLMTimeoutError,
+  parseProviderError,
+  streamFromAsyncIterator,
+} from "../llm-service";
 import { ApiKeyService, ApiKeyNotFoundError } from "../api-key-service";
 
-// Supported models
+// ============================================================================
+// Constants
+// ============================================================================
+
+const PROVIDER_NAME = "openai";
+const DEFAULT_TIMEOUT_MS = 180000; // 3 minutes
+
+// Supported models (updated December 2025)
 const SUPPORTED_MODELS = [
+  // GPT-4.1 family (April 2025)
+  "gpt-4.1",
+  "gpt-4.1-mini",
+  "gpt-4.1-nano",
+  // GPT-4o family
   "gpt-4o",
   "gpt-4o-mini",
+  // O-series reasoning models
+  "o3",
+  "o3-pro",
+  "o4-mini",
+  "o1",
+  // Legacy
   "gpt-4-turbo",
   "gpt-4",
   "gpt-3.5-turbo",
-  "o1",
-  "o3-mini",
 ] as const;
 
 type OpenAIModel = (typeof SUPPORTED_MODELS)[number];
 
-// Helper to extract system prompts from messages
-const extractSystemPrompts = (messages: { role: string; content: string }[]): string[] => {
-  return messages.filter((msg) => msg.role === "system").map((msg) => msg.content);
-};
+// ============================================================================
+// Helpers
+// ============================================================================
 
-// Helper to convert our messages to TanStack AI format (excluding system messages)
+/** Extract system prompts from messages */
+const extractSystemPrompts = (messages: { role: string; content: string }[]): string[] =>
+  messages.filter((msg) => msg.role === "system").map((msg) => msg.content);
+
+/** Convert messages to TanStack AI format (excluding system messages) */
 const convertMessages = (
   messages: { role: string; content: string }[]
-): { role: "user" | "assistant"; content: string }[] => {
-  return messages
+): { role: "user" | "assistant"; content: string }[] =>
+  messages
     .filter((msg) => msg.role === "user" || msg.role === "assistant")
     .map((msg) => ({
       role: msg.role as "user" | "assistant",
       content: msg.content,
     }));
-};
 
-// Helper to validate model name
-const isValidModel = (model: string): model is OpenAIModel => {
-  return SUPPORTED_MODELS.includes(model as OpenAIModel);
-};
+/** Check if model is valid */
+const isValidModel = (model: string): model is OpenAIModel =>
+  SUPPORTED_MODELS.includes(model as OpenAIModel);
 
-// Create the OpenAI provider
+/** Resolve model name with fallback */
+const resolveModel = (model: string): OpenAIModel =>
+  isValidModel(model) ? model : "gpt-4o-mini";
+
+/** Parse TanStack AI usage to our TokenUsage format */
+const parseUsage = (usage?: { promptTokens?: number; completionTokens?: number }): TokenUsage => ({
+  inputTokens: usage?.promptTokens ?? 0,
+  outputTokens: usage?.completionTokens ?? 0,
+});
+
+/** Create provider-specific error from raw error */
+const toProviderError = (error: unknown): LLMErrors =>
+  parseProviderError(error, PROVIDER_NAME, "OpenAI API error");
+
+// ============================================================================
+// Provider Implementation
+// ============================================================================
+
 export const makeOpenAIProvider = Effect.gen(function* () {
   const apiKeyService = yield* ApiKeyService;
 
-  const getApiKey = (): Effect.Effect<string, LLMError> =>
+  // Get API key with proper error handling
+  const getApiKey = (): Effect.Effect<string, LLMErrors> =>
     apiKeyService.get("openai").pipe(
       Effect.mapError((error) => {
         if (error instanceof ApiKeyNotFoundError) {
-          return new LLMError({
-            message:
-              "OpenAI API key not found. Set it with: grimoire config set openai YOUR_API_KEY",
-            provider: "openai",
-            cause: error,
+          return new LLMAuthError({
+            message: "OpenAI API key not found. Set OPENAI_API_KEY or use 'grimoire config set openai <key>'",
+            provider: PROVIDER_NAME,
           });
         }
         return new LLMError({
           message: "Failed to retrieve OpenAI API key",
-          provider: "openai",
+          provider: PROVIDER_NAME,
           cause: error,
         });
-      })
+      }),
+      Effect.withSpan("OpenAIProvider.getApiKey")
     );
 
-  const complete = (request: LLMRequest): Effect.Effect<LLMResponse, LLMError, never> =>
+  // Non-streaming completion
+  const complete = (request: LLMRequest): Effect.Effect<LLMResponse, LLMErrors> =>
     Effect.gen(function* () {
       const apiKey = yield* getApiKey();
-
-      // Map model names - default to gpt-4o-mini if not in our list
-      const modelToUse: OpenAIModel = isValidModel(request.model) ? request.model : "gpt-4o-mini";
-
+      const modelToUse = resolveModel(request.model);
       const systemPrompts = extractSystemPrompts(request.messages);
       const messages = convertMessages(request.messages);
 
       const result = yield* Effect.tryPromise({
         try: async () => {
           const adapter = createOpenAI(apiKey);
-
           const chatStream = chat({
             adapter,
             model: modelToUse,
@@ -84,95 +127,99 @@ export const makeOpenAIProvider = Effect.gen(function* () {
             systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
           });
 
-          // Collect all chunks for non-streaming response
           let content = "";
-          let inputTokens = 0;
-          let outputTokens = 0;
+          let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
           for await (const chunk of chatStream) {
-            if (chunk.type === "content" && chunk.content) {
-              content += chunk.content;
+            // TanStack AI uses `delta` for incremental content
+            if (chunk.type === "content" && chunk.delta) {
+              content += chunk.delta;
             }
             if (chunk.type === "done" && chunk.usage) {
-              // TanStack AI uses promptTokens/completionTokens
-              inputTokens = chunk.usage.promptTokens ?? 0;
-              outputTokens = chunk.usage.completionTokens ?? 0;
+              usage = parseUsage(chunk.usage);
             }
           }
 
           return {
             content,
-            model: request.model,
-            usage: {
-              inputTokens,
-              outputTokens,
-            },
+            model: modelToUse,
+            usage,
             finishReason: "stop" as const,
           };
         },
-        catch: (error) =>
-          new LLMError({
-            message: `OpenAI API error: ${error instanceof Error ? error.message : String(error)}`,
-            provider: "openai",
-            cause: error,
-          }),
-      });
+        catch: toProviderError,
+      }).pipe(
+        Effect.timeout(Duration.millis(DEFAULT_TIMEOUT_MS)),
+        Effect.catchTag("TimeoutException", () =>
+          Effect.fail(
+            new LLMTimeoutError({
+              message: `OpenAI API request timed out after ${DEFAULT_TIMEOUT_MS / 1000} seconds`,
+              provider: PROVIDER_NAME,
+              timeoutMs: DEFAULT_TIMEOUT_MS,
+            })
+          )
+        )
+      );
 
       return result;
-    });
-
-  const stream = (request: LLMRequest): Stream.Stream<StreamChunk, LLMError, never> =>
-    Stream.asyncEffect<StreamChunk, LLMError>(
-      (emit) =>
-        Effect.gen(function* () {
-          const apiKey = yield* getApiKey();
-
-          // Map model names
-          const modelToUse: OpenAIModel = isValidModel(request.model)
-            ? request.model
-            : "gpt-4o-mini";
-
-          const systemPrompts = extractSystemPrompts(request.messages);
-          const messages = convertMessages(request.messages);
-
-          yield* Effect.tryPromise({
-            try: async () => {
-              const adapter = createOpenAI(apiKey);
-
-              const chatStream = chat({
-                adapter,
-                model: modelToUse,
-                messages,
-                systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
-              });
-
-              for await (const chunk of chatStream) {
-                if (chunk.type === "content" && chunk.content) {
-                  await emit.single({
-                    content: chunk.content,
-                    done: false,
-                  });
-                }
-                if (chunk.type === "done") {
-                  await emit.single({ content: "", done: true });
-                }
-              }
-            },
-            catch: (error) =>
-              new LLMError({
-                message: `OpenAI streaming error: ${error instanceof Error ? error.message : String(error)}`,
-                provider: "openai",
-                cause: error,
-              }),
-          });
-        })
+    }).pipe(
+      Effect.withSpan("OpenAIProvider.complete", {
+        attributes: { model: request.model },
+      })
     );
 
-  const listModels = (): Effect.Effect<string[], LLMError> => Effect.succeed([...SUPPORTED_MODELS]);
+  // Streaming completion
+  const stream = (request: LLMRequest): Stream.Stream<StreamChunk, LLMErrors> => {
+    const modelToUse = resolveModel(request.model);
+    const systemPrompts = extractSystemPrompts(request.messages);
+    const messages = convertMessages(request.messages);
 
-  const validateApiKey = (): Effect.Effect<boolean, LLMError, never> =>
+    let usageData: { promptTokens?: number; completionTokens?: number } | undefined;
+
+    return streamFromAsyncIterator<
+      { type: string; delta?: string; usage?: { promptTokens?: number; completionTokens?: number } },
+      LLMErrors
+    >(
+      async () => {
+        const apiKey = await Effect.runPromise(getApiKey());
+        const adapter = createOpenAI(apiKey);
+        return chat({
+          adapter,
+          model: modelToUse,
+          messages,
+          systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+        });
+      },
+      (chunk) => {
+        // TanStack AI uses `delta` for incremental content
+        if (chunk.type === "content" && chunk.delta) {
+          return { content: chunk.delta, done: false };
+        }
+        if (chunk.type === "done") {
+          usageData = chunk.usage;
+        }
+        return null;
+      },
+      () => ({
+        content: "",
+        done: true,
+        usage: usageData ? parseUsage(usageData) : undefined,
+        model: modelToUse,
+      }),
+      toProviderError,
+      DEFAULT_TIMEOUT_MS
+    );
+  };
+
+  // List available models
+  const listModels = (): Effect.Effect<string[], LLMErrors> =>
+    Effect.succeed([...SUPPORTED_MODELS]).pipe(
+      Effect.withSpan("OpenAIProvider.listModels")
+    );
+
+  // Validate API key
+  const validateApiKey = (): Effect.Effect<boolean, LLMErrors> =>
     Effect.gen(function* () {
-      // Try to get API key
       const apiKeyResult = yield* Effect.either(getApiKey());
 
       if (Either.isLeft(apiKeyResult)) {
@@ -181,32 +228,50 @@ export const makeOpenAIProvider = Effect.gen(function* () {
 
       const apiKey = apiKeyResult.right;
 
-      // Make a minimal request to validate the key
       const result = yield* Effect.tryPromise({
         try: async () => {
           const adapter = createOpenAI(apiKey);
-
-          const stream = chat({
+          const chatStream = chat({
             adapter,
             model: "gpt-4o-mini",
-            messages: [{ role: "user", content: "test" }],
+            messages: [{ role: "user", content: "hi" }],
           });
 
-          // Just try to get first chunk to validate
-          for await (const _ of stream) {
-            break;
+          let gotContent = false;
+          for await (const chunk of chatStream) {
+            if (chunk.type === "content" && chunk.delta) {
+              gotContent = true;
+            }
+            if (chunk.type === "done") {
+              break;
+            }
           }
-
-          return true;
+          return gotContent;
         },
-        catch: () => false as boolean,
+        catch: (error) => {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          if (
+            errorMessage.includes("401") ||
+            errorMessage.includes("authentication") ||
+            errorMessage.includes("Incorrect API key")
+          ) {
+            return false;
+          }
+          if (errorMessage.includes("404") || errorMessage.includes("not_found")) {
+            return true;
+          }
+          return false;
+        },
       });
 
       return result;
-    }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+    }).pipe(
+      Effect.catchAll(() => Effect.succeed(false)),
+      Effect.withSpan("OpenAIProvider.validateApiKey")
+    );
 
   return {
-    name: "openai",
+    name: PROVIDER_NAME,
     complete,
     stream,
     listModels,
