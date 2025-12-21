@@ -13,6 +13,7 @@
 
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput, useApp } from "ink";
+import { getSelectionProps } from "./theme";
 
 export interface ProviderOption {
   id: string;
@@ -248,11 +249,9 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
       <Box marginTop={1}>
         <Text color="cyan">{isOnConfirmButton ? ">" : " "} </Text>
         <Text
-          bold={isOnConfirmButton}
-          color={isOnConfirmButton ? "green" : "gray"}
-          inverse={isOnConfirmButton}
+          {...getSelectionProps(isOnConfirmButton)}
         >
-          {isOnConfirmButton ? " Confirm " : " Confirm "}
+          {" Confirm "}
         </Text>
         <Text color="gray"> ({selectionText} selected)</Text>
       </Box>

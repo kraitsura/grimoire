@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text } from "ink";
 import { useInput } from "ink";
 import type { DiffResult } from "../../../services/diff-service";
+import { safeBorderStyle } from "../theme";
 
 export interface DiffViewerProps {
   diff: DiffResult;
@@ -82,7 +83,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       )}
 
       {/* Diff content */}
-      <Box flexDirection="column" borderStyle="single" paddingX={1}>
+      <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={1}>
         {visibleLines.map((line, idx) => {
           const key = `${scrollOffset + idx}`;
 

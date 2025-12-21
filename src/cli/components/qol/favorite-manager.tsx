@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { Prompt } from "../../../models";
 import { ScrollableBox } from "../input/scrollable-box";
+import { getSelectionProps, safeBorderStyle } from "../theme";
 
 export interface FavoriteManagerProps {
   prompts: Prompt[];
@@ -122,9 +123,11 @@ export const FavoriteManager: React.FC<FavoriteManagerProps> = ({
 
     const checkbox = mode === "view" ? (isSelected ? "[x] " : "[ ] ") : "";
 
+    const selectionProps = getSelectionProps(isCurrent);
     return (
       <Box key={prompt.id}>
-        <Text inverse={isCurrent}>
+        <Text {...selectionProps}>
+          {isCurrent ? "> " : "  "}
           {checkbox}
           {favIcon} {pinIcon} {name} {tags}
         </Text>
@@ -150,7 +153,7 @@ export const FavoriteManager: React.FC<FavoriteManagerProps> = ({
   const renderHelp = () => {
     if (mode === "view") {
       return (
-        <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+        <Box marginTop={1} borderStyle={safeBorderStyle} borderColor="gray" paddingX={1}>
           <Text color="gray">
             j/k: navigate | Enter: toggle | Space: select | a: select all | d: remove selected | r:
             reorder | q: quit
@@ -159,7 +162,7 @@ export const FavoriteManager: React.FC<FavoriteManagerProps> = ({
       );
     } else {
       return (
-        <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+        <Box marginTop={1} borderStyle={safeBorderStyle} borderColor="gray" paddingX={1}>
           <Text color="gray">j/k: reposition | Enter: apply | q/Esc: cancel</Text>
         </Box>
       );

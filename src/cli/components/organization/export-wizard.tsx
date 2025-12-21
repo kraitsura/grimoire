@@ -17,6 +17,7 @@ import { ExportService, TagService, type ExportOptions } from "../../../services
 import { TextInput } from "../input/text-input";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { safeBorderStyle } from "../theme";
 
 export interface ExportWizardProps {
   onExit?: () => void;
@@ -215,7 +216,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({ onExit, onComplete }
               YAML
             </Text>
           </Box>
-          <Text color="gray">↑/↓/Space toggle | Enter next</Text>
+          <Text color="gray">j/k/Space toggle | Enter next</Text>
         </Box>
       )}
 
@@ -243,7 +244,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({ onExit, onComplete }
               );
             })}
           </Box>
-          <Text color="gray">↑/k ↓/j navigate | Space toggle | a all | n none | Enter next</Text>
+          <Text color="gray">k/j navigate | Space toggle | a all | n none | Enter next</Text>
         </Box>
       )}
 
@@ -297,7 +298,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({ onExit, onComplete }
             <Text color="gray">Output: </Text>
             <Text>{outputPath}</Text>
           </Box>
-          <Box marginBottom={1} paddingX={1} borderStyle="single">
+          <Box marginBottom={1} paddingX={1} borderStyle={safeBorderStyle}>
             <Text color="gray" dimColor>
               {previewData}
               {previewData.length >= 500 && "\n..."}

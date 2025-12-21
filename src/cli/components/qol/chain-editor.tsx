@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { ChainDefinition, ChainStep, ValidationResult } from "../../../services/chain-service";
 import { ScrollableBox } from "../input/scrollable-box";
+import { getSelectionProps, safeBorderStyle } from "../theme";
 
 export interface ChainEditorProps {
   chain: ChainDefinition;
@@ -89,11 +90,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
   const renderStep = (step: ChainStep, index: number) => {
     const isCurrent = index === currentIndex;
     const hasErrors = validation?.errors.some((err) => err.includes(step.id)) ?? false;
+    const selectionProps = getSelectionProps(isCurrent);
+
+    // Error color overrides selection color
+    const textColor = hasErrors ? "red" : selectionProps.color;
 
     return (
       <Box key={step.id} flexDirection="column" marginBottom={1}>
         <Box>
-          <Text inverse={isCurrent} color={hasErrors ? "red" : undefined}>
+          <Text
+            backgroundColor={selectionProps.backgroundColor}
+            bold={selectionProps.bold}
+            color={textColor}
+          >
+            {isCurrent ? "> " : "  "}
             {index + 1}. {step.id} → {step.prompt}
           </Text>
         </Box>
@@ -167,7 +177,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
     return (
       <Box flexDirection="column">
         <Text bold color={validation.isValid ? "green" : "red"}>
-          {validation.isValid ? "✓ Chain is valid" : "✗ Chain has errors"}
+          {validation.isValid ? "[ok] Chain is valid" : "[!!] Chain has errors"}
         </Text>
 
         {validation.errors.length > 0 && (
@@ -206,6 +216,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
   };
 
   const renderHeader = () => {
+    const getTabProps = (isActive: boolean) => ({
+      backgroundColor: isActive ? "blue" : undefined,
+      color: isActive ? "white" : "gray",
+      bold: isActive,
+    });
+
     return (
       <Box marginBottom={1} flexDirection="column">
         <Text bold color="cyan">
@@ -213,17 +229,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
         </Text>
         {chain.description && <Text color="gray">{chain.description}</Text>}
         <Box marginTop={1}>
-          <Text inverse={view === "steps"} color={view === "steps" ? "cyan" : "gray"}>
+          <Text {...getTabProps(view === "steps")}>
             {" "}
             1. Steps ({chain.steps.length}){" "}
           </Text>
           <Text> </Text>
-          <Text inverse={view === "variables"} color={view === "variables" ? "cyan" : "gray"}>
+          <Text {...getTabProps(view === "variables")}>
             {" "}
             2. Variables ({Object.keys(chain.variables).length}){" "}
           </Text>
           <Text> </Text>
-          <Text inverse={view === "validation"} color={view === "validation" ? "cyan" : "gray"}>
+          <Text {...getTabProps(view === "validation")}>
             {" "}
             3. Validation{" "}
           </Text>
@@ -234,7 +250,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({
 
   const renderHelp = () => {
     return (
-      <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+      <Box marginTop={1} borderStyle={safeBorderStyle} borderColor="gray" paddingX={1}>
         <Text color="gray">
           1/2/3: switch view | j/k: navigate | a: add step | d: delete step | Enter: edit | p:
           preview | s: save | q: quit

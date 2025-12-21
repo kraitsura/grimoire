@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text } from "ink";
 import { useInput } from "ink";
 import type { Branch, BranchComparison } from "../../../services/branch-service";
+import { getSelectionProps, safeBorderStyle } from "../theme";
 
 export interface BranchManagerProps {
   branches: Branch[];
@@ -136,11 +137,11 @@ export const BranchManager: React.FC<BranchManagerProps> = ({
           </Text>
         </Box>
 
-        <Box flexDirection="column" borderStyle="single" paddingX={1}>
+        <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={1}>
           <Text>
             <Text>Branch name: </Text>
             <Text color="green">{inputBuffer}</Text>
-            <Text inverse>_</Text>
+            <Text backgroundColor="white" color="black">_</Text>
           </Text>
         </Box>
 
@@ -164,7 +165,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({
       </Box>
 
       {/* Branch list */}
-      <Box flexDirection="column" borderStyle="single" paddingX={1}>
+      <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={1}>
         {visibleBranches.map((branch, idx) => {
           const actualIndex = scrollOffset + idx;
           const isSelected = actualIndex === selectedIndex;
@@ -174,11 +175,11 @@ export const BranchManager: React.FC<BranchManagerProps> = ({
           return (
             <Box key={branch.id}>
               {/* Selection indicator */}
-              <Text color={isSelected ? "blue" : undefined}>{isSelected ? "▶ " : "  "}</Text>
+              <Text color={isSelected ? "blue" : undefined}>{isSelected ? "> " : "  "}</Text>
 
               {/* Active indicator */}
               <Text color={isActive ? "green" : undefined} bold={isActive}>
-                {isActive ? "● " : "○ "}
+                {isActive ? "* " : "o "}
               </Text>
 
               {/* Branch info */}
@@ -200,7 +201,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({
                   <Box marginLeft={1}>
                     {comparison.ahead > 0 && <Text color="green">↑{comparison.ahead}</Text>}
                     {comparison.behind > 0 && <Text color="red"> ↓{comparison.behind}</Text>}
-                    {!comparison.canMerge && <Text color="yellow"> ⚠</Text>}
+                    {!comparison.canMerge && <Text color="yellow"> [!]</Text>}
                   </Box>
                 )}
               </Box>

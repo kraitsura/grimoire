@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { useAppState } from "../context/app-context";
+import { getSelectionProps, safeBorderStyle } from "./theme";
 
 interface ModelOption {
   provider: string;
@@ -86,6 +87,13 @@ export const ModelSwitcherOverlay: React.FC<ModelSwitcherOverlayProps> = ({ visi
     );
   }, [allModels, state.llmConfig]);
 
+  // Reset selection to current model when overlay opens
+  useEffect(() => {
+    if (visible && currentIndex >= 0) {
+      setSelectedIndex(currentIndex);
+    }
+  }, [visible, currentIndex]);
+
   useInput(
     (input, key) => {
       if (!visible) return;
@@ -127,7 +135,7 @@ export const ModelSwitcherOverlay: React.FC<ModelSwitcherOverlayProps> = ({ visi
   let currentProvider = "";
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" borderStyle={safeBorderStyle} borderColor="cyan" paddingX={2} paddingY={1}>
       <Box marginBottom={1}>
         <Text bold color="cyan">
           Switch Model
@@ -152,9 +160,8 @@ export const ModelSwitcherOverlay: React.FC<ModelSwitcherOverlayProps> = ({ visi
             )}
             <Box>
               <Text
-                color={isSelected ? "green" : isCurrent ? "cyan" : undefined}
-                bold={isSelected}
-                inverse={isSelected}
+                {...getSelectionProps(isSelected)}
+                color={isSelected ? "white" : isCurrent ? "cyan" : undefined}
               >
                 {isSelected ? " > " : "   "}
                 {option.modelLabel}

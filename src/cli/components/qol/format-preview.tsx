@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { LintIssue } from "../../../services/format-service";
+import { getSelectionProps, safeBorderStyle } from "../theme";
 
 export interface FormatChange {
   type: "trailing-whitespace" | "final-newline" | "xml-normalize" | "other";
@@ -178,7 +179,8 @@ export const FormatPreview: React.FC<FormatPreviewProps> = ({
           return (
             <Box key={idx} flexDirection="column" marginBottom={1}>
               <Box>
-                <Text inverse={isCurrent}>
+                <Text {...getSelectionProps(isCurrent)}>
+                  {isCurrent ? "> " : "  "}
                   {isSelected ? "[x] " : "[ ] "}
                   {change.description}
                   {change.line !== undefined && ` (line ${change.line})`}
@@ -190,10 +192,9 @@ export const FormatPreview: React.FC<FormatPreviewProps> = ({
         })}
       </Box>
 
-      <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+      <Box marginTop={1} borderStyle={safeBorderStyle} borderColor="gray" paddingX={1}>
         <Text color="gray">
-          ↑/k: up | ↓/j: down | Space: toggle | a: select all | s: skip all | Enter: apply | q/Esc:
-          cancel
+          k: up | j: down | Space: toggle | a: select all | s: skip all | Enter: apply | q/Esc: cancel
         </Text>
       </Box>
     </Box>

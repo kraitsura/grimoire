@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text } from "ink";
 import { useInput } from "ink";
 import type { SideBySideDiff } from "../../../services/diff-service";
+import { safeBorderStyle } from "../theme";
 
 export interface SideBySideDiffViewerProps {
   diff: SideBySideDiff;
@@ -64,14 +65,14 @@ export const SideBySideDiffViewer: React.FC<SideBySideDiffViewerProps> = ({
         <Box width={columnWidth + 8}>
           <Text bold>Old</Text>
         </Box>
-        <Text> │ </Text>
+        <Text> |</Text>
         <Box width={columnWidth + 8}>
           <Text bold>New</Text>
         </Box>
       </Box>
 
       {/* Side-by-side diff content */}
-      <Box flexDirection="column" borderStyle="single" paddingX={1}>
+      <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={1}>
         {visibleLines.map((lineIdx) => {
           const leftContent = diff.left[lineIdx];
           const rightContent = diff.right[lineIdx];
@@ -106,7 +107,7 @@ export const SideBySideDiffViewer: React.FC<SideBySideDiffViewerProps> = ({
               </Text>
 
               {/* Separator */}
-              <Text dimColor> │ </Text>
+              <Text dimColor> |</Text>
 
               {/* Right side (new) */}
               <Text color={rightColor} dimColor={rightColor === "gray"}>

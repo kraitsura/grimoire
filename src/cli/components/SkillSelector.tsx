@@ -119,8 +119,8 @@ export const SkillSelector: React.FC<Props> = ({
       <Box marginTop={1}>
         <Text color="gray" dimColor>
           {multiSelect
-            ? "↑↓ navigate  space toggle  a all  enter confirm  q cancel"
-            : "↑↓ navigate  enter select  q cancel"}
+            ? "j/k navigate  space toggle  a all  enter confirm  q cancel"
+            : "j/k navigate  enter select  q cancel"}
         </Text>
       </Box>
 

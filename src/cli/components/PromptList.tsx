@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { Prompt } from "../../models";
+import { getSelectionProps, selectionIndicator } from "./theme";
 
 interface Props {
   prompts: Prompt[];
@@ -34,17 +35,24 @@ export const PromptList: React.FC<Props> = ({ prompts, onSelect }) => {
           {"TAGS".padEnd(20)}UPDATED
         </Text>
       </Box>
-      {prompts.map((prompt, i) => (
-        <Box key={prompt.id}>
-          <Text inverse={i === selectedIndex}>
-            {prompt.name.slice(0, 24).padEnd(25)}
-            {(prompt.tags?.join(", ") ?? "").slice(0, 19).padEnd(20)}
-            {prompt.updated.toISOString().split("T")[0]}
-          </Text>
-        </Box>
-      ))}
+      {prompts.map((prompt, i) => {
+        const isSelected = i === selectedIndex;
+        const selectionProps = getSelectionProps(isSelected);
+        return (
+          <Box key={prompt.id}>
+            <Text color={isSelected ? "cyan" : "gray"}>
+              {isSelected ? selectionIndicator.selected : selectionIndicator.unselected}
+            </Text>
+            <Text {...selectionProps}>
+              {prompt.name.slice(0, 24).padEnd(25)}
+              {(prompt.tags?.join(", ") ?? "").slice(0, 19).padEnd(20)}
+              {prompt.updated.toISOString().split("T")[0]}
+            </Text>
+          </Box>
+        );
+      })}
       <Text color="gray" dimColor>
-        ↑/k up ↓/j down Enter select
+        k up j down Enter select
       </Text>
     </Box>
   );

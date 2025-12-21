@@ -16,6 +16,7 @@ import { useEffectCallback } from "../../context";
 import { ImportService, type ConflictStrategy, type ImportPreview } from "../../../services";
 import { TextInput } from "../input/text-input";
 import { ScrollableBox } from "../input/scrollable-box";
+import { getSelectionProps } from "../theme";
 
 export interface ImportWizardProps {
   onExit?: () => void;
@@ -194,11 +195,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onExit, onComplete }
               const isSelected = index === selectedConflictIndex;
               return (
                 <Box key={conflict.incomingId} flexDirection="column" marginBottom={1}>
-                  <Text
-                    color={isSelected ? "green" : undefined}
-                    bold={isSelected}
-                    inverse={isSelected}
-                  >
+                  <Text {...getSelectionProps(isSelected)}>
                     {isSelected ? "> " : "  "}
                     {conflict.name}
                   </Text>
@@ -217,7 +214,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onExit, onComplete }
               );
             })}
           </ScrollableBox>
-          <Text color="gray">↑/k ↓/j navigate | Enter choose strategy</Text>
+          <Text color="gray">k/j navigate | Enter choose strategy</Text>
         </Box>
       )}
 
@@ -238,7 +235,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onExit, onComplete }
               </Box>
             ))}
           </Box>
-          <Text color="gray">↑/↓/Space toggle | Enter confirm</Text>
+          <Text color="gray">j/k/Space toggle | Enter confirm</Text>
         </Box>
       )}
 

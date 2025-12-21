@@ -4,6 +4,7 @@ import { useInput } from "ink";
 import type { PromptVersion } from "../../../services/version-service";
 import type { DiffResult } from "../../../services/diff-service";
 import { DiffViewer } from "./diff-viewer";
+import { safeBorderStyle } from "../theme";
 
 export interface HistoryViewerProps {
   versions: PromptVersion[];
@@ -107,7 +108,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({
       </Box>
 
       {/* Version list */}
-      <Box flexDirection="column" borderStyle="single" paddingX={1}>
+      <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={1}>
         {visibleVersions.map((version, idx) => {
           const actualIndex = scrollOffset + idx;
           const isSelected = actualIndex === selectedIndex;
@@ -119,7 +120,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({
               {/* Version item */}
               <Box>
                 {/* Selection indicator */}
-                <Text color={isSelected ? "blue" : undefined}>{isSelected ? "▶ " : "  "}</Text>
+                <Text color={isSelected ? "blue" : undefined}>{isSelected ? "> " : "  "}</Text>
 
                 {/* Version info */}
                 <Box gap={1}>

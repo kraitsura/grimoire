@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { useInput } from "ink";
+import { getSelectionProps } from "../theme";
 
 export interface SelectOption {
   label: string;
@@ -76,17 +77,27 @@ export const Select: React.FC<SelectProps> = ({ options, value, onChange, focuse
         filteredOptions.map((option, index) => {
           const isSelected = index === selectedIndex;
           const isCurrent = option.value === value;
+          const selectionProps = getSelectionProps(isSelected, focused);
+
+          // Determine color: focused selection uses theme, otherwise fallback to simpler colors
+          const textColor = isSelected && focused
+            ? selectionProps.color
+            : isSelected
+              ? "green"
+              : isCurrent
+                ? "cyan"
+                : undefined;
 
           return (
             <Box key={option.value}>
               <Text
-                color={isSelected ? "green" : isCurrent ? "cyan" : undefined}
-                bold={isSelected}
-                inverse={isSelected && focused}
+                backgroundColor={selectionProps.backgroundColor}
+                bold={selectionProps.bold}
+                color={textColor}
               >
                 {isSelected ? "> " : "  "}
                 {option.label}
-                {isCurrent && !isSelected ? " ✓" : ""}
+                {isCurrent && !isSelected ? " *" : ""}
               </Text>
             </Box>
           );

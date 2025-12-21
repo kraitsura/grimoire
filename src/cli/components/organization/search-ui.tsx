@@ -14,6 +14,7 @@ import { Effect } from "effect";
 import { useEffectCallback } from "../../context";
 import { SearchService, type SearchResult } from "../../../services";
 import { ScrollableBox } from "../input/scrollable-box";
+import { getSelectionProps, safeBorderStyle } from "../theme";
 
 export interface SearchUIProps {
   onExit?: () => void;
@@ -197,9 +198,7 @@ export const SearchUI: React.FC<SearchUIProps> = ({ onExit, onSelect }) => {
               return (
                 <Box key={result.prompt.id} flexDirection="column" marginBottom={1}>
                   <Text
-                    color={isSelected ? "green" : undefined}
-                    bold={isSelected}
-                    inverse={isSelected && mode === "results"}
+                    {...getSelectionProps(isSelected, mode === "results")}
                   >
                     {isSelected ? "> " : "  "}
                     {result.prompt.name}
@@ -219,7 +218,7 @@ export const SearchUI: React.FC<SearchUIProps> = ({ onExit, onSelect }) => {
       {/* Preview Pane */}
       {mode === "preview" && selectedResult && (
         <Box flexDirection="column">
-          <Box marginBottom={1} paddingX={1} borderStyle="single">
+          <Box marginBottom={1} paddingX={1} borderStyle={safeBorderStyle}>
             <Box flexDirection="column" width="100%">
               <Text bold color="cyan">
                 {selectedResult.prompt.name}
@@ -245,9 +244,9 @@ export const SearchUI: React.FC<SearchUIProps> = ({ onExit, onSelect }) => {
       {/* Help Text */}
       <Box marginTop={1}>
         <Text color="gray">
-          {mode === "input" && "↓ results | Type to search | Esc/q quit"}
+          {mode === "input" && "j results | Type to search | Esc/q quit"}
           {mode === "results" &&
-            "↑/k up | ↓/j down | Enter/Space preview | s select | / search | Esc back | q quit"}
+            "k up | j down | Enter/Space preview | s select | / search | Esc back | q quit"}
           {mode === "preview" && "Esc back | q quit"}
         </Text>
       </Box>

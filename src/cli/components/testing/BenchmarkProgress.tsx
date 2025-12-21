@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { safeBorderStyle } from "../theme";
 
 export interface BenchmarkTest {
   id: string;
@@ -29,13 +30,13 @@ export const BenchmarkProgress: React.FC<BenchmarkProgressProps> = ({
   const getStatusIcon = (status: BenchmarkTest["status"]): string => {
     switch (status) {
       case "passed":
-        return "✓";
+        return "[ok]";
       case "failed":
-        return "✗";
+        return "[!!]";
       case "running":
-        return "▶";
+        return ">";
       case "pending":
-        return "○";
+        return "o";
     }
   };
 
@@ -56,7 +57,7 @@ export const BenchmarkProgress: React.FC<BenchmarkProgressProps> = ({
     const barWidth = 40;
     const filled = Math.round((percentage / 100) * barWidth);
     const empty = barWidth - filled;
-    return "━".repeat(filled) + "─".repeat(empty);
+    return "=".repeat(filled) + "-".repeat(empty);
   };
 
   const currentTest = tests.find((t) => t.id === currentTestId);
@@ -96,7 +97,7 @@ export const BenchmarkProgress: React.FC<BenchmarkProgressProps> = ({
 
       {/* Current Test Details */}
       {currentTest && (
-        <Box flexDirection="column" borderStyle="single" paddingX={1}>
+        <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={1}>
           <Text bold>Current: {currentTest.name}</Text>
           {currentTestMessage && <Text dimColor> &gt; {currentTestMessage}</Text>}
         </Box>

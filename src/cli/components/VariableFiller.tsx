@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
+import { safeBorderStyle } from "./theme";
 
 interface Variable {
   name: string;
@@ -33,7 +34,7 @@ export const VariableFiller: React.FC<Props> = ({ variables, onComplete, onCance
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" paddingX={1}>
+    <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={1}>
       <Text bold>Fill Template Variables</Text>
       {variables.map((v, i) => (
         <Box key={v.name}>
@@ -46,7 +47,7 @@ export const VariableFiller: React.FC<Props> = ({ variables, onComplete, onCance
         </Box>
       ))}
       <Text color="gray" dimColor>
-        Tab/↓ next ↑ prev Enter submit Esc cancel
+        Tab/j next k prev Enter submit Esc cancel
       </Text>
     </Box>
   );

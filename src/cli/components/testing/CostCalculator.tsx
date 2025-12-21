@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { safeBorderStyle } from "../theme";
 
 export interface ModelPricing {
   name: string;
@@ -94,18 +95,18 @@ export const CostCalculator: React.FC<CostCalculatorProps> = ({
   };
 
   return (
-    <Box flexDirection="column" borderStyle="round" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={2} paddingY={1}>
       <Box marginBottom={1}>
         <Text bold>Cost Calculator</Text>
       </Box>
 
       {/* Model Selector */}
       <Box flexDirection="column" marginBottom={1}>
-        <Text>Model: {activeField === "model" && <Text color="cyan">← (use ↑↓)</Text>}</Text>
+        <Text>Model: {activeField === "model" && <Text color="cyan">(use j/k)</Text>}</Text>
         {models.map((model, index) => (
           <Box key={index} marginLeft={2}>
             <Text color={selectedModelIndex === index ? "green" : undefined}>
-              {selectedModelIndex === index ? "▶ " : "  "}
+              {selectedModelIndex === index ? "> " : "  "}
               {model.name}
             </Text>
           </Box>
@@ -116,7 +117,7 @@ export const CostCalculator: React.FC<CostCalculatorProps> = ({
       <Box flexDirection="column" marginBottom={1}>
         <Text>
           Input Tokens: {inputTokens.toLocaleString()}{" "}
-          {activeField === "input" && <Text color="cyan">← (use ↑↓)</Text>}
+          {activeField === "input" && <Text color="cyan">(use j/k)</Text>}
         </Text>
         <Box marginLeft={2}>
           <Text dimColor>{renderSlider(inputTokens, 10000)}</Text>
@@ -127,7 +128,7 @@ export const CostCalculator: React.FC<CostCalculatorProps> = ({
       <Box flexDirection="column" marginBottom={1}>
         <Text>
           Output Tokens: {outputTokens.toLocaleString()}{" "}
-          {activeField === "output" && <Text color="cyan">← (use ↑↓)</Text>}
+          {activeField === "output" && <Text color="cyan">(use j/k)</Text>}
         </Text>
         <Box marginLeft={2}>
           <Text dimColor>{renderSlider(outputTokens, 5000)}</Text>
@@ -138,12 +139,12 @@ export const CostCalculator: React.FC<CostCalculatorProps> = ({
       <Box flexDirection="column" marginBottom={1}>
         <Text>
           Batch Count: {batchCount}{" "}
-          {activeField === "batch" && <Text color="cyan">← (use ↑↓)</Text>}
+          {activeField === "batch" && <Text color="cyan">(use j/k)</Text>}
         </Text>
       </Box>
 
       {/* Cost Breakdown */}
-      <Box flexDirection="column" borderStyle="single" paddingX={1} marginTop={1}>
+      <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={1} marginTop={1}>
         <Text bold>Cost Breakdown:</Text>
         <Text dimColor>
           Input: ${((inputTokens / 1_000_000) * selectedModel.inputCostPerMToken).toFixed(6)}
@@ -161,7 +162,7 @@ export const CostCalculator: React.FC<CostCalculatorProps> = ({
 
       {/* Controls Help */}
       <Box marginTop={1}>
-        <Text dimColor>Tab: Switch field | ↑↓: Adjust value</Text>
+        <Text dimColor>Tab: Switch field | j/k: Adjust value</Text>
       </Box>
     </Box>
   );

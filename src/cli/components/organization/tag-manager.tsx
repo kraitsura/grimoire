@@ -15,6 +15,7 @@ import { useEffectRun, useEffectCallback } from "../../context";
 import { TagService, type TagWithCount } from "../../../services";
 import type { Prompt } from "../../../models";
 import { ScrollableBox } from "../input/scrollable-box";
+import { getSelectionProps } from "../theme";
 
 export interface TagManagerProps {
   onExit?: () => void;
@@ -166,22 +167,21 @@ export const TagManager: React.FC<TagManagerProps> = ({ onExit }) => {
             </Text>
           </Box>
           <ScrollableBox height={15} focused={true}>
-            {tags.map((tag, index) => (
-              <Box key={tag.name}>
-                <Text
-                  color={index === selectedIndex ? "green" : undefined}
-                  bold={index === selectedIndex}
-                  inverse={index === selectedIndex}
-                >
-                  {index === selectedIndex ? "> " : "  "}
-                  {tag.name.padEnd(28)} {String(tag.count).padStart(5)}
-                </Text>
-              </Box>
-            ))}
+            {tags.map((tag, index) => {
+              const isSelected = index === selectedIndex;
+              return (
+                <Box key={tag.name}>
+                  <Text {...getSelectionProps(isSelected)}>
+                    {isSelected ? "> " : "  "}
+                    {tag.name.padEnd(28)} {String(tag.count).padStart(5)}
+                  </Text>
+                </Box>
+              );
+            })}
           </ScrollableBox>
           <Box marginTop={1}>
             <Text color="gray">
-              ↑/k up | ↓/j down | Enter/Space view | r rename | d delete | q quit
+              k up | j down | Enter/Space view | r rename | d delete | q quit
             </Text>
           </Box>
         </Box>
@@ -228,7 +228,7 @@ export const TagManager: React.FC<TagManagerProps> = ({ onExit }) => {
           <Box marginBottom={1}>
             <Text>New name: </Text>
             <Text>{renameInput}</Text>
-            <Text inverse> </Text>
+            <Text backgroundColor="white" color="black">_</Text>
           </Box>
           {renaming ? (
             <Text>Renaming...</Text>

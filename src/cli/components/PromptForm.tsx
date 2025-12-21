@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
+import { safeBorderStyle } from "./theme";
 
 interface Props {
   initialName?: string;
@@ -38,7 +39,7 @@ export const PromptForm: React.FC<Props> = ({
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" paddingX={1}>
+    <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={1}>
       <Text bold>Create/Edit Prompt</Text>
       <Box marginTop={1}>
         <Text color={focus === "name" ? "cyan" : "white"}>Name: </Text>

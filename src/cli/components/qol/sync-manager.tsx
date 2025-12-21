@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { SyncStatus, SyncResult, Resolution } from "../../../services/remote-sync-service";
+import { safeBorderStyle } from "../theme";
 
 export interface SyncManagerProps {
   status: SyncStatus;
@@ -72,7 +73,7 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
     if (!status.isConfigured) {
       return (
         <Box flexDirection="column">
-          <Text color="red">✗ Not Configured</Text>
+          <Text color="red">[!!] Not Configured</Text>
           <Box marginLeft={2}>
             <Text color="gray">Press {`'c'`} to configure sync</Text>
           </Box>
@@ -82,7 +83,7 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
 
     return (
       <Box flexDirection="column">
-        <Text color="green">✓ Configured</Text>
+        <Text color="green">[ok] Configured</Text>
         <Box marginLeft={2} flexDirection="column">
           <Text color="gray">
             Remote: <Text color="cyan">{status.remote}</Text>
@@ -119,7 +120,7 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
               ↓ {status.behind} commit{status.behind > 1 ? "s" : ""} behind
             </Text>
           )}
-          {!isAhead && !isBehind && <Text color="green">✓ In sync with remote</Text>}
+          {!isAhead && !isBehind && <Text color="green">[ok] In sync with remote</Text>}
           {lastSync && <Text color="gray">Last sync: {lastSync.toLocaleTimeString()}</Text>}
         </Box>
       </Box>
@@ -159,13 +160,13 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
       <Box
         marginTop={1}
         marginBottom={1}
-        borderStyle="single"
+        borderStyle={safeBorderStyle}
         borderColor="red"
         paddingX={1}
         flexDirection="column"
       >
         <Text bold color="red">
-          ⚠ Merge Conflicts Detected
+          [!] Merge Conflicts Detected
         </Text>
         <Text color="gray">Press {`'x'`} to resolve conflicts or use {`'p'`} to force push</Text>
       </Box>
@@ -178,7 +179,7 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
     }
 
     return (
-      <Box marginTop={1} marginBottom={1} borderStyle="single" borderColor="cyan" paddingX={1}>
+      <Box marginTop={1} marginBottom={1} borderStyle={safeBorderStyle} borderColor="cyan" paddingX={1}>
         <Text color="cyan">Syncing...</Text>
       </Box>
     );
@@ -190,7 +191,7 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
     }
 
     const resultColor = lastResult.success ? "green" : "red";
-    const resultIcon = lastResult.success ? "✓" : "✗";
+    const resultIcon = lastResult.success ? "[ok]" : "[!!]";
 
     return (
       <Box marginBottom={1} flexDirection="column">
@@ -208,14 +209,14 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
   const renderHelp = () => {
     if (!status.isConfigured) {
       return (
-        <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+        <Box marginTop={1} borderStyle={safeBorderStyle} borderColor="gray" paddingX={1}>
           <Text color="gray">c: configure | q: quit</Text>
         </Box>
       );
     }
 
     return (
-      <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+      <Box marginTop={1} borderStyle={safeBorderStyle} borderColor="gray" paddingX={1}>
         <Text color="gray">
           p: push | P: pull | c: configure | r: refresh{" "}
           {status.hasConflicts && "| x: resolve conflicts "} | q: quit

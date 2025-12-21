@@ -4,6 +4,7 @@ import { useInput } from "ink";
 import type { PromptVersion } from "../../../services/version-service";
 import type { DiffResult } from "../../../services/diff-service";
 import { DiffViewer } from "./diff-viewer";
+import { safeBorderStyle } from "../theme";
 
 export interface RollbackConfirmProps {
   currentVersion: PromptVersion;
@@ -55,7 +56,7 @@ export const RollbackConfirm: React.FC<RollbackConfirmProps> = ({
   return (
     <Box flexDirection="column">
       {/* Warning header */}
-      <Box marginBottom={1} borderStyle="round" borderColor="yellow" paddingX={1}>
+      <Box marginBottom={1} borderStyle={safeBorderStyle} borderColor="yellow" paddingX={1}>
         <Text color="yellow" bold>
           ⚠ Rollback Confirmation
         </Text>
@@ -100,7 +101,7 @@ export const RollbackConfirm: React.FC<RollbackConfirmProps> = ({
       {/* Action buttons */}
       <Box gap={2} paddingX={1}>
         <Box
-          borderStyle="round"
+          borderStyle={safeBorderStyle}
           borderColor={selectedAction === "cancel" ? "blue" : undefined}
           paddingX={1}
         >
@@ -108,13 +109,13 @@ export const RollbackConfirm: React.FC<RollbackConfirmProps> = ({
             color={selectedAction === "cancel" ? "blue" : undefined}
             bold={selectedAction === "cancel"}
           >
-            {selectedAction === "cancel" ? "▶ " : "  "}
+            {selectedAction === "cancel" ? "> " : "  "}
             Cancel (n)
           </Text>
         </Box>
 
         <Box
-          borderStyle="round"
+          borderStyle={safeBorderStyle}
           borderColor={selectedAction === "confirm" ? "blue" : undefined}
           paddingX={1}
         >
@@ -122,7 +123,7 @@ export const RollbackConfirm: React.FC<RollbackConfirmProps> = ({
             color={selectedAction === "confirm" ? "blue" : undefined}
             bold={selectedAction === "confirm"}
           >
-            {selectedAction === "confirm" ? "▶ " : "  "}
+            {selectedAction === "confirm" ? "> " : "  "}
             Confirm Rollback (y)
           </Text>
         </Box>
@@ -130,7 +131,7 @@ export const RollbackConfirm: React.FC<RollbackConfirmProps> = ({
 
       {/* Hints */}
       <Box marginTop={1} paddingX={1}>
-        <Text dimColor>h/l or ←/→: select | Enter: execute | Esc: cancel</Text>
+        <Text dimColor>h/l: select | Enter: execute | Esc: cancel</Text>
       </Box>
     </Box>
   );

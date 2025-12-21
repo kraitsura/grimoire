@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { CollectionStats } from "../../../services/stats-service";
+import { safeBorderStyle } from "../theme";
 
 export interface StatsDashboardProps {
   stats: CollectionStats;
@@ -154,7 +155,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ stats, onRefresh
         </Box>
       </Box>
 
-      <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+      <Box marginTop={1} borderStyle={safeBorderStyle} borderColor="gray" paddingX={1}>
         <Text color="gray">r: refresh | q: quit</Text>
       </Box>
     </Box>

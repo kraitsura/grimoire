@@ -14,6 +14,7 @@ import { Effect } from "effect";
 import { useEffectRun, useEffectCallback } from "../../context";
 import { ArchiveService } from "../../../services";
 import { ScrollableBox } from "../input/scrollable-box";
+import { getSelectionProps } from "../theme";
 
 export interface ArchiveManagerProps {
   onExit?: () => void;
@@ -198,11 +199,7 @@ export const ArchiveManager: React.FC<ArchiveManagerProps> = ({ onExit, onRestor
 
               return (
                 <Box key={prompt.id}>
-                  <Text
-                    color={isSelected ? "green" : undefined}
-                    bold={isSelected}
-                    inverse={isSelected}
-                  >
+                  <Text {...getSelectionProps(isSelected)}>
                     {isSelected ? "> " : "  "}[{isChecked ? "x" : " "}]{" "}
                     {prompt.name.slice(0, 26).padEnd(28)}
                     {archivedDate.padEnd(12)}
@@ -215,7 +212,7 @@ export const ArchiveManager: React.FC<ArchiveManagerProps> = ({ onExit, onRestor
 
           <Box marginTop={1}>
             <Text color="gray">
-              ↑/k up | ↓/j down | Space toggle | r/Enter restore | a all | n none | p purge | q quit
+              k up | j down | Space toggle | r/Enter restore | a all | n none | p purge | q quit
             </Text>
           </Box>
         </Box>

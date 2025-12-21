@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { Prompt } from "../../models";
+import { safeBorderStyle } from "./theme";
 
 interface Props {
   prompt: Prompt;
@@ -27,7 +28,7 @@ export const PromptViewer: React.FC<Props> = ({ prompt, onClose }) => {
   const visibleContent = lines.slice(scrollOffset, scrollOffset + visibleLines);
 
   return (
-    <Box flexDirection="column" borderStyle="round" paddingX={1}>
+    <Box flexDirection="column" borderStyle={safeBorderStyle} paddingX={1}>
       <Text bold>{prompt.name}</Text>
       <Text color="gray">
         ID: {prompt.id.slice(0, 8)}... v{prompt.version ?? 1}
@@ -39,7 +40,7 @@ export const PromptViewer: React.FC<Props> = ({ prompt, onClose }) => {
         ))}
       </Box>
       <Text color="gray" dimColor>
-        ↑/k ↓/j scroll q close
+        k up j down q close
       </Text>
     </Box>
   );

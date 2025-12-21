@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { safeBorderStyle } from "../theme";
 
 export interface CompareResult {
   name: string;
@@ -56,7 +57,7 @@ export const CompareView: React.FC<CompareViewProps> = ({
           <Box
             key={index}
             width={columnWidth}
-            borderStyle="single"
+            borderStyle={safeBorderStyle}
             borderColor={selectedIndex === index ? "green" : undefined}
             paddingX={1}
           >
@@ -73,7 +74,7 @@ export const CompareView: React.FC<CompareViewProps> = ({
           <Box
             key={index}
             width={columnWidth}
-            borderStyle="single"
+            borderStyle={safeBorderStyle}
             borderColor={selectedIndex === index ? "green" : undefined}
             paddingX={1}
             flexDirection="column"
@@ -89,7 +90,7 @@ export const CompareView: React.FC<CompareViewProps> = ({
           <Box
             key={index}
             width={columnWidth}
-            borderStyle="single"
+            borderStyle={safeBorderStyle}
             borderColor={selectedIndex === index ? "green" : undefined}
             paddingX={1}
             flexDirection="column"
@@ -121,7 +122,7 @@ export const CompareView: React.FC<CompareViewProps> = ({
 
       {selectedIndex !== null && (
         <Box marginTop={1}>
-          <Text color="green">✓ Voted for: {results[selectedIndex].name}</Text>
+          <Text color="green">[ok] Voted for: {results[selectedIndex].name}</Text>
         </Box>
       )}
     </Box>
