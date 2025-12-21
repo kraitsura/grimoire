@@ -2,14 +2,18 @@
  * Config Command - Configure LLM providers and settings
  *
  * API keys are stored in ~/.grimoire/.env with 0600 permissions.
+ * Default model/provider stored in ~/.grimoire/config.json.
  */
 
+import React from "react";
+import { render } from "ink";
 import { Effect } from "effect";
 import { Schema } from "@effect/schema";
-import { ApiKeyService, LLMService } from "../services";
+import { ApiKeyService, LLMService, ConfigService } from "../services";
 import { ConfigCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 import * as readline from "readline";
+import { ModelSelector, getDefaultModelForProvider } from "../cli/components/ModelSelector";
 
 // Supported providers
 const PROVIDERS = ["openai", "anthropic", "google", "ollama"] as const;
@@ -74,7 +78,18 @@ export const configCommand = (args: ParsedArgs) =>
 
     switch (validatedArgs.action) {
       case "list": {
+        const configService = yield* ConfigService;
+        const defaults = yield* configService.getDefaultModel();
+
         console.log("LLM Provider Configuration\n");
+
+        // Show default model if configured
+        if (defaults) {
+          console.log(`Default: \x1b[36m${defaults.model}\x1b[0m (${defaults.provider})\n`);
+        } else {
+          console.log("Default: \x1b[33mNot configured\x1b[0m\n");
+        }
+
         console.log("PROVIDER".padEnd(15) + "STATUS".padEnd(20) + "ENV VAR");
         console.log("-".repeat(60));
 
@@ -82,11 +97,15 @@ export const configCommand = (args: ParsedArgs) =>
           const info = PROVIDER_INFO[provider];
           const isConfigured = yield* apiKeyService.validate(provider);
 
-          const status = isConfigured ? "\x1b[32m✓ Configured\x1b[0m" : "\x1b[31m✗ Not set\x1b[0m";
+          const isDefault = defaults?.provider === provider;
+          const status = isConfigured
+            ? `\x1b[32m[ok] Configured${isDefault ? " *" : ""}\x1b[0m`
+            : "\x1b[31m[!!] Not set\x1b[0m";
 
           console.log(`${info.name.padEnd(15)}${status.padEnd(31)}${info.envVar}`);
         }
 
+        console.log("\n* = default provider");
         console.log("\nUse 'grimoire config llm add <provider>' to configure a provider");
         console.log("Keys are stored in ~/.grimoire/.env");
         break;
@@ -100,6 +119,7 @@ export const configCommand = (args: ParsedArgs) =>
 
         const provider = validatedArgs.provider;
         const info = PROVIDER_INFO[provider];
+        const configService = yield* ConfigService;
 
         // Check if already configured
         const isConfigured = yield* apiKeyService.validate(provider);
@@ -118,21 +138,56 @@ export const configCommand = (args: ParsedArgs) =>
         if (!apiKey.trim()) {
           if (provider === "ollama") {
             yield* apiKeyService.set(provider, "http://localhost:11434");
-            console.log(`\n✓ ${info.name} configured with default host`);
+            console.log(`\n[ok] ${info.name} configured with default host`);
           } else {
             console.log("Cancelled - no API key provided");
+            return;
           }
-          return;
+        } else {
+          // Basic validation
+          if (info.keyPrefix && !apiKey.startsWith(info.keyPrefix)) {
+            console.log(`\nWarning: API key doesn't start with expected prefix '${info.keyPrefix}'`);
+          }
+
+          yield* apiKeyService.set(provider, apiKey.trim());
+          console.log(`\n[ok] ${info.name} API key saved to ~/.grimoire/.env`);
         }
 
-        // Basic validation
-        if (info.keyPrefix && !apiKey.startsWith(info.keyPrefix)) {
-          console.log(`\nWarning: API key doesn't start with expected prefix '${info.keyPrefix}'`);
+        // Validate the API key
+        console.log(`\nValidating ${info.name} API key...`);
+        const llmService = yield* LLMService;
+
+        const validationResult = yield* Effect.either(
+          Effect.gen(function* () {
+            const llmProvider = yield* llmService.getProvider(provider);
+            return yield* llmProvider.validateApiKey();
+          })
+        );
+
+        if (validationResult._tag === "Right" && validationResult.right) {
+          console.log(`[ok] API key is valid\n`);
+        } else {
+          console.log(`[!] Could not validate API key (it may still work)\n`);
         }
 
-        yield* apiKeyService.set(provider, apiKey.trim());
-        console.log(`\n✓ ${info.name} API key saved to ~/.grimoire/.env`);
-        console.log("Tip: Run 'grimoire config llm test " + provider + "' to verify the key works");
+        // Show model selection
+        const selectedModel = yield* selectModel(provider);
+
+        if (selectedModel) {
+          yield* configService.setDefaultModel(provider, selectedModel);
+          console.log(`\n[ok] Default model set to: ${selectedModel}`);
+        } else {
+          // Use default model for provider
+          const defaultModel = getDefaultModelForProvider(provider);
+          if (defaultModel) {
+            yield* configService.setDefaultModel(provider, defaultModel);
+            console.log(`\n[ok] Default model set to: ${defaultModel}`);
+          }
+        }
+
+        // Add provider to config
+        yield* configService.addProvider(provider);
+        console.log(`[ok] ${info.name} is now your default provider`);
         break;
       }
 
@@ -150,7 +205,7 @@ export const configCommand = (args: ParsedArgs) =>
         // Check if key exists
         const hasKey = yield* apiKeyService.validate(provider);
         if (!hasKey) {
-          console.log(`\n✗ ${info.name} is not configured`);
+          console.log(`\n[!!] ${info.name} is not configured`);
           console.log(`Run 'grimoire config llm add ${provider}' to configure it`);
           return;
         }
@@ -166,7 +221,7 @@ export const configCommand = (args: ParsedArgs) =>
         );
 
         if (testResult._tag === "Right" && testResult.right) {
-          console.log(`\n✓ ${info.name} API key is valid`);
+          console.log(`\n[ok] ${info.name} API key is valid`);
         } else {
           console.log(`\n? ${info.name} key exists but validation failed`);
           console.log("The key may still work - try 'grimoire test <prompt>' to verify");
@@ -182,9 +237,11 @@ export const configCommand = (args: ParsedArgs) =>
 
         const provider = validatedArgs.provider;
         const info = PROVIDER_INFO[provider];
+        const configService = yield* ConfigService;
 
         yield* apiKeyService.remove(provider);
-        console.log(`✓ ${info.name} configuration removed from ~/.grimoire/.env`);
+        yield* configService.removeProvider(provider);
+        console.log(`[ok] ${info.name} configuration removed`);
         break;
       }
 
@@ -195,21 +252,95 @@ export const configCommand = (args: ParsedArgs) =>
   });
 
 /**
- * Prompt user for input (synchronous for simplicity)
+ * Prompt user for input with optional hidden/masked input for sensitive data
  */
-function promptForInput(prompt: string, _hideInput = false): Effect.Effect<string> {
+function promptForInput(prompt: string, hideInput = false): Effect.Effect<string> {
   return Effect.async<string>((resume) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    // Note: hiding input in Node.js readline is complex, just show the prompt
     process.stdout.write(prompt);
 
-    rl.question("", (answer) => {
-      rl.close();
-      resume(Effect.succeed(answer));
-    });
+    if (!hideInput) {
+      // Normal visible input
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+
+      rl.question("", (answer) => {
+        rl.close();
+        resume(Effect.succeed(answer));
+      });
+    } else {
+      // Hidden input - show asterisks instead of characters
+      let input = "";
+
+      if (!process.stdin.isTTY) {
+        // Non-TTY mode (piped input), just read normally
+        const rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        rl.question("", (answer) => {
+          rl.close();
+          resume(Effect.succeed(answer));
+        });
+        return;
+      }
+
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+      process.stdin.setEncoding("utf8");
+
+      const onData = (char: string) => {
+        const charCode = char.charCodeAt(0);
+
+        if (char === "\r" || char === "\n") {
+          // Enter pressed - done
+          process.stdin.setRawMode(false);
+          process.stdin.pause();
+          process.stdin.removeListener("data", onData);
+          process.stdout.write("\n");
+          resume(Effect.succeed(input));
+        } else if (charCode === 3) {
+          // Ctrl+C - exit
+          process.stdin.setRawMode(false);
+          process.stdin.pause();
+          process.stdout.write("\n");
+          process.exit(0);
+        } else if (charCode === 127 || charCode === 8) {
+          // Backspace
+          if (input.length > 0) {
+            input = input.slice(0, -1);
+            process.stdout.write("\b \b"); // Erase the asterisk
+          }
+        } else if (charCode >= 32) {
+          // Printable character
+          input += char;
+          process.stdout.write("*");
+        }
+      };
+
+      process.stdin.on("data", onData);
+    }
+  });
+}
+
+/**
+ * Show model selection UI and return selected model
+ */
+function selectModel(provider: string): Effect.Effect<string | null> {
+  return Effect.async<string | null>((resume) => {
+    const { unmount } = render(
+      React.createElement(ModelSelector, {
+        provider,
+        onSelect: (model: string) => {
+          unmount();
+          resume(Effect.succeed(model));
+        },
+        onCancel: () => {
+          unmount();
+          resume(Effect.succeed(null));
+        },
+      })
+    );
   });
 }
