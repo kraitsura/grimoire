@@ -2,7 +2,7 @@
  * CLI Command Handlers
  */
 
-export { addCommand } from "./add";
+export { promptCommand } from "./prompt";
 export { aliasCommand } from "./alias";
 export { archiveCommand } from "./archive";
 export { benchmarkCommand } from "./benchmark";
@@ -13,7 +13,6 @@ export { completionCommand } from "./completion";
 export { configCommand } from "./config";
 export { copyCommand } from "./copy";
 export { costCommand } from "./cost";
-export { editCommand } from "./edit";
 export { exportCommand } from "./export";
 export { favoriteCommand } from "./favorite";
 export { formatCommand } from "./format";

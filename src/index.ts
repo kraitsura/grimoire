@@ -54,7 +54,7 @@ const loadGrimoireEnv = () => {
 // Load .env file before anything else
 loadGrimoireEnv();
 import {
-  addCommand,
+  promptCommand,
   aliasCommand,
   archiveCommand,
   benchmarkCommand,
@@ -65,7 +65,6 @@ import {
   configCommand,
   copyCommand,
   costCommand,
-  editCommand,
   exportCommand,
   favoriteCommand,
   formatCommand,
@@ -91,6 +90,45 @@ import {
 } from "./commands";
 
 /**
+ * Reserved command names that cannot be used as prompt names
+ */
+const RESERVED_COMMANDS = new Set([
+  "list",
+  "show",
+  "rm",
+  "delete",
+  "copy",
+  "search",
+  "tag",
+  "stats",
+  "benchmark",
+  "compare",
+  "cost",
+  "test",
+  "reindex",
+  "templates",
+  "history",
+  "versions",
+  "rollback",
+  "archive",
+  "branch",
+  "alias",
+  "chain",
+  "favorite",
+  "pin",
+  "format",
+  "sync",
+  "completion",
+  "config",
+  "skills",
+  "plugins",
+  "stash",
+  "pop",
+  "export",
+  "import",
+]);
+
+/**
  * Main program logic
  *
  * Parses command-line arguments and routes to appropriate handler:
@@ -110,17 +148,24 @@ Grimoire - A CLI tool for storing, editing, and managing prompts
 
 USAGE:
   grimoire [OPTIONS] [COMMAND]
+  grimoire <prompt-name> [OPTIONS]    Create or edit a prompt
 
-OPTIONS:
-  -i, --interactive    Launch interactive mode
-  -h, --help          Show this help message
-  -v, --version       Show version information
+PROMPT OPTIONS:
+  -c, --content <text>    Set content directly (no vim)
+  -p, --paste             Paste clipboard content
+  -t, --tags <tags>       Set tags (comma-separated)
+  -i, --interactive       Use Ink editor instead of vim
+  --name <new-name>       Rename prompt (edit mode only)
+  --add-tag <tag>         Add a tag (edit mode only)
+  --remove-tag <tag>      Remove a tag (edit mode only)
+
+GLOBAL OPTIONS:
+  -h, --help              Show this help message
+  -v, --version           Show version information
 
 COMMANDS:
   list                List all prompts
-  add                 Add a new prompt
   show <name>         Show prompt details
-  edit <name>         Edit a prompt
   rm <name>           Delete a prompt
   copy <name>         Copy prompt to clipboard
   benchmark <file>    Run automated test suite
@@ -146,6 +191,12 @@ COMMANDS:
   stash [name]        Stash clipboard content
   pop [name]          Pop from stash to clipboard
 
+EXAMPLES:
+  grimoire my-prompt              # Open vim to create/edit 'my-prompt'
+  grimoire my-prompt -c "Hello"   # Create with content directly
+  grimoire my-prompt -p           # Create from clipboard
+  grimoire my-prompt -t api,gpt   # Create with tags
+
 Run 'grimoire' with no arguments to launch interactive mode.
     `);
     return;
@@ -157,8 +208,8 @@ Run 'grimoire' with no arguments to launch interactive mode.
     return;
   }
 
-  // Launch interactive mode if no args or explicit -i flag
-  if (flags.interactive || args.length === 0) {
+  // Launch interactive mode if no args or explicit -i flag (without a prompt name)
+  if (args.length === 0 || (flags.interactive && !command)) {
     yield* runInteractive();
     return;
   }
@@ -167,18 +218,18 @@ Run 'grimoire' with no arguments to launch interactive mode.
   if (command) {
     const parsedArgs = { command, flags, positional };
 
+    // If command is not a reserved command, treat it as a prompt name
+    if (!RESERVED_COMMANDS.has(command)) {
+      yield* promptCommand(parsedArgs);
+      return;
+    }
+
     switch (command) {
       case "list":
         yield* listCommand(parsedArgs);
         break;
-      case "add":
-        yield* addCommand(parsedArgs);
-        break;
       case "show":
         yield* showCommand(parsedArgs);
-        break;
-      case "edit":
-        yield* editCommand(parsedArgs);
         break;
       case "rm":
       case "delete":

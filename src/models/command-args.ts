@@ -117,15 +117,19 @@ export const VariablesSchema = Schema.Record({
 // ============================================================================
 
 /**
- * Add command arguments
+ * Unified prompt command arguments (replaces add/edit)
  */
-export const AddCommandArgsSchema = Schema.Struct({
+export const PromptCommandArgsSchema = Schema.Struct({
   name: PromptNameSchema,
-  content: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  content: Schema.optional(Schema.String),
+  paste: Schema.optional(Schema.Boolean),
   tags: Schema.optional(TagsArraySchema),
+  newName: Schema.optional(PromptNameSchema),
+  addTags: Schema.optional(TagsArraySchema),
+  removeTags: Schema.optional(TagsArraySchema),
   template: Schema.optional(Schema.Boolean),
 });
-export type AddCommandArgs = Schema.Schema.Type<typeof AddCommandArgsSchema>;
+export type PromptCommandArgs = Schema.Schema.Type<typeof PromptCommandArgsSchema>;
 
 /**
  * Show command arguments
@@ -147,18 +151,6 @@ export const CopyCommandArgsSchema = Schema.Struct({
 });
 export type CopyCommandArgs = Schema.Schema.Type<typeof CopyCommandArgsSchema>;
 
-/**
- * Edit command arguments
- */
-export const EditCommandArgsSchema = Schema.Struct({
-  nameOrId: NameOrIdSchema,
-  name: Schema.optional(PromptNameSchema),
-  content: Schema.optional(Schema.String),
-  tags: Schema.optional(TagsArraySchema),
-  addTags: Schema.optional(TagsArraySchema),
-  removeTags: Schema.optional(TagsArraySchema),
-});
-export type EditCommandArgs = Schema.Schema.Type<typeof EditCommandArgsSchema>;
 
 /**
  * Test command arguments (LLM testing)

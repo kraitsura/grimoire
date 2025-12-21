@@ -54,8 +54,22 @@ export function parseArgs(args: string[]): ParsedArgs {
       // Short flag(s): -i or -abc
       else {
         const shortFlags = arg.slice(1).split("");
-        for (const flag of shortFlags) {
-          flags[flag] = true;
+        // Short flags that take a value
+        const valueFlags = new Set(["c", "t", "n"]);
+        for (let j = 0; j < shortFlags.length; j++) {
+          const flag = shortFlags[j];
+          // If this is a value flag and it's the last in the group
+          if (valueFlags.has(flag) && j === shortFlags.length - 1) {
+            // Check if next arg is a value (not a flag)
+            if (i + 1 < args.length && !args[i + 1].startsWith("-")) {
+              flags[flag] = args[i + 1];
+              i++; // Skip next arg as we consumed it
+            } else {
+              flags[flag] = true;
+            }
+          } else {
+            flags[flag] = true;
+          }
           // Map common short flags to long forms
           if (flag === "i") {
             flags.interactive = true;
