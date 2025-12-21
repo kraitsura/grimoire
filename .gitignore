@@ -55,3 +55,11 @@ convex/_generated/
 .git/beads-worktrees/
 
 .worktrees/
+
+# bv (beads viewer) local config and caches
+.bv/
+
+# Local test fixtures
+.claude/
+test-project/
+test/
