@@ -138,11 +138,14 @@ export const PromptStorageLive = Layer.effect(
           yield* ensurePromptsDirectory();
 
           // Convert frontmatter dates to ISO strings for YAML
-          const yamlFrontmatter = {
-            ...frontmatter,
-            created: frontmatter.created.toISOString(),
-            updated: frontmatter.updated.toISOString(),
-          };
+          // and filter out undefined values (YAML can't serialize undefined)
+          const yamlFrontmatter = Object.fromEntries(
+            Object.entries({
+              ...frontmatter,
+              created: frontmatter.created.toISOString(),
+              updated: frontmatter.updated.toISOString(),
+            }).filter(([, value]) => value !== undefined)
+          );
 
           // Create markdown with frontmatter
           const markdown = matter.stringify(content, yamlFrontmatter);

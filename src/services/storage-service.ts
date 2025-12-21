@@ -388,7 +388,13 @@ export const StorageServiceLive = Layer.effect(
           }
 
           // Merge updates with existing data
+          // Only include optional fields if they have defined values (YAML can't serialize undefined)
           const now = new Date();
+          const isFavorite = input.isFavorite ?? parsed.frontmatter.isFavorite;
+          const favoriteOrder = input.favoriteOrder ?? parsed.frontmatter.favoriteOrder;
+          const isPinned = input.isPinned ?? parsed.frontmatter.isPinned;
+          const pinOrder = input.pinOrder ?? parsed.frontmatter.pinOrder;
+
           const updatedFrontmatter = {
             ...parsed.frontmatter,
             name: input.name ?? parsed.frontmatter.name,
@@ -396,10 +402,11 @@ export const StorageServiceLive = Layer.effect(
             updated: now,
             version: (parsed.frontmatter.version ?? 1) + 1,
             isTemplate: input.isTemplate ?? parsed.frontmatter.isTemplate ?? false,
-            isFavorite: input.isFavorite ?? parsed.frontmatter.isFavorite,
-            favoriteOrder: input.favoriteOrder ?? parsed.frontmatter.favoriteOrder,
-            isPinned: input.isPinned ?? parsed.frontmatter.isPinned,
-            pinOrder: input.pinOrder ?? parsed.frontmatter.pinOrder,
+            // Only include optional fields if defined
+            ...(isFavorite !== undefined && { isFavorite }),
+            ...(favoriteOrder !== undefined && { favoriteOrder }),
+            ...(isPinned !== undefined && { isPinned }),
+            ...(pinOrder !== undefined && { pinOrder }),
           };
 
           const updatedContent = input.content ?? parsed.content;

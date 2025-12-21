@@ -161,7 +161,7 @@ export const branchCommand = (args: ParsedArgs) =>
       console.log("");
 
       if (comparison.canMerge) {
-        console.log(`  ${COLORS.green}✓${COLORS.reset} Can merge`);
+        console.log(`  ${COLORS.green}[ok]${COLORS.reset} Can merge`);
       } else {
         console.log(`  ${COLORS.yellow}!${COLORS.reset} May have conflicts`);
       }

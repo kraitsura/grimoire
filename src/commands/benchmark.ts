@@ -196,11 +196,11 @@ const formatTableOutput = (
   totalCost: number,
   verbose: boolean
 ): string => {
-  const border = "─".repeat(60);
+  const border = "-".repeat(60);
   let output = `\nRunning: ${suiteName} (${results.length} tests)\n\n`;
 
   for (const result of results) {
-    const icon = result.passed ? "✓" : "✗";
+    const icon = result.passed ? "[ok]" : "[!!]";
     const status = result.passed ? "" : ` - ${result.error}`;
     output += `${icon} ${result.name}${status} (${result.duration.toFixed(1)}s)\n`;
 

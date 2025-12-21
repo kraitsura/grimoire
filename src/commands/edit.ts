@@ -103,7 +103,22 @@ export const editCommand = (args: ParsedArgs) =>
       !validatedArgs.removeTags
     ) {
       const newContent = yield* editor.open(prompt.content, `${prompt.name}.md`);
-      updateInput.content = newContent;
+      // Only set content if it actually changed
+      if (newContent !== prompt.content) {
+        updateInput.content = newContent;
+      }
+    }
+
+    // Check if there are any actual changes to apply
+    const hasChanges =
+      (updateInput.name !== undefined && updateInput.name !== prompt.name) ||
+      (updateInput.content !== undefined && updateInput.content !== prompt.content) ||
+      (updateInput.tags !== undefined &&
+        JSON.stringify([...updateInput.tags].sort()) !== JSON.stringify([...(prompt.tags ?? [])].sort()));
+
+    if (!hasChanges) {
+      console.log(`No changes made to: ${prompt.name}`);
+      return;
     }
 
     // Update

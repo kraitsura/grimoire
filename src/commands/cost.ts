@@ -136,15 +136,15 @@ function displayCostTable(
   const modelColWidth = Math.max(...models.map((m) => m.length), "Model".length);
   const costColWidth = 10;
 
-  // Header
-  const border = "─";
-  const rowSeparator = `┼${border.repeat(modelColWidth + 2)}┼${border.repeat(costColWidth)}┼${border.repeat(costColWidth)}┼${border.repeat(costColWidth)}┤`;
+  // Header (using ASCII characters for terminal compatibility)
+  const border = "-";
+  const rowSeparator = `+${border.repeat(modelColWidth + 2)}+${border.repeat(costColWidth)}+${border.repeat(costColWidth)}+${border.repeat(costColWidth)}+`;
 
   console.log(
-    `┌${border.repeat(modelColWidth + 2)}┬${border.repeat(costColWidth)}┬${border.repeat(costColWidth)}┬${border.repeat(costColWidth)}┐`
+    `+${border.repeat(modelColWidth + 2)}+${border.repeat(costColWidth)}+${border.repeat(costColWidth)}+${border.repeat(costColWidth)}+`
   );
   console.log(
-    `│ ${"Model".padEnd(modelColWidth)} │ ${"Input".padStart(costColWidth - 2)} │ ${"Output".padStart(costColWidth - 2)} │ ${"Total".padStart(costColWidth - 2)} │`
+    `| ${"Model".padEnd(modelColWidth)} | ${"Input".padStart(costColWidth - 2)} | ${"Output".padStart(costColWidth - 2)} | ${"Total".padStart(costColWidth - 2)} |`
   );
   console.log(rowSeparator);
 
@@ -157,12 +157,12 @@ function displayCostTable(
     const totalCost = inputCost + outputCost;
 
     console.log(
-      `│ ${model.padEnd(modelColWidth)} │ ${formatCurrency(inputCost).padStart(costColWidth - 2)} │ ${formatCurrency(outputCost).padStart(costColWidth - 2)} │ ${formatCurrency(totalCost).padStart(costColWidth - 2)} │`
+      `| ${model.padEnd(modelColWidth)} | ${formatCurrency(inputCost).padStart(costColWidth - 2)} | ${formatCurrency(outputCost).padStart(costColWidth - 2)} | ${formatCurrency(totalCost).padStart(costColWidth - 2)} |`
     );
   }
 
   console.log(
-    `└${border.repeat(modelColWidth + 2)}┴${border.repeat(costColWidth)}┴${border.repeat(costColWidth)}┴${border.repeat(costColWidth)}┘`
+    `+${border.repeat(modelColWidth + 2)}+${border.repeat(costColWidth)}+${border.repeat(costColWidth)}+${border.repeat(costColWidth)}+`
   );
 }
 

@@ -71,17 +71,17 @@ export const showCommand = (args: ParsedArgs) =>
       // Raw content only (no metadata)
       console.log(prompt.content);
     } else {
-      // Formatted display with metadata
-      const border = "─".repeat(50);
-      console.log(`╭${border}╮`);
-      console.log(`│ ${prompt.name.padEnd(48)} │`);
-      console.log(`├${border}┤`);
-      console.log(`│ ID: ${prompt.id.slice(0, 42).padEnd(43)} │`);
-      console.log(`│ Tags: ${(prompt.tags?.join(", ") ?? "none").slice(0, 40).padEnd(41)} │`);
-      console.log(`│ Created: ${prompt.created.toISOString().split("T")[0].padEnd(38)} │`);
-      console.log(`│ Updated: ${formatRelativeDate(prompt.updated).padEnd(38)} │`);
-      console.log(`│ Version: ${String(prompt.version ?? 1).padEnd(38)} │`);
-      console.log(`├${border}┤`);
+      // Formatted display with metadata (using ASCII box characters for compatibility)
+      const border = "-".repeat(50);
+      console.log(`+${border}+`);
+      console.log(`| ${prompt.name.padEnd(48)} |`);
+      console.log(`+${border}+`);
+      console.log(`| ID: ${prompt.id.slice(0, 42).padEnd(43)} |`);
+      console.log(`| Tags: ${(prompt.tags?.join(", ") ?? "none").slice(0, 40).padEnd(41)} |`);
+      console.log(`| Created: ${prompt.created.toISOString().split("T")[0].padEnd(38)} |`);
+      console.log(`| Updated: ${formatRelativeDate(prompt.updated).padEnd(38)} |`);
+      console.log(`| Version: ${String(prompt.version ?? 1).padEnd(38)} |`);
+      console.log(`+${border}+`);
 
       // Content (with line wrapping at 48 characters)
       const contentLines = prompt.content.split("\n");
@@ -95,11 +95,11 @@ export const showCommand = (args: ParsedArgs) =>
         }
         chunks.push(remaining);
         for (const chunk of chunks) {
-          console.log(`│ ${chunk.padEnd(48)} │`);
+          console.log(`| ${chunk.padEnd(48)} |`);
         }
       }
 
-      console.log(`╰${border}╯`);
+      console.log(`+${border}+`);
     }
   });
 

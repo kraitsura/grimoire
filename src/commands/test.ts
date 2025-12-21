@@ -4,16 +4,14 @@
 
 import { Effect, Stream, pipe } from "effect";
 import { Schema } from "@effect/schema";
-import { StorageService } from "../services";
-import { LLMService } from "../services/llm-service";
-import { TokenCounterService } from "../services/token-counter-service";
+import { StorageService, LLMService, TokenCounterService, ConfigService } from "../services";
 import { TestCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 
 const USAGE = `Usage: grimoire test <prompt-name> [OPTIONS]
 
 OPTIONS:
-  -m, --model <model>       Model to use (default: gpt-4o)
+  -m, --model <model>       Model to use (uses configured default)
   -p, --provider <provider> Provider: openai, anthropic, ollama
   --temperature <temp>      Temperature 0-2 (default: 0.7)
   --max-tokens <tokens>     Max output tokens (default: 1024)
@@ -68,6 +66,7 @@ export const testCommand = (args: ParsedArgs) =>
     const storage = yield* StorageService;
     const llm = yield* LLMService;
     const tokenCounter = yield* TokenCounterService;
+    const configService = yield* ConfigService;
 
     // Validate arguments with schema
     const rawArgs = parseTestArgs(args);
@@ -81,8 +80,19 @@ export const testCommand = (args: ParsedArgs) =>
       })
     );
 
+    // Get default model from config
+    const defaults = yield* configService.getDefaultModel();
+
+    // Check if we have a model to use
+    if (!validatedArgs.model && !defaults) {
+      console.log("\n[!] No LLM provider configured.\n");
+      console.log("Run 'grimoire config llm add <provider>' to configure a provider.");
+      console.log("Providers: openai, anthropic, google, ollama\n");
+      return;
+    }
+
     // Apply defaults after validation
-    const model = validatedArgs.model ?? "gpt-4o";
+    const model = validatedArgs.model ?? defaults?.model ?? "";
     const temperature = validatedArgs.temperature ?? 0.7;
     const maxTokens = validatedArgs.maxTokens ?? 1024;
     const noStream = !validatedArgs.stream;
@@ -102,8 +112,8 @@ export const testCommand = (args: ParsedArgs) =>
       content = content.replace(pattern, value);
     }
 
-    // Display header
-    const border = "─".repeat(60);
+    // Display header (using ASCII dash for terminal compatibility)
+    const border = "-".repeat(60);
     console.log(`\nTesting: ${prompt.name}`);
     console.log(`Model: ${model} | Temperature: ${temperature}`);
     console.log(`\n${border}`);

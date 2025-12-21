@@ -163,9 +163,9 @@ EXAMPLES:
 
     // Interactive winner selection
     if (interactive) {
-      console.log("\n" + "─".repeat(80));
+      console.log("\n" + "-".repeat(80));
       console.log("Interactive mode: Winner selection");
-      console.log("─".repeat(80));
+      console.log("-".repeat(80));
       console.log("\nPrompts compared:");
       results.forEach((r, i) => {
         console.log(`  ${i + 1}. ${r.promptName}`);
@@ -195,21 +195,21 @@ function displaySideBySide(results: ComparisonResult[]): void {
   const columnWidth = 40;
   const _numColumns = results.length;
 
-  // Create header
+  // Create header (using ASCII characters for terminal compatibility)
   const headerLine = results
     .map((r) => {
       const name = r.promptName.substring(0, columnWidth - 2);
       return ` ${name.padEnd(columnWidth - 2)} `;
     })
-    .join("│");
+    .join("|");
 
-  const topBorder = results.map(() => "─".repeat(columnWidth)).join("┬");
-  const midBorder = results.map(() => "─".repeat(columnWidth)).join("┼");
-  const bottomBorder = results.map(() => "─".repeat(columnWidth)).join("┴");
+  const topBorder = results.map(() => "-".repeat(columnWidth)).join("+");
+  const midBorder = results.map(() => "-".repeat(columnWidth)).join("+");
+  const bottomBorder = results.map(() => "-".repeat(columnWidth)).join("+");
 
-  console.log("┌" + topBorder + "┐");
-  console.log("│" + headerLine + "│");
-  console.log("├" + midBorder + "┤");
+  console.log("+" + topBorder + "+");
+  console.log("|" + headerLine + "|");
+  console.log("+" + midBorder + "+");
 
   // Display response content (line by line)
   const maxLines = Math.max(
@@ -236,8 +236,8 @@ function displaySideBySide(results: ComparisonResult[]): void {
         const text = responsesLines[idx][i] || "";
         return ` ${text.padEnd(columnWidth - 2)} `;
       })
-      .join("│");
-    console.log("│" + line + "│");
+      .join("|");
+    console.log("|" + line + "|");
   }
 
   // Add ellipsis if responses were truncated
@@ -246,11 +246,11 @@ function displaySideBySide(results: ComparisonResult[]): void {
       .map(() => {
         return " ...".padEnd(columnWidth);
       })
-      .join("│");
-    console.log("│" + ellipsisLine + "│");
+      .join("|");
+    console.log("|" + ellipsisLine + "|");
   }
 
-  console.log("│" + " ".repeat(topBorder.length) + "│");
+  console.log("|" + " ".repeat(topBorder.length) + "|");
 
   // Display stats
   const statsLines = [
@@ -265,9 +265,9 @@ function displaySideBySide(results: ComparisonResult[]): void {
   ];
 
   for (const statLine of statsLines) {
-    const line = statLine.join("│");
-    console.log("│" + line + "│");
+    const line = statLine.join("|");
+    console.log("|" + line + "|");
   }
 
-  console.log("└" + bottomBorder + "┘");
+  console.log("+" + bottomBorder + "+");
 }

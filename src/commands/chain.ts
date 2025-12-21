@@ -262,7 +262,7 @@ const validateChain = (args: ParsedArgs) =>
     const validation = yield* chainService.validateChain(chain);
 
     if (validation.isValid) {
-      console.log(`✓ Chain '${name}' is valid`);
+      console.log(`[ok] Chain '${name}' is valid`);
       if (validation.warnings.length > 0) {
         console.warn("\nWarnings:");
         for (const warning of validation.warnings) {
@@ -270,7 +270,7 @@ const validateChain = (args: ParsedArgs) =>
         }
       }
     } else {
-      console.error(`✗ Chain '${name}' has validation errors:`);
+      console.error(`[!!] Chain '${name}' has validation errors:`);
       for (const error of validation.errors) {
         console.error(`  - ${error}`);
       }
@@ -597,7 +597,7 @@ const runChain = (args: ParsedArgs) =>
       // Store output
       stepOutputs[step.output] = stepOutput;
 
-      console.log(`  ✓ Complete (${stepDuration}s, ${stepOutput.length} chars)`);
+      console.log(`  [ok] Complete (${stepDuration}s, ${stepOutput.length} chars)`);
       console.log();
     }
 
