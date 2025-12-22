@@ -101,6 +101,217 @@ const shouldExcludePath = (name: string): boolean => {
   return EXCLUDED_PATHS.includes(name) || name.startsWith(".");
 };
 
+// ============================================================================
+// Tarball Download Helpers (no rate limits for public repos!)
+// ============================================================================
+
+import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+/**
+ * Run a shell command and return stdout
+ */
+const runCommandForCache = (
+  cmd: string,
+  args: string[],
+  cwd?: string
+): Effect.Effect<string, SkillSourceError> =>
+  Effect.async((resume) => {
+    const proc = spawn(cmd, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout?.on("data", (data) => {
+      stdout += data.toString();
+    });
+    proc.stderr?.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on("close", (code) => {
+      if (code === 0) {
+        resume(Effect.succeed(stdout));
+      } else {
+        resume(
+          Effect.fail(
+            new SkillSourceError({
+              source: cmd,
+              message: `Command failed with code ${code}: ${stderr || stdout}`,
+            })
+          )
+        );
+      }
+    });
+
+    proc.on("error", (error) => {
+      resume(
+        Effect.fail(
+          new SkillSourceError({
+            source: cmd,
+            message: `Failed to spawn command: ${error.message}`,
+            cause: error,
+          })
+        )
+      );
+    });
+  });
+
+/**
+ * Download and extract GitHub repo tarball to temp directory
+ * Returns path to extracted directory
+ */
+const downloadAndExtractTarball = (
+  owner: string,
+  repo: string,
+  ref: string
+): Effect.Effect<string, SkillSourceError> =>
+  Effect.gen(function* () {
+    const sourceStr = `github:${owner}/${repo}`;
+
+    // Create temp directory
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "grimoire-cache-"));
+
+    // Try multiple tarball URL formats (main/master, tags, etc.)
+    const urlsToTry = [
+      `https://github.com/${owner}/${repo}/archive/refs/heads/${ref}.tar.gz`,
+      `https://github.com/${owner}/${repo}/archive/refs/tags/${ref}.tar.gz`,
+      `https://github.com/${owner}/${repo}/archive/${ref}.tar.gz`,
+    ];
+
+    let tarballPath: string | null = null;
+    let downloadError: Error | null = null;
+
+    for (const tarballUrl of urlsToTry) {
+      try {
+        const response = yield* Effect.tryPromise({
+          try: () => fetch(tarballUrl, { redirect: "follow" }),
+          catch: (error) => error as Error,
+        });
+
+        if (response instanceof Error) {
+          downloadError = response;
+          continue;
+        }
+
+        if (!response.ok) {
+          continue;
+        }
+
+        // Save tarball to temp file
+        tarballPath = path.join(tempDir, "repo.tar.gz");
+        const buffer = yield* Effect.tryPromise({
+          try: () => response.arrayBuffer(),
+          catch: (error) => error as Error,
+        });
+
+        if (buffer instanceof Error) {
+          downloadError = buffer;
+          continue;
+        }
+
+        fs.writeFileSync(tarballPath, Buffer.from(buffer));
+        break;
+      } catch (e) {
+        downloadError = e instanceof Error ? e : new Error(String(e));
+      }
+    }
+
+    if (!tarballPath) {
+      // Cleanup on failure
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      return yield* Effect.fail(
+        new SkillSourceError({
+          source: sourceStr,
+          message: `Failed to download tarball: ${downloadError?.message || "Not found"}`,
+          cause: downloadError,
+        })
+      );
+    }
+
+    // Extract tarball
+    yield* runCommandForCache("tar", ["-xzf", tarballPath, "-C", tempDir]);
+
+    // Find extracted directory (GitHub names it repo-ref/)
+    const entries = fs.readdirSync(tempDir);
+    const extractedDir = entries.find(
+      (e) => e !== "repo.tar.gz" && fs.statSync(path.join(tempDir, e)).isDirectory()
+    );
+
+    if (!extractedDir) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      return yield* Effect.fail(
+        new SkillSourceError({
+          source: sourceStr,
+          message: "Failed to find extracted directory",
+        })
+      );
+    }
+
+    return path.join(tempDir, extractedDir);
+  });
+
+/**
+ * Recursively read all files from a directory into a Map
+ */
+const readDirectoryRecursive = (
+  dir: string,
+  basePath = ""
+): Map<string, string> => {
+  const files = new Map<string, string>();
+
+  try {
+    const items = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const item of items) {
+      // Skip excluded paths
+      if (shouldExcludePath(item.name)) {
+        continue;
+      }
+
+      const relativePath = basePath ? `${basePath}/${item.name}` : item.name;
+
+      if (item.isDirectory()) {
+        // Recursively read subdirectory
+        const subFiles = readDirectoryRecursive(path.join(dir, item.name), relativePath);
+        for (const [subPath, content] of subFiles) {
+          files.set(subPath, content);
+        }
+      } else if (item.isFile()) {
+        // Read file content
+        try {
+          const content = fs.readFileSync(path.join(dir, item.name), "utf-8");
+          files.set(relativePath, content);
+        } catch {
+          // Skip files that can't be read (binary, permissions, etc.)
+        }
+      }
+    }
+  } catch {
+    // Ignore directory read errors
+  }
+
+  return files;
+};
+
+/**
+ * Cleanup temp directory
+ */
+const cleanupTempDirForCache = (tempDir: string): void => {
+  try {
+    // Get parent temp dir (we extract into tempDir/repo-name/)
+    const parentDir = path.dirname(tempDir);
+    if (parentDir.includes("grimoire-cache-")) {
+      fs.rmSync(parentDir, { recursive: true, force: true });
+    } else {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
+};
+
 /**
  * Parse YAML frontmatter from SKILL.md content
  *
@@ -486,212 +697,109 @@ const writeCacheIndex = (index: CacheIndex): Effect.Effect<void, SkillSourceErro
   });
 
 /**
- * GitHub file entry from API response
- */
-interface GitHubFileEntry {
-  name: string;
-  path: string;
-  type: "file" | "dir";
-  download_url?: string;
-  sha?: string;
-}
-
-/**
- * Recursively fetch all files from a GitHub directory
- * Returns a map of relative paths to file contents
- */
-const fetchGitHubDirectoryRecursive = (
-  owner: string,
-  repo: string,
-  ref: string,
-  dirPath: string,
-  baseUrl: string
-): Effect.Effect<Map<string, string>, SkillSourceError> =>
-  Effect.gen(function* () {
-    const files = new Map<string, string>();
-    const sourceStr = `github:${owner}/${repo}`;
-
-    // Fetch directory listing
-    const listUrl = `${baseUrl}/${dirPath}?ref=${ref}`;
-    const response = yield* Effect.tryPromise({
-      try: () => fetch(listUrl),
-      catch: (error) =>
-        new SkillSourceError({
-          source: sourceStr,
-          message: `Failed to fetch directory listing: ${error instanceof Error ? error.message : String(error)}`,
-          cause: error,
-        }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        // Directory doesn't exist, return empty
-        return files;
-      }
-      return yield* Effect.fail(
-        new SkillSourceError({
-          source: sourceStr,
-          message: `GitHub API error: ${response.status} ${response.statusText}`,
-        })
-      );
-    }
-
-    const contents = (yield* Effect.tryPromise({
-      try: () => response.json(),
-      catch: (error) =>
-        new SkillSourceError({
-          source: sourceStr,
-          message: `Failed to parse directory listing: ${error instanceof Error ? error.message : String(error)}`,
-          cause: error,
-        }),
-    })) as GitHubFileEntry[];
-
-    // Process each entry
-    for (const entry of contents) {
-      // Skip excluded paths
-      if (shouldExcludePath(entry.name)) {
-        continue;
-      }
-
-      if (entry.type === "file" && entry.download_url) {
-        // Fetch file content
-        const fileResponse = yield* Effect.tryPromise({
-          try: () => fetch(entry.download_url!),
-          catch: (error) =>
-            new SkillSourceError({
-              source: sourceStr,
-              message: `Failed to fetch file: ${entry.path}`,
-              cause: error,
-            }),
-        });
-
-        if (fileResponse.ok) {
-          const content = yield* Effect.tryPromise({
-            try: () => fileResponse.text(),
-            catch: (error) =>
-              new SkillSourceError({
-                source: sourceStr,
-                message: `Failed to read file content: ${entry.path}`,
-                cause: error,
-              }),
-          });
-
-          // Calculate relative path from the skill root
-          const relativePath = dirPath ? entry.path.slice(dirPath.length + 1) : entry.name;
-          files.set(relativePath, content);
-        }
-      } else if (entry.type === "dir") {
-        // Recursively fetch subdirectory
-        const subFiles = yield* fetchGitHubDirectoryRecursive(
-          owner,
-          repo,
-          ref,
-          entry.path,
-          baseUrl
-        );
-
-        // Merge subdirectory files with appropriate path prefix
-        const subDirName = entry.name;
-        for (const [subPath, content] of subFiles) {
-          files.set(`${subDirName}/${subPath}`, content);
-        }
-      }
-    }
-
-    return files;
-  });
-
-/**
- * Fetch skill from GitHub using API
+ * Fetch skill from GitHub using tarball download (no rate limits!)
  * Skills are defined by SKILL.md with frontmatter only (no skill.yaml)
- * Recursively fetches ALL files in the skill directory
+ * Downloads entire repo tarball and extracts skill subdirectory
  */
 const fetchFromGitHubAPI = (
   source: GitHubSource
 ): Effect.Effect<CachedSkill, SkillSourceError> =>
   Effect.gen(function* () {
     const { owner, repo, ref = "main", subdir } = source;
-    const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents`;
-    const dirPath = subdir || "";
     const sourceStr = `github:${owner}/${repo}${ref !== "main" ? `@${ref}` : ""}${subdir ? `#${subdir}` : ""}`;
-    const fallbackName = subdir || repo;
+    const fallbackName = subdir?.split("/").pop() || repo;
 
-    // Recursively fetch all files from the skill directory
-    const allFiles = yield* fetchGitHubDirectoryRecursive(
-      owner,
-      repo,
-      ref,
-      dirPath,
-      baseUrl
-    );
+    // Download and extract tarball (no rate limits!)
+    const extractedDir = yield* downloadAndExtractTarball(owner, repo, ref);
 
-    // Check for required SKILL.md
-    const skillMdContent = allFiles.get("SKILL.md");
+    try {
+      // Determine the skill directory path
+      const skillDir = subdir ? path.join(extractedDir, subdir) : extractedDir;
 
-    if (!skillMdContent) {
-      return yield* Effect.fail(
-        new SkillSourceError({
-          source: sourceStr,
-          message: `No SKILL.md found in repository. Skills must have a SKILL.md with frontmatter.`,
-        })
-      );
-    }
-
-    // Parse manifest from SKILL.md frontmatter
-    const inferred = yield* parseSkillMdFrontmatter(skillMdContent, fallbackName).pipe(
-      Effect.mapError(
-        (error) =>
+      // Check if skill directory exists
+      if (!fs.existsSync(skillDir)) {
+        return yield* Effect.fail(
           new SkillSourceError({
             source: sourceStr,
-            message: error.message,
+            message: `Subdirectory '${subdir}' not found in repository`,
           })
-      )
-    );
-    const manifest = inferredToManifest(inferred);
-
-    // Create skill cache directory
-    const skillCacheDir = getSkillCacheDir(manifest.name);
-    yield* Effect.promise(() =>
-      import("fs/promises").then((fs) => fs.mkdir(skillCacheDir, { recursive: true }))
-    );
-
-    // Write ALL files to cache (excluding skill.yaml if present - we don't use it)
-    const fs = yield* Effect.promise(() => import("fs/promises"));
-    for (const [relativePath, content] of allFiles) {
-      // Skip skill.yaml - we don't use it anymore
-      if (relativePath === "skill.yaml") continue;
-
-      const destPath = join(skillCacheDir, relativePath);
-      const destDir = join(skillCacheDir, relativePath.split("/").slice(0, -1).join("/"));
-
-      // Ensure directory exists for nested files
-      if (destDir !== skillCacheDir) {
-        yield* Effect.promise(() => fs.mkdir(destDir, { recursive: true }));
+        );
       }
 
-      yield* Effect.promise(() => Bun.write(destPath, content));
+      // Read all files from the skill directory
+      const allFiles = readDirectoryRecursive(skillDir);
+
+      // Check for required SKILL.md
+      const skillMdContent = allFiles.get("SKILL.md");
+
+      if (!skillMdContent) {
+        return yield* Effect.fail(
+          new SkillSourceError({
+            source: sourceStr,
+            message: `No SKILL.md found in repository. Skills must have a SKILL.md with frontmatter.`,
+          })
+        );
+      }
+
+      // Parse manifest from SKILL.md frontmatter
+      const inferred = yield* parseSkillMdFrontmatter(skillMdContent, fallbackName).pipe(
+        Effect.mapError(
+          (error) =>
+            new SkillSourceError({
+              source: sourceStr,
+              message: error.message,
+            })
+        )
+      );
+      const manifest = inferredToManifest(inferred);
+
+      // Create skill cache directory
+      const skillCacheDir = getSkillCacheDir(manifest.name);
+      yield* Effect.promise(() =>
+        import("fs/promises").then((fsp) => fsp.mkdir(skillCacheDir, { recursive: true }))
+      );
+
+      // Write ALL files to cache (excluding skill.yaml if present - we don't use it)
+      const fsp = yield* Effect.promise(() => import("fs/promises"));
+      for (const [relativePath, content] of allFiles) {
+        // Skip skill.yaml - we don't use it anymore
+        if (relativePath === "skill.yaml") continue;
+
+        const destPath = join(skillCacheDir, relativePath);
+        const destDir = join(skillCacheDir, relativePath.split("/").slice(0, -1).join("/"));
+
+        // Ensure directory exists for nested files
+        if (destDir !== skillCacheDir) {
+          yield* Effect.promise(() => fsp.mkdir(destDir, { recursive: true }));
+        }
+
+        yield* Effect.promise(() => Bun.write(destPath, content));
+      }
+
+      // Write .meta.json
+      const meta: CacheMeta = {
+        source: sourceStr,
+        cachedAt: new Date().toISOString(),
+        version: "1.0.0", // Version is no longer in manifest
+      };
+      const metaPath = join(skillCacheDir, ".meta.json");
+      yield* Effect.promise(() => Bun.write(metaPath, JSON.stringify(meta, null, 2)));
+
+      // Determine paths for optional files
+      const skillMdPath = join(skillCacheDir, "SKILL.md");
+      const readmePath = allFiles.has("README.md") ? join(skillCacheDir, "README.md") : undefined;
+
+      return {
+        manifest,
+        skillMdPath,
+        readmePath,
+        cachedAt: new Date(),
+        source: sourceStr,
+      };
+    } finally {
+      // Always cleanup temp directory
+      cleanupTempDirForCache(extractedDir);
     }
-
-    // Write .meta.json
-    const meta: CacheMeta = {
-      source: sourceStr,
-      cachedAt: new Date().toISOString(),
-      version: "1.0.0", // Version is no longer in manifest
-    };
-    const metaPath = join(skillCacheDir, ".meta.json");
-    yield* Effect.promise(() => Bun.write(metaPath, JSON.stringify(meta, null, 2)));
-
-    // Determine paths for optional files
-    const skillMdPath = join(skillCacheDir, "SKILL.md");
-    const readmePath = allFiles.has("README.md") ? join(skillCacheDir, "README.md") : undefined;
-
-    return {
-      manifest,
-      skillMdPath,
-      readmePath,
-      cachedAt: new Date(),
-      source: sourceStr,
-    };
   });
 
 /**

@@ -107,6 +107,9 @@ const createTestLayers = (config: {
       Effect.sync(() => {
         enabled.delete(skill);
       }),
+    getGlobalEnabled: () => Effect.succeed([] as string[]),
+    addGlobalEnabled: () => Effect.void,
+    removeGlobalEnabled: () => Effect.void,
     recordDisable: () => Effect.void,
     updateLastSync: () => Effect.void,
   });
@@ -117,6 +120,7 @@ const createTestLayers = (config: {
       detect: () => Effect.succeed(true),
       init: () => Effect.void,
       getSkillsDir: (path: string) => `${path}/.claude/skills`,
+      getGlobalSkillsDir: () => `${process.env.HOME}/.claude/skills`,
       getAgentMdPath: (path: string) => `${path}/CLAUDE.md`,
       enableSkill: () =>
         Effect.succeed({

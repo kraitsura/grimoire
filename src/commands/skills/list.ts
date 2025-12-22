@@ -8,12 +8,15 @@ import { Effect } from "effect";
 import type { ParsedArgs } from "../../cli/parser";
 import { SkillCacheService, SkillStateService } from "../../services";
 
+import { AgentAdapterService } from "../../services";
+
 /**
  * ANSI color codes for terminal output
  */
 const colors = {
   reset: "\x1b[0m",
   green: "\x1b[32m",
+  yellow: "\x1b[33m",
   gray: "\x1b[90m",
   bold: "\x1b[1m",
 };
@@ -40,15 +43,23 @@ export const skillsList = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const skillCacheService = yield* SkillCacheService;
     const skillStateService = yield* SkillStateService;
+    const agentAdapterService = yield* AgentAdapterService;
 
     const projectPath = process.cwd();
     const jsonFlag = args.flags.json;
     const quietFlag = args.flags.quiet || args.flags.q;
     const enabledOnlyFlag = args.flags.enabled;
     const availableOnlyFlag = args.flags.available;
+    const globalFlag = args.flags.global || args.flags.g;
 
-    // Get enabled skills for the current project
-    const enabled = yield* skillStateService.getEnabled(projectPath);
+    // Get project state to determine agent type
+    const projectState = yield* skillStateService.getProjectState(projectPath);
+    const agentType = projectState?.agent ?? "generic";
+
+    // Get enabled skills based on scope
+    const enabled = globalFlag
+      ? yield* skillStateService.getGlobalEnabled(agentType)
+      : yield* skillStateService.getEnabled(projectPath);
     const enabledSet = new Set(enabled);
 
     // Get all cached skills
@@ -61,6 +72,8 @@ export const skillsList = (args: ParsedArgs) =>
     // JSON output
     if (jsonFlag) {
       const output = {
+        scope: globalFlag ? "global" : "project",
+        agent: agentType,
         enabled: enabledSkills.map((skill) => ({
           name: skill.manifest.name,
           description: skill.manifest.description,
@@ -96,19 +109,21 @@ export const skillsList = (args: ParsedArgs) =>
     const showAvailable = !enabledOnlyFlag;
 
     // Show enabled skills
+    const scopeLabel = globalFlag ? "Global" : "Enabled";
+    const scopeColor = globalFlag ? colors.yellow : colors.green;
     if (showEnabled && enabledSkills.length > 0) {
-      console.log(`${colors.bold}Enabled (${enabledSkills.length}):${colors.reset}`);
+      console.log(`${colors.bold}${scopeLabel} (${enabledSkills.length}):${colors.reset}`);
       const maxWidth = getLongestNameLength(enabledSkills.map((s) => s.manifest.name));
       for (const skill of enabledSkills.sort((a, b) =>
         a.manifest.name.localeCompare(b.manifest.name)
       )) {
         const line = formatSkillLine(skill.manifest.name, skill.manifest.description, maxWidth);
-        console.log(`${colors.green}*${colors.reset}${line}`);
+        console.log(`${scopeColor}*${colors.reset}${line}`);
       }
       console.log();
     } else if (showEnabled && enabledSkills.length === 0) {
-      console.log(`${colors.bold}Enabled (0):${colors.reset}`);
-      console.log(`${colors.gray}  No skills enabled${colors.reset}`);
+      console.log(`${colors.bold}${scopeLabel} (0):${colors.reset}`);
+      console.log(`${colors.gray}  No skills ${globalFlag ? "installed globally" : "enabled"}${colors.reset}`);
       console.log();
     }
 

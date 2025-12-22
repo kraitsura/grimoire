@@ -7,13 +7,15 @@
  */
 
 import { Effect, Context, Layer, Data } from "effect";
-import type { AgentType } from "../../models/skill";
+import type { AgentType, InstallScope } from "../../models/skill";
+import { GLOBAL_SKILL_LOCATIONS } from "../../models/skill";
 import type { CachedSkill } from "./skill-cache-service";
 import { InjectionError, PluginInstallError } from "../../models/skill-errors";
 import type { McpConfig } from "../../models/skill";
 import { existsSync } from "node:fs";
 import { readFile, writeFile, mkdir, copyFile, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
+import { homedir } from "node:os";
 import {
   hasManagedSection,
   addManagedSection,
@@ -22,6 +24,38 @@ import {
   hasSkillInjection,
 } from "./injection-utils";
 import type { SkillManifest } from "../../models/skill";
+
+// ============================================================================
+// Path Utilities
+// ============================================================================
+
+/**
+ * Expand ~ in paths to home directory
+ */
+export function expandPath(path: string): string {
+  if (path.startsWith("~/")) {
+    return join(homedir(), path.slice(2));
+  }
+  return path;
+}
+
+/**
+ * Get the global skills directory for an agent type
+ */
+export function getGlobalSkillsDir(agent: AgentType): string {
+  const location = GLOBAL_SKILL_LOCATIONS[agent] || GLOBAL_SKILL_LOCATIONS.generic;
+  return expandPath(location);
+}
+
+/**
+ * Options for enabling a skill
+ */
+export interface EnableSkillOptions {
+  /** Install scope: global (user-wide) or project (project-specific) */
+  scope?: InstallScope;
+  /** Create symlink from global to project instead of copying */
+  link?: boolean;
+}
 
 // ============================================================================
 // YAML Frontmatter Utilities for Claude Code Skills
@@ -177,6 +211,7 @@ export interface AgentEnableResult {
   mcpConfigured?: boolean;
   injected: boolean;
   skillFileCopied: boolean;
+  linked?: boolean; // Skill was symlinked from global
 }
 
 /**
@@ -212,9 +247,14 @@ export interface AgentAdapter {
   readonly init: (projectPath: string) => Effect.Effect<void>;
 
   /**
-   * Get the skills directory path for this agent
+   * Get the project-local skills directory path for this agent
    */
   readonly getSkillsDir: (projectPath: string) => string;
+
+  /**
+   * Get the global (user-wide) skills directory path for this agent
+   */
+  readonly getGlobalSkillsDir: () => string;
 
   /**
    * Get the agent markdown file path (CLAUDE.md, AGENTS.md, etc.)
@@ -223,10 +263,14 @@ export interface AgentAdapter {
 
   /**
    * Enable a skill for this agent
+   * @param projectPath - Project directory path
+   * @param skill - Skill to enable
+   * @param options - Optional install scope (global/project) and link options
    */
   readonly enableSkill: (
     projectPath: string,
-    skill: CachedSkill
+    skill: CachedSkill,
+    options?: EnableSkillOptions
   ) => Effect.Effect<AgentEnableResult, AgentAdapterError>;
 
   /**
@@ -356,41 +400,77 @@ const ClaudeCodeAdapter: AgentAdapter = {
     return join(projectPath, ".claude", "skills");
   },
 
+  getGlobalSkillsDir: () => {
+    return getGlobalSkillsDir("claude_code");
+  },
+
   getAgentMdPath: (projectPath: string) => {
     return join(projectPath, "CLAUDE.md");
   },
 
-  enableSkill: (projectPath: string, skill: CachedSkill) =>
+  enableSkill: (projectPath: string, skill: CachedSkill, options?: EnableSkillOptions) =>
     Effect.gen(function* () {
       const result: AgentEnableResult = {
         injected: false,
         skillFileCopied: false,
       };
 
+      const scope = options?.scope ?? "project";
+      const shouldLink = options?.link ?? false;
+
       // Always copy skill directory when SKILL.md exists (agentskills.io standard)
-      // Claude Code expects skills as directories: .claude/skills/<name>/
+      // Claude Code expects skills as directories: .claude/skills/<name>/ or ~/.claude/skills/<name>/
       if (skill.skillMdPath) {
-        const skillsDir = ClaudeCodeAdapter.getSkillsDir(projectPath);
+        // Determine target directory based on scope
+        const skillsDir = scope === "global"
+          ? ClaudeCodeAdapter.getGlobalSkillsDir()
+          : ClaudeCodeAdapter.getSkillsDir(projectPath);
         const skillDir = join(skillsDir, skill.manifest.name);
 
         // Get the source cache directory (parent of SKILL.md)
         const sourceCacheDir = dirname(skill.skillMdPath);
 
-        // Copy entire skill directory from cache to project
-        // Claude Code needs frontmatter for skill discovery
-        yield* copySkillDirectoryToProject(
-          sourceCacheDir,
-          skillDir,
-          { manifest: skill.manifest, addFrontmatter: true },
-          "claude_code"
-        );
-
-        result.skillFileCopied = true;
+        if (shouldLink && scope === "project") {
+          // Create symlink from global to project
+          const globalSkillDir = join(ClaudeCodeAdapter.getGlobalSkillsDir(), skill.manifest.name);
+          if (existsSync(globalSkillDir)) {
+            yield* Effect.tryPromise({
+              try: async () => {
+                const { symlink } = await import("node:fs/promises");
+                await mkdir(dirname(skillDir), { recursive: true });
+                await symlink(globalSkillDir, skillDir, "dir");
+              },
+              catch: (error) =>
+                new AgentAdapterError({
+                  agent: "claude_code",
+                  operation: "enableSkill",
+                  message: `Failed to create symlink: ${error instanceof Error ? error.message : String(error)}`,
+                  cause: error,
+                }),
+            });
+            result.skillFileCopied = true;
+            result.linked = true;
+          } else {
+            return yield* Effect.fail(
+              new AgentAdapterError({
+                agent: "claude_code",
+                operation: "enableSkill",
+                message: `Cannot link: skill not installed globally. Run 'grimoire skills enable ${skill.manifest.name} --global' first.`,
+              })
+            );
+          }
+        } else {
+          // Copy entire skill directory from cache to target location
+          // Claude Code needs frontmatter for skill discovery
+          yield* copySkillDirectoryToProject(
+            sourceCacheDir,
+            skillDir,
+            { manifest: skill.manifest, addFrontmatter: true },
+            "claude_code"
+          );
+          result.skillFileCopied = true;
+        }
       }
-
-      // Skills no longer have agent-specific config (plugins, MCP, injection)
-      // Real plugins like beads use plugin.json for MCP/hooks and SKILL.md for instructions
-      // Skills just copy SKILL.md now
 
       return result;
     }),
@@ -701,41 +781,77 @@ const OpenCodeAdapter: AgentAdapter = {
     return join(projectPath, ".opencode", "skills");
   },
 
+  getGlobalSkillsDir: () => {
+    return getGlobalSkillsDir("opencode");
+  },
+
   getAgentMdPath: (projectPath: string) => {
     return join(projectPath, "AGENTS.md");
   },
 
-  enableSkill: (projectPath: string, skill: CachedSkill) =>
+  enableSkill: (projectPath: string, skill: CachedSkill, options?: EnableSkillOptions) =>
     Effect.gen(function* () {
       const result: AgentEnableResult = {
         injected: false,
         skillFileCopied: false,
       };
 
+      const scope = options?.scope ?? "project";
+      const shouldLink = options?.link ?? false;
+
       // Always copy skill directory when SKILL.md exists (agentskills.io standard)
-      // OpenCode stores skills as directories: .opencode/skills/<name>/
+      // OpenCode stores skills as directories: .opencode/skills/<name>/ or ~/.config/opencode/skills/<name>/
       if (skill.skillMdPath) {
-        const skillsDir = OpenCodeAdapter.getSkillsDir(projectPath);
+        // Determine target directory based on scope
+        const skillsDir = scope === "global"
+          ? OpenCodeAdapter.getGlobalSkillsDir()
+          : OpenCodeAdapter.getSkillsDir(projectPath);
         const skillDir = join(skillsDir, skill.manifest.name);
 
         // Get the source cache directory (parent of SKILL.md)
         const sourceCacheDir = dirname(skill.skillMdPath);
 
-        // Copy entire skill directory from cache to project
-        // OpenCode doesn't need frontmatter (no Skill tool discovery mechanism)
-        yield* copySkillDirectoryToProject(
-          sourceCacheDir,
-          skillDir,
-          { manifest: skill.manifest, addFrontmatter: false },
-          "opencode"
-        );
-
-        result.skillFileCopied = true;
+        if (shouldLink && scope === "project") {
+          // Create symlink from global to project
+          const globalSkillDir = join(OpenCodeAdapter.getGlobalSkillsDir(), skill.manifest.name);
+          if (existsSync(globalSkillDir)) {
+            yield* Effect.tryPromise({
+              try: async () => {
+                const { symlink } = await import("node:fs/promises");
+                await mkdir(dirname(skillDir), { recursive: true });
+                await symlink(globalSkillDir, skillDir, "dir");
+              },
+              catch: (error) =>
+                new AgentAdapterError({
+                  agent: "opencode",
+                  operation: "enableSkill",
+                  message: `Failed to create symlink: ${error instanceof Error ? error.message : String(error)}`,
+                  cause: error,
+                }),
+            });
+            result.skillFileCopied = true;
+            result.linked = true;
+          } else {
+            return yield* Effect.fail(
+              new AgentAdapterError({
+                agent: "opencode",
+                operation: "enableSkill",
+                message: `Cannot link: skill not installed globally. Run 'grimoire skills enable ${skill.manifest.name} --global' first.`,
+              })
+            );
+          }
+        } else {
+          // Copy entire skill directory from cache to target location
+          // OpenCode doesn't need frontmatter (no Skill tool discovery mechanism)
+          yield* copySkillDirectoryToProject(
+            sourceCacheDir,
+            skillDir,
+            { manifest: skill.manifest, addFrontmatter: false },
+            "opencode"
+          );
+          result.skillFileCopied = true;
+        }
       }
-
-      // Skills no longer have agent-specific config (MCP, injection)
-      // Real plugins use their own configuration mechanisms
-      // Skills just copy SKILL.md now
 
       return result;
     }),
@@ -984,49 +1100,77 @@ const GenericAdapter: AgentAdapter = {
     return join(projectPath, ".skills");
   },
 
+  getGlobalSkillsDir: () => {
+    return getGlobalSkillsDir("generic");
+  },
+
   getAgentMdPath: (projectPath: string) => {
     return join(projectPath, "AGENTS.md");
   },
 
-  enableSkill: (projectPath: string, skill: CachedSkill) =>
+  enableSkill: (projectPath: string, skill: CachedSkill, options?: EnableSkillOptions) =>
     Effect.gen(function* () {
       const result: AgentEnableResult = {
         injected: false,
         skillFileCopied: false,
       };
 
-      // Copy skill file if available
+      const scope = options?.scope ?? "project";
+      const shouldLink = options?.link ?? false;
+
+      // Copy full skill directory (SKILL.md + scripts/ + references/ + assets/)
+      // This follows the agentskills.io standard for skill bundles
       if (skill.skillMdPath) {
-        const skillsDir = GenericAdapter.getSkillsDir(projectPath);
-        const destPath = join(skillsDir, `${skill.manifest.name}.md`);
+        // Determine target directory based on scope
+        const skillsDir = scope === "global"
+          ? GenericAdapter.getGlobalSkillsDir()
+          : GenericAdapter.getSkillsDir(projectPath);
+        const skillDir = join(skillsDir, skill.manifest.name);
 
-        yield* Effect.tryPromise({
-          try: () => mkdir(dirname(destPath), { recursive: true }),
-          catch: (error) =>
-            new AgentAdapterError({
-              agent: "generic",
-              operation: "enableSkill",
-              message: `Failed to create skills directory`,
-              cause: error,
-            }),
-        });
+        // Get the source cache directory (parent of SKILL.md)
+        const sourceCacheDir = dirname(skill.skillMdPath);
 
-        yield* Effect.tryPromise({
-          try: () => copyFile(skill.skillMdPath!, destPath),
-          catch: (error) =>
-            new AgentAdapterError({
-              agent: "generic",
-              operation: "enableSkill",
-              message: `Failed to copy skill file`,
-              cause: error,
-            }),
-        });
-
-        result.skillFileCopied = true;
+        if (shouldLink && scope === "project") {
+          // Create symlink from global to project
+          const globalSkillDir = join(GenericAdapter.getGlobalSkillsDir(), skill.manifest.name);
+          if (existsSync(globalSkillDir)) {
+            yield* Effect.tryPromise({
+              try: async () => {
+                const { symlink } = await import("node:fs/promises");
+                await mkdir(dirname(skillDir), { recursive: true });
+                await symlink(globalSkillDir, skillDir, "dir");
+              },
+              catch: (error) =>
+                new AgentAdapterError({
+                  agent: "generic",
+                  operation: "enableSkill",
+                  message: `Failed to create symlink: ${error instanceof Error ? error.message : String(error)}`,
+                  cause: error,
+                }),
+            });
+            result.skillFileCopied = true;
+            result.linked = true;
+          } else {
+            return yield* Effect.fail(
+              new AgentAdapterError({
+                agent: "generic",
+                operation: "enableSkill",
+                message: `Cannot link: skill not installed globally. Run 'grimoire skills enable ${skill.manifest.name} --global' first.`,
+              })
+            );
+          }
+        } else {
+          // Copy entire skill directory from cache to target location
+          // Generic adapter doesn't need frontmatter (no Skill tool discovery mechanism)
+          yield* copySkillDirectoryToProject(
+            sourceCacheDir,
+            skillDir,
+            { manifest: skill.manifest, addFrontmatter: false },
+            "generic"
+          );
+          result.skillFileCopied = true;
+        }
       }
-
-      // Skills no longer have prompt field in manifest
-      // Content is in SKILL.md which was already copied above
 
       return result;
     }),
@@ -1034,20 +1178,38 @@ const GenericAdapter: AgentAdapter = {
   disableSkill: (projectPath: string, skillName: string) =>
     Effect.gen(function* () {
       const skillsDir = GenericAdapter.getSkillsDir(projectPath);
-      const skillFilePath = join(skillsDir, `${skillName}.md`);
+      const skillDir = join(skillsDir, skillName);
+      const legacyFilePath = join(skillsDir, `${skillName}.md`);
 
-      // Remove skill file if it exists
-      if (existsSync(skillFilePath)) {
+      // Remove skill directory if it exists (new structure: .skills/<name>/)
+      if (existsSync(skillDir)) {
         yield* Effect.tryPromise({
           try: async () => {
-            const { unlink } = await import("node:fs/promises");
-            await unlink(skillFilePath);
+            const { rm } = await import("node:fs/promises");
+            await rm(skillDir, { recursive: true, force: true });
           },
           catch: (error) =>
             new AgentAdapterError({
               agent: "generic",
               operation: "disableSkill",
-              message: `Failed to remove skill file: ${skillFilePath}`,
+              message: `Failed to remove skill directory: ${skillDir}`,
+              cause: error,
+            }),
+        });
+      }
+
+      // Also remove legacy file structure if it exists (old: .skills/<name>.md)
+      if (existsSync(legacyFilePath)) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            const { unlink } = await import("node:fs/promises");
+            await unlink(legacyFilePath);
+          },
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "generic",
+              operation: "disableSkill",
+              message: `Failed to remove legacy skill file: ${legacyFilePath}`,
               cause: error,
             }),
         });
@@ -1206,16 +1368,33 @@ Instructions for AI coding assistants.
     return join(projectPath, ".codex", "skills");
   },
 
+  getGlobalSkillsDir: () => {
+    return getGlobalSkillsDir("codex");
+  },
+
   getAgentMdPath: (projectPath: string) => {
     return join(projectPath, "AGENTS.md");
   },
 
-  enableSkill: (projectPath: string, skill: CachedSkill) =>
+  enableSkill: (projectPath: string, skill: CachedSkill, options?: EnableSkillOptions) =>
     Effect.gen(function* () {
       const result: AgentEnableResult = {
         injected: false,
         skillFileCopied: false,
       };
+
+      // Codex uses injection-based skills (no file copying)
+      // Global scope not supported for injection-based adapters
+      const scope = options?.scope ?? "project";
+      if (scope === "global") {
+        return yield* Effect.fail(
+          new AgentAdapterError({
+            agent: "codex",
+            operation: "enableSkill",
+            message: "Codex uses injection-based skills. Global scope is not supported.",
+          })
+        );
+      }
 
       // For Codex, we inject skill content into AGENTS.md rather than copying files
       // Read SKILL.md content and inject it
@@ -1379,21 +1558,31 @@ const CursorAdapter: AgentAdapter = {
     return join(projectPath, ".cursor", "rules");
   },
 
+  getGlobalSkillsDir: () => {
+    return getGlobalSkillsDir("cursor");
+  },
+
   getAgentMdPath: (projectPath: string) => {
     // Cursor doesn't use a single agent MD file
     // Return the rules directory instead
     return join(projectPath, ".cursor", "rules");
   },
 
-  enableSkill: (projectPath: string, skill: CachedSkill) =>
+  enableSkill: (projectPath: string, skill: CachedSkill, options?: EnableSkillOptions) =>
     Effect.gen(function* () {
       const result: AgentEnableResult = {
         injected: false,
         skillFileCopied: false,
       };
 
+      const scope = options?.scope ?? "project";
+      const shouldLink = options?.link ?? false;
+
       if (skill.skillMdPath) {
-        const rulesDir = CursorAdapter.getSkillsDir(projectPath);
+        // Determine target directory based on scope
+        const rulesDir = scope === "global"
+          ? CursorAdapter.getGlobalSkillsDir()
+          : CursorAdapter.getSkillsDir(projectPath);
         const ruleFile = join(rulesDir, `${skill.manifest.name}.mdc`);
 
         // Ensure rules directory exists
@@ -1408,32 +1597,61 @@ const CursorAdapter: AgentAdapter = {
             }),
         });
 
-        // Read SKILL.md and convert to MDC format
-        const skillContent = yield* Effect.tryPromise({
-          try: () => readFile(skill.skillMdPath!, "utf-8"),
-          catch: (error) =>
-            new AgentAdapterError({
-              agent: "cursor",
-              operation: "enableSkill",
-              message: `Failed to read SKILL.md`,
-              cause: error,
-            }),
-        });
+        if (shouldLink && scope === "project") {
+          // Create symlink from global to project
+          const globalRuleFile = join(CursorAdapter.getGlobalSkillsDir(), `${skill.manifest.name}.mdc`);
+          if (existsSync(globalRuleFile)) {
+            yield* Effect.tryPromise({
+              try: async () => {
+                const { symlink } = await import("node:fs/promises");
+                await symlink(globalRuleFile, ruleFile);
+              },
+              catch: (error) =>
+                new AgentAdapterError({
+                  agent: "cursor",
+                  operation: "enableSkill",
+                  message: `Failed to create symlink: ${error instanceof Error ? error.message : String(error)}`,
+                  cause: error,
+                }),
+            });
+            result.skillFileCopied = true;
+            result.linked = true;
+          } else {
+            return yield* Effect.fail(
+              new AgentAdapterError({
+                agent: "cursor",
+                operation: "enableSkill",
+                message: `Cannot link: skill not installed globally. Run 'grimoire skills enable ${skill.manifest.name} --global' first.`,
+              })
+            );
+          }
+        } else {
+          // Read SKILL.md and convert to MDC format
+          const skillContent = yield* Effect.tryPromise({
+            try: () => readFile(skill.skillMdPath!, "utf-8"),
+            catch: (error) =>
+              new AgentAdapterError({
+                agent: "cursor",
+                operation: "enableSkill",
+                message: `Failed to read SKILL.md`,
+                cause: error,
+              }),
+          });
 
-        const mdcContent = convertToMdc(skill, skillContent);
+          const mdcContent = convertToMdc(skill, skillContent);
 
-        yield* Effect.tryPromise({
-          try: () => writeFile(ruleFile, mdcContent, "utf-8"),
-          catch: (error) =>
-            new AgentAdapterError({
-              agent: "cursor",
-              operation: "enableSkill",
-              message: `Failed to write rule file`,
-              cause: error,
-            }),
-        });
-
-        result.skillFileCopied = true;
+          yield* Effect.tryPromise({
+            try: () => writeFile(ruleFile, mdcContent, "utf-8"),
+            catch: (error) =>
+              new AgentAdapterError({
+                agent: "cursor",
+                operation: "enableSkill",
+                message: `Failed to write rule file`,
+                cause: error,
+              }),
+          });
+          result.skillFileCopied = true;
+        }
       }
 
       return result;
@@ -1554,16 +1772,33 @@ Coding guidelines and conventions for this project.
     return join(projectPath, ".aider", "skills");
   },
 
+  getGlobalSkillsDir: () => {
+    return getGlobalSkillsDir("aider");
+  },
+
   getAgentMdPath: (projectPath: string) => {
     return join(projectPath, "CONVENTIONS.md");
   },
 
-  enableSkill: (projectPath: string, skill: CachedSkill) =>
+  enableSkill: (projectPath: string, skill: CachedSkill, options?: EnableSkillOptions) =>
     Effect.gen(function* () {
       const result: AgentEnableResult = {
         injected: false,
         skillFileCopied: false,
       };
+
+      // Aider uses injection-based skills (no file copying)
+      // Global scope not supported for injection-based adapters
+      const scope = options?.scope ?? "project";
+      if (scope === "global") {
+        return yield* Effect.fail(
+          new AgentAdapterError({
+            agent: "aider",
+            operation: "enableSkill",
+            message: "Aider uses injection-based skills. Global scope is not supported.",
+          })
+        );
+      }
 
       // Inject skill content into CONVENTIONS.md
       if (skill.skillMdPath) {
@@ -1742,17 +1977,34 @@ Instructions for Amp AI coding assistant.
     return join(projectPath, ".amp", "skills");
   },
 
+  getGlobalSkillsDir: () => {
+    return getGlobalSkillsDir("amp");
+  },
+
   getAgentMdPath: (projectPath: string) => {
     // Note: AGENT.md (singular), not AGENTS.md
     return join(projectPath, "AGENT.md");
   },
 
-  enableSkill: (projectPath: string, skill: CachedSkill) =>
+  enableSkill: (projectPath: string, skill: CachedSkill, options?: EnableSkillOptions) =>
     Effect.gen(function* () {
       const result: AgentEnableResult = {
         injected: false,
         skillFileCopied: false,
       };
+
+      // Amp uses injection-based skills (no file copying)
+      // Global scope not supported for injection-based adapters
+      const scope = options?.scope ?? "project";
+      if (scope === "global") {
+        return yield* Effect.fail(
+          new AgentAdapterError({
+            agent: "amp",
+            operation: "enableSkill",
+            message: "Amp uses injection-based skills. Global scope is not supported.",
+          })
+        );
+      }
 
       // Inject skill content into AGENT.md
       if (skill.skillMdPath) {

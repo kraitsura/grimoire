@@ -170,6 +170,27 @@ export const AgentTypeSchema = Schema.Literal(
 );
 
 /**
+ * Install scope for skills
+ * - global: Installed to user-wide location (e.g., ~/.claude/skills/)
+ * - project: Installed to project-specific location (e.g., .claude/skills/)
+ */
+export const InstallScopeSchema = Schema.Literal("global", "project");
+
+/**
+ * Global skill locations per agent type
+ * These are the default user-wide skill directories
+ */
+export const GLOBAL_SKILL_LOCATIONS: Record<string, string> = {
+  claude_code: "~/.claude/skills",
+  opencode: "~/.config/opencode/skills",
+  cursor: "~/.cursor/rules",
+  codex: "~/.codex/skills",
+  aider: "~/.config/aider/conventions",
+  amp: "~/.config/amp/skills",
+  generic: "~/.grimoire/skills", // Uses grimoire cache for generic agent
+};
+
+/**
  * Per-project skill state
  *
  * Tracks which skills are enabled/disabled and when operations occurred.
@@ -305,6 +326,11 @@ export type SkillManifest = Schema.Schema.Type<typeof SkillManifestSchema>;
  * Agent type
  */
 export type AgentType = Schema.Schema.Type<typeof AgentTypeSchema>;
+
+/**
+ * Install scope type
+ */
+export type InstallScope = Schema.Schema.Type<typeof InstallScopeSchema>;
 
 /**
  * Project state type

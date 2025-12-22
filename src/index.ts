@@ -54,6 +54,7 @@ const loadGrimoireEnv = () => {
 // Load .env file before anything else
 loadGrimoireEnv();
 import {
+  addCommand,
   promptCommand,
   aliasCommand,
   archiveCommand,
@@ -93,6 +94,7 @@ import {
  * Reserved command names that cannot be used as prompt names
  */
 const RESERVED_COMMANDS = new Set([
+  "add",
   "list",
   "show",
   "rm",
@@ -164,6 +166,7 @@ GLOBAL OPTIONS:
   -v, --version           Show version information
 
 COMMANDS:
+  add <source>        Add skills/plugins from GitHub or marketplace
   list                List all prompts
   show <name>         Show prompt details
   rm <name>           Delete a prompt
@@ -225,6 +228,9 @@ Run 'grimoire' with no arguments to launch interactive mode.
     }
 
     switch (command) {
+      case "add":
+        yield* Effect.promise(() => addCommand(parsedArgs));
+        break;
       case "list":
         yield* listCommand(parsedArgs);
         break;

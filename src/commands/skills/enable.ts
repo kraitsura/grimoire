@@ -68,9 +68,10 @@ const formatErrorMessage = (skillName: string, error: SkillError): string => {
 /**
  * Format success message for an enabled skill
  */
-const formatSuccessMessage = (result: EnableResult): string => {
+const formatSuccessMessage = (result: EnableResult, scope: "global" | "project"): string => {
   const lines: string[] = [];
-  lines.push(`${colors.green}+${colors.reset} Enabled ${colors.bold}${result.skillName}${colors.reset}`);
+  const scopeLabel = scope === "global" ? `${colors.yellow}(global)${colors.reset} ` : "";
+  lines.push(`${colors.green}+${colors.reset} Enabled ${scopeLabel}${colors.bold}${result.skillName}${colors.reset}`);
 
   const details: string[] = [];
   if (result.cliInstalled && result.cliInstalled.length > 0) {
@@ -87,6 +88,9 @@ const formatSuccessMessage = (result: EnableResult): string => {
   }
   if (result.initRan) {
     details.push("Ran initialization commands");
+  }
+  if (result.linked) {
+    details.push("Linked from global installation");
   }
 
   for (const detail of details) {
@@ -113,6 +117,8 @@ export const skillsEnable = (args: ParsedArgs) =>
     const yesFlag = args.flags.yes || args.flags.y;
     const noDepsFlag = args.flags["no-deps"];
     const noInitFlag = args.flags["no-init"];
+    const globalFlag = args.flags.global || args.flags.g;
+    const linkFlag = args.flags.link || args.flags.l;
 
     // Validate arguments
     if (skillNames.length === 0) {
@@ -126,6 +132,8 @@ export const skillsEnable = (args: ParsedArgs) =>
       console.log();
       console.log("Flags:");
       console.log("  -y, --yes        Auto-confirm all prompts");
+      console.log("  -g, --global     Install to global/user location (e.g., ~/.claude/skills/)");
+      console.log("  -l, --link       Create symlink from global to project (use with --global first)");
       console.log("  --no-deps        Skip CLI dependency installation");
       console.log("  --no-init        Skip init commands");
       process.exit(1);
@@ -166,13 +174,15 @@ export const skillsEnable = (args: ParsedArgs) =>
           yes: !!yesFlag,
           noDeps: !!noDepsFlag,
           noInit: !!noInitFlag,
+          scope: globalFlag ? "global" : "project",
+          link: !!linkFlag,
         })
         .pipe(Effect.either);
 
       if (result._tag === "Right") {
         // Success
         results.push(result.right);
-        console.log(formatSuccessMessage(result.right));
+        console.log(formatSuccessMessage(result.right, globalFlag ? "global" : "project"));
       } else {
         // Error
         console.log(formatErrorMessage(skillName, result.left));

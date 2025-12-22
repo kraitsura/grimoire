@@ -2,6 +2,7 @@
  * CLI Command Handlers
  */
 
+export { addCommand } from "./add";
 export { promptCommand } from "./prompt";
 export { aliasCommand } from "./alias";
 export { archiveCommand } from "./archive";

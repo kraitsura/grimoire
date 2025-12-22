@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Data } from "effect";
 import { join } from "path";
 import { homedir } from "os";
-import type { AgentType, ProjectState, SkillsState } from "../../models/skill";
+import type { AgentType, ProjectState, SkillsState, InstallScope } from "../../models/skill";
 
 // Mutable internal types for state manipulation
 type MutableProjectState = {
@@ -12,8 +12,17 @@ type MutableProjectState = {
   last_sync?: string;
 };
 
+/**
+ * Global skills state per agent type
+ * Tracks skills installed at the user level (not project-specific)
+ */
+type MutableGlobalState = Record<AgentType, string[]>;
+
 type MutableSkillsState = {
   version: number;
+  /** Global (user-wide) skill installations per agent */
+  global?: MutableGlobalState;
+  /** Per-project skill installations */
   projects: Record<string, MutableProjectState>;
 };
 
@@ -135,7 +144,7 @@ interface SkillStateServiceImpl {
     projectPath: string
   ) => Effect.Effect<boolean, StateFileReadError>;
 
-  // Enabled skills
+  // Project-scoped enabled skills
   readonly getEnabled: (
     projectPath: string
   ) => Effect.Effect<string[], StateFileReadError>;
@@ -149,6 +158,19 @@ interface SkillStateServiceImpl {
   ) => Effect.Effect<void, StateFileReadError | StateFileWriteError>;
   readonly removeEnabled: (
     projectPath: string,
+    skill: string
+  ) => Effect.Effect<void, StateFileReadError | StateFileWriteError>;
+
+  // Global-scoped enabled skills (user-wide per agent type)
+  readonly getGlobalEnabled: (
+    agent: AgentType
+  ) => Effect.Effect<string[], StateFileReadError>;
+  readonly addGlobalEnabled: (
+    agent: AgentType,
+    skill: string
+  ) => Effect.Effect<void, StateFileReadError | StateFileWriteError>;
+  readonly removeGlobalEnabled: (
+    agent: AgentType,
     skill: string
   ) => Effect.Effect<void, StateFileReadError | StateFileWriteError>;
 
@@ -256,6 +278,51 @@ const makeSkillStateService = (): SkillStateServiceImpl => ({
       const newEnabled = project.enabled.filter((s) => s !== skill);
       if (newEnabled.length !== project.enabled.length) {
         project.enabled = newEnabled;
+        yield* writeStateFile(state);
+      }
+    }),
+
+  // Global-scoped skill methods
+  getGlobalEnabled: (agent: AgentType) =>
+    Effect.gen(function* () {
+      const state = yield* readStateFile();
+      const globalState = state.global || ({} as MutableGlobalState);
+      const enabled = globalState[agent] || [];
+      return [...enabled];
+    }),
+
+  addGlobalEnabled: (agent: AgentType, skill: string) =>
+    Effect.gen(function* () {
+      const state = yield* readStateFile();
+
+      // Initialize global state if not present
+      if (!state.global) {
+        state.global = {} as MutableGlobalState;
+      }
+      if (!state.global[agent]) {
+        state.global[agent] = [];
+      }
+
+      // Add skill if not already enabled
+      if (!state.global[agent].includes(skill)) {
+        state.global[agent] = [...state.global[agent], skill];
+        yield* writeStateFile(state);
+      }
+    }),
+
+  removeGlobalEnabled: (agent: AgentType, skill: string) =>
+    Effect.gen(function* () {
+      const state = yield* readStateFile();
+
+      // Check if global state exists
+      if (!state.global || !state.global[agent]) {
+        return;
+      }
+
+      // Remove skill if present
+      const newEnabled = state.global[agent].filter((s) => s !== skill);
+      if (newEnabled.length !== state.global[agent].length) {
+        state.global[agent] = newEnabled;
         yield* writeStateFile(state);
       }
     }),

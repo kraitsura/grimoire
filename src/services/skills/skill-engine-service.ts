@@ -54,6 +54,8 @@ export interface EnableOptions {
   yes?: boolean; // Auto-confirm
   noDeps?: boolean; // Skip CLI deps
   noInit?: boolean; // Skip init commands
+  scope?: "global" | "project"; // Install scope (default: project)
+  link?: boolean; // Create symlink from global to project
 }
 
 /**
@@ -74,6 +76,7 @@ export interface EnableResult {
   mcpConfigured?: boolean;
   injected?: boolean;
   initRan?: boolean;
+  linked?: boolean; // Skill was symlinked from global
 }
 
 /**
@@ -255,13 +258,8 @@ const makeSkillEngineService = (
           );
         }
 
-        // 3. Check skill not already enabled
-        const enabled = yield* state.getEnabled(projectPath);
-        if (enabled.includes(skillName)) {
-          return yield* Effect.fail(
-            new SkillAlreadyEnabledError({ name: skillName })
-          );
-        }
+        const scope = options?.scope ?? "project";
+        const isGlobal = scope === "global";
 
         // 4. Skills no longer have CLI dependencies
         // Real plugins manage their own dependencies
@@ -274,11 +272,32 @@ const makeSkillEngineService = (
           );
         }
 
+        // 3. Check skill not already enabled (check appropriate scope)
+        if (isGlobal) {
+          // For global installs, check global enabled list
+          const globalEnabled = yield* state.getGlobalEnabled(projectState.agent);
+          if (globalEnabled.includes(skillName)) {
+            return yield* Effect.fail(
+              new SkillAlreadyEnabledError({ name: skillName })
+            );
+          }
+        } else {
+          const enabled = yield* state.getEnabled(projectPath);
+          if (enabled.includes(skillName)) {
+            return yield* Effect.fail(
+              new SkillAlreadyEnabledError({ name: skillName })
+            );
+          }
+        }
+
         const adapter = adapters.getAdapter(projectState.agent);
 
         // 6. Delegate to AgentAdapter.enableSkill() for agent-specific setup
         // This handles: plugin installation, MCP configuration, skill file copying, and injection
-        const adapterResult = yield* adapter.enableSkill(projectPath, skill);
+        const adapterResult = yield* adapter.enableSkill(projectPath, skill, {
+          scope,
+          link: options?.link,
+        });
 
         if (adapterResult.pluginInstalled) {
           result.pluginInstalled = true;
@@ -293,12 +312,19 @@ const makeSkillEngineService = (
           rollbackState.injectedContent = true;
           result.injected = true;
         }
+        if (adapterResult.linked) {
+          result.linked = true;
+        }
 
         // 7. Skills no longer have init commands
         // Real plugins manage their own initialization
 
-        // 8. Update state
-        yield* state.addEnabled(projectPath, skillName);
+        // 8. Update state (in appropriate scope)
+        if (isGlobal) {
+          yield* state.addGlobalEnabled(projectState.agent, skillName);
+        } else {
+          yield* state.addEnabled(projectPath, skillName);
+        }
         rollbackState.updatedState = true;
 
         return result;

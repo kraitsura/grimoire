@@ -65,3 +65,18 @@ export {
   ProjectConfigWriteError,
 } from "./project-config-service";
 export type { ProjectConfig } from "./project-config-service";
+
+// Marketplace Registry Service
+export {
+  MarketplaceRegistryService,
+  MarketplaceRegistryServiceLive,
+  MarketplaceRegistryError,
+  ClaudeCliNotFoundError,
+} from "./marketplace-registry-service";
+
+// Source Analyzer Service
+export {
+  SourceAnalyzerService,
+  SourceAnalyzerServiceLive,
+  SourceAnalyzerError,
+} from "./source-analyzer-service";

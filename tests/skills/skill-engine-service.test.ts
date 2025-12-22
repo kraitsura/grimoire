@@ -98,6 +98,9 @@ const createMockStateService = (
         project.enabled = project.enabled.filter((s) => s !== skill);
       }
     }),
+  getGlobalEnabled: () => Effect.succeed([] as string[]),
+  addGlobalEnabled: () => Effect.void,
+  removeGlobalEnabled: () => Effect.void,
   recordDisable: () => Effect.void,
   updateLastSync: () => Effect.void,
 });
@@ -107,6 +110,7 @@ const createMockAgentAdapter = (): AgentAdapter => ({
   detect: () => Effect.succeed(true),
   init: () => Effect.void,
   getSkillsDir: (projectPath: string) => `${projectPath}/.claude/skills`,
+  getGlobalSkillsDir: () => `${process.env.HOME}/.claude/skills`,
   getAgentMdPath: (projectPath: string) => `${projectPath}/CLAUDE.md`,
   enableSkill: () =>
     Effect.succeed({
