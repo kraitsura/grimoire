@@ -55,6 +55,7 @@ const loadGrimoireEnv = () => {
 loadGrimoireEnv();
 import {
   addCommand,
+  agentsCommand,
   promptCommand,
   aliasCommand,
   archiveCommand,
@@ -95,6 +96,7 @@ import {
  */
 const RESERVED_COMMANDS = new Set([
   "add",
+  "agents",
   "list",
   "show",
   "rm",
@@ -190,6 +192,7 @@ COMMANDS:
   completion <shell>  Generate shell completions (bash/zsh/fish)
   config llm          Manage LLM provider configuration
   skills              Package manager for agent context
+  agents              CLI tool subagent management
   plugins             Claude Code plugin management
   stash [name]        Stash clipboard content
   pop [name]          Pop from stash to clipboard
@@ -318,6 +321,9 @@ Run 'grimoire' with no arguments to launch interactive mode.
         break;
       case "skills":
         yield* skillsCommand(parsedArgs);
+        break;
+      case "agents":
+        yield* agentsCommand(parsedArgs);
         break;
       case "plugins":
         yield* pluginsCommand(parsedArgs);
