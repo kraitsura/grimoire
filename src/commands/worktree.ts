@@ -4,7 +4,16 @@
 
 import { Effect } from "effect";
 import type { ParsedArgs } from "../cli/parser";
-import { worktreeNew, worktreeList, worktreeRm, worktreePath } from "./worktree/index";
+import {
+  worktreeNew,
+  worktreeList,
+  worktreeRm,
+  worktreePath,
+  worktreeExec,
+  worktreeOpen,
+  worktreeClean,
+  worktreeConfig,
+} from "./worktree/index";
 
 function printWorktreeHelp() {
   console.log(`
@@ -17,6 +26,10 @@ COMMANDS:
   list             List active worktrees
   rm <name>        Remove a worktree
   path <name>      Print worktree path (for scripting)
+  exec <name> <cmd>  Execute command in worktree context
+  open <name>      Open shell in worktree directory
+  clean            Remove stale worktrees
+  config [key]     View or modify configuration
 
 OPTIONS:
   -h, --help       Show this help
@@ -31,10 +44,19 @@ EXAMPLES:
   grimoire wt rm feature-auth
   grimoire wt rm feature-auth --branch   # Also delete the branch
   grimoire wt path feature-auth          # Print path for scripting
+  grimoire wt exec feature-auth bun test # Run command in worktree
+  grimoire wt open feature-auth          # Open shell in worktree
+  grimoire wt clean                      # Remove stale worktrees
+  grimoire wt clean --dry-run            # Preview what would be removed
+  grimoire wt config                     # View configuration
+  grimoire wt config base-path .wt       # Set base path
 
   # Use in scripts
   cd $(grimoire wt path feature-auth)
   code $(grimoire wt path feature-auth)
+
+  # Run Claude in a worktree
+  grimoire wt exec feature-auth claude
 `);
 }
 
@@ -58,6 +80,14 @@ export const worktreeCommand = (args: ParsedArgs) =>
         return yield* worktreeRm(args);
       case "path":
         return yield* worktreePath(args);
+      case "exec":
+        return yield* worktreeExec(args);
+      case "open":
+        return yield* worktreeOpen(args);
+      case "clean":
+        return yield* worktreeClean(args);
+      case "config":
+        return yield* worktreeConfig(args);
       default:
         console.log(`Unknown worktree command: ${subcommand}`);
         printWorktreeHelp();
