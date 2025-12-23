@@ -89,6 +89,7 @@ import {
   templatesCommand,
   testCommand,
   versionsCommand,
+  worktreeCommand,
 } from "./commands";
 
 /**
@@ -130,6 +131,8 @@ const RESERVED_COMMANDS = new Set([
   "pop",
   "export",
   "import",
+  "worktree",
+  "wt",
 ]);
 
 /**
@@ -196,6 +199,7 @@ COMMANDS:
   plugins             Claude Code plugin management
   stash [name]        Stash clipboard content
   pop [name]          Pop from stash to clipboard
+  wt, worktree        Git worktree management
 
 EXAMPLES:
   grimoire my-prompt              # Open vim to create/edit 'my-prompt'
@@ -333,6 +337,10 @@ Run 'grimoire' with no arguments to launch interactive mode.
         break;
       case "pop":
         yield* popCommand(parsedArgs);
+        break;
+      case "worktree":
+      case "wt":
+        yield* worktreeCommand(parsedArgs);
         break;
       default:
         console.log(`Unknown command: ${command}`);

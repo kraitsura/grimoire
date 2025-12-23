@@ -37,3 +37,4 @@ export { testCommand } from "./test";
 export { versionsCommand } from "./versions";
 export { stashCommand } from "./stash";
 export { popCommand } from "./pop";
+export { worktreeCommand } from "./worktree";
