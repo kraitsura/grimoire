@@ -13,3 +13,8 @@ export { worktreeConfig } from "./config";
 export { worktreeEach } from "./each";
 export { worktreeLog } from "./log";
 export { worktreeClaim, worktreeRelease } from "./claim";
+export { worktreeCheckpoint } from "./checkpoint";
+export { worktreeFromIssue } from "./from-issue";
+export { worktreeStatus } from "./status";
+export { worktreeHandoff } from "./handoff";
+export { worktreeAvailable } from "./available";
