@@ -154,8 +154,10 @@ const program = Effect.gen(function* () {
 Grimoire - A CLI tool for storing, editing, and managing prompts
 
 USAGE:
-  grimoire [OPTIONS] [COMMAND]
-  grimoire <prompt-name> [OPTIONS]    Create or edit a prompt
+  grim [OPTIONS] [COMMAND]
+  grim <prompt-name> [OPTIONS]    Create or edit a prompt
+
+  (Also available as 'grimoire')
 
 PROMPT OPTIONS:
   -c, --content <text>    Set content directly (no vim)
@@ -202,19 +204,19 @@ COMMANDS:
   wt, worktree        Git worktree management
 
 EXAMPLES:
-  grimoire my-prompt              # Open vim to create/edit 'my-prompt'
-  grimoire my-prompt -c "Hello"   # Create with content directly
-  grimoire my-prompt -p           # Create from clipboard
-  grimoire my-prompt -t api,gpt   # Create with tags
+  grim my-prompt              # Open vim to create/edit 'my-prompt'
+  grim my-prompt -c "Hello"   # Create with content directly
+  grim my-prompt -p           # Create from clipboard
+  grim my-prompt -t api,gpt   # Create with tags
 
-Run 'grimoire' with no arguments to launch interactive mode.
+Run 'grim' with no arguments to launch interactive mode.
     `);
     return;
   }
 
   // Handle version flag
   if (flags.version || flags.v) {
-    console.log("grimoire version 0.1.0");
+    console.log("grim (grimoire) version 0.1.0");
     return;
   }
 
