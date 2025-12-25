@@ -10,3 +10,6 @@ export { worktreeExec } from "./exec";
 export { worktreeOpen } from "./open";
 export { worktreeClean } from "./clean";
 export { worktreeConfig } from "./config";
+export { worktreeEach } from "./each";
+export { worktreeLog } from "./log";
+export { worktreeClaim, worktreeRelease } from "./claim";

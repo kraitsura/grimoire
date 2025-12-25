@@ -14,20 +14,61 @@ import {
   WorktreeStateWriteError,
 } from "../../models/worktree-errors";
 
-// Mutable internal types for state manipulation
+// Mutable internal types for state manipulation (v2 schema)
+type MutableWorktreeLog = {
+  time: string;
+  message: string;
+  author?: string;
+  type?: "log" | "handoff" | "interrupt";
+  metadata?: {
+    nextStage?: string;
+    reason?: string;
+  };
+};
+
+type MutableWorktreeCheckpoint = {
+  hash: string;
+  message: string;
+  time: string;
+  author?: string;
+};
+
+type MutableStageTransition = {
+  from: string;
+  to: string;
+  time: string;
+  agent?: string;
+};
+
 type MutableWorktreeEntry = {
+  // Core fields
   name: string;
   branch: string;
-  linkedIssue?: string;
   createdAt: string;
+  linkedIssue?: string;
   metadata?: {
     createdBy?: "user" | "agent";
     sessionId?: string;
   };
+  // Issue provider
+  issueProvider?: "beads" | "github" | "linear" | "jira" | "none";
+  // Progress tracking
+  logs?: MutableWorktreeLog[];
+  checkpoints?: MutableWorktreeCheckpoint[];
+  // Session management / Coordination
+  claimedBy?: string;
+  claimedAt?: string;
+  claimExpiresAt?: string;
+  // Experiment tracking
+  parentWorktree?: string;
+  isExperiment?: boolean;
+  // Pipeline stages
+  currentStage?: "plan" | "implement" | "test" | "review";
+  stageHistory?: MutableStageTransition[];
 };
 
 type MutableWorktreeState = {
-  version: number;
+  version: 2;
   worktrees: MutableWorktreeEntry[];
 };
 
@@ -47,9 +88,9 @@ const parseStateFile = (
   Effect.try({
     try: () => {
       const parsed = JSON.parse(content) as MutableWorktreeState;
-      // Ensure we have required structure
+      // Return v2 structure
       return {
-        version: parsed.version || 1,
+        version: 2 as const,
         worktrees: parsed.worktrees || [],
       };
     },
@@ -73,7 +114,7 @@ const readStateFile = (
     const exists = yield* Effect.promise(() => file.exists());
     if (!exists) {
       // Return default state if file doesn't exist
-      return { ...DEFAULT_WORKTREE_STATE, worktrees: [] };
+      return { version: 2 as const, worktrees: [] as MutableWorktreeEntry[] };
     }
 
     const content = yield* Effect.promise(() => file.text());
@@ -81,7 +122,7 @@ const readStateFile = (
   }).pipe(
     Effect.catchAll(() => {
       // On any error, return default state
-      return Effect.succeed({ ...DEFAULT_WORKTREE_STATE, worktrees: [] });
+      return Effect.succeed({ version: 2 as const, worktrees: [] as MutableWorktreeEntry[] });
     })
   );
 
@@ -175,7 +216,20 @@ interface WorktreeStateServiceImpl {
   readonly updateWorktree: (
     repoRoot: string,
     name: string,
-    updates: Partial<Pick<MutableWorktreeEntry, "linkedIssue" | "metadata">>,
+    updates: Partial<Pick<MutableWorktreeEntry,
+      | "linkedIssue"
+      | "metadata"
+      | "issueProvider"
+      | "logs"
+      | "checkpoints"
+      | "claimedBy"
+      | "claimedAt"
+      | "claimExpiresAt"
+      | "parentWorktree"
+      | "isExperiment"
+      | "currentStage"
+      | "stageHistory"
+    >>,
     basePath?: string
   ) => Effect.Effect<void, WorktreeStateReadError | WorktreeStateWriteError>;
 
@@ -252,7 +306,20 @@ const makeWorktreeStateService = (): WorktreeStateServiceImpl => ({
   updateWorktree: (
     repoRoot: string,
     name: string,
-    updates: Partial<Pick<MutableWorktreeEntry, "linkedIssue" | "metadata">>,
+    updates: Partial<Pick<MutableWorktreeEntry,
+      | "linkedIssue"
+      | "metadata"
+      | "issueProvider"
+      | "logs"
+      | "checkpoints"
+      | "claimedBy"
+      | "claimedAt"
+      | "claimExpiresAt"
+      | "parentWorktree"
+      | "isExperiment"
+      | "currentStage"
+      | "stageHistory"
+    >>,
     basePath = DEFAULT_BASE_PATH
   ) =>
     Effect.gen(function* () {
@@ -263,12 +330,50 @@ const makeWorktreeStateService = (): WorktreeStateServiceImpl => ({
         return; // Not found, no-op
       }
 
-      // Apply updates
+      // Apply updates - core fields
       if (updates.linkedIssue !== undefined) {
         worktree.linkedIssue = updates.linkedIssue;
       }
       if (updates.metadata !== undefined) {
         worktree.metadata = { ...worktree.metadata, ...updates.metadata };
+      }
+      if (updates.issueProvider !== undefined) {
+        worktree.issueProvider = updates.issueProvider;
+      }
+
+      // Progress tracking
+      if (updates.logs !== undefined) {
+        worktree.logs = updates.logs;
+      }
+      if (updates.checkpoints !== undefined) {
+        worktree.checkpoints = updates.checkpoints;
+      }
+
+      // Session management / Coordination
+      if (updates.claimedBy !== undefined) {
+        worktree.claimedBy = updates.claimedBy;
+      }
+      if (updates.claimedAt !== undefined) {
+        worktree.claimedAt = updates.claimedAt;
+      }
+      if (updates.claimExpiresAt !== undefined) {
+        worktree.claimExpiresAt = updates.claimExpiresAt;
+      }
+
+      // Experiment tracking
+      if (updates.parentWorktree !== undefined) {
+        worktree.parentWorktree = updates.parentWorktree;
+      }
+      if (updates.isExperiment !== undefined) {
+        worktree.isExperiment = updates.isExperiment;
+      }
+
+      // Pipeline stages
+      if (updates.currentStage !== undefined) {
+        worktree.currentStage = updates.currentStage;
+      }
+      if (updates.stageHistory !== undefined) {
+        worktree.stageHistory = updates.stageHistory;
       }
 
       yield* writeStateFile(repoRoot, basePath, state);

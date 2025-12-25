@@ -107,27 +107,132 @@ export const WorktreeListItemSchema = Schema.extend(
 );
 
 /**
- * Worktree state stored in .worktrees/.state.json
+ * Issue provider types for non-beads integrations
  */
-export const WorktreeStateSchema = Schema.Struct({
-  /** Schema version for migrations */
-  version: Schema.Number.pipe(Schema.int()),
+export const IssueProviderSchema = Schema.Literal(
+  "beads",
+  "github",
+  "linear",
+  "jira",
+  "none"
+);
 
-  /** List of managed worktrees */
-  worktrees: Schema.Array(
+/**
+ * Log entry types
+ */
+export const WorktreeLogTypeSchema = Schema.Literal(
+  "log",      // Normal progress log
+  "handoff",  // Agent handoff to another agent/human
+  "interrupt" // Session interrupted
+);
+
+/**
+ * Progress log entry for a worktree
+ */
+export const WorktreeLogSchema = Schema.Struct({
+  /** When the log was created */
+  time: Schema.String,
+  /** Progress message */
+  message: Schema.String,
+  /** Who wrote this log (agent session ID or "human") */
+  author: Schema.optional(Schema.String),
+  /** Type of log entry */
+  type: Schema.optional(WorktreeLogTypeSchema),
+  /** Additional metadata for special log types */
+  metadata: Schema.optional(
     Schema.Struct({
-      name: Schema.String,
-      branch: Schema.String,
-      linkedIssue: Schema.optional(Schema.String),
-      createdAt: Schema.String,
-      metadata: Schema.optional(
-        Schema.Struct({
-          createdBy: Schema.optional(Schema.Literal("user", "agent")),
-          sessionId: Schema.optional(Schema.String),
-        })
-      ),
+      /** For handoff logs: next stage or recipient */
+      nextStage: Schema.optional(Schema.String),
+      /** For interrupt logs: reason for interruption */
+      reason: Schema.optional(Schema.String),
     })
   ),
+});
+
+/**
+ * Git checkpoint (commit snapshot) for a worktree
+ */
+export const WorktreeCheckpointSchema = Schema.Struct({
+  /** Git commit hash */
+  hash: Schema.String,
+  /** Checkpoint description */
+  message: Schema.String,
+  /** When the checkpoint was created */
+  time: Schema.String,
+  /** Who created the checkpoint */
+  author: Schema.optional(Schema.String),
+});
+
+/**
+ * Pipeline stage transition record
+ */
+export const StageTransitionSchema = Schema.Struct({
+  /** Previous stage */
+  from: Schema.String,
+  /** New stage */
+  to: Schema.String,
+  /** When the transition occurred */
+  time: Schema.String,
+  /** Agent/user who triggered the transition */
+  agent: Schema.optional(Schema.String),
+});
+
+/**
+ * Pipeline stages for structured workflows
+ */
+export const WorktreeStageSchema = Schema.Literal(
+  "plan",
+  "implement",
+  "test",
+  "review"
+);
+
+/**
+ * Worktree entry in state file (v2)
+ */
+export const WorktreeEntrySchema = Schema.Struct({
+  // Core fields
+  name: Schema.String,
+  branch: Schema.String,
+  createdAt: Schema.String,
+  linkedIssue: Schema.optional(Schema.String),
+  metadata: Schema.optional(
+    Schema.Struct({
+      createdBy: Schema.optional(Schema.Literal("user", "agent")),
+      sessionId: Schema.optional(Schema.String),
+    })
+  ),
+
+  // Issue provider (enables non-beads integrations)
+  issueProvider: Schema.optional(IssueProviderSchema),
+
+  // Progress tracking
+  logs: Schema.optional(Schema.Array(WorktreeLogSchema)),
+  checkpoints: Schema.optional(Schema.Array(WorktreeCheckpointSchema)),
+
+  // Session management / Coordination
+  claimedBy: Schema.optional(Schema.String),
+  claimedAt: Schema.optional(Schema.String),
+  claimExpiresAt: Schema.optional(Schema.String),
+
+  // Experiment tracking
+  parentWorktree: Schema.optional(Schema.String),
+  isExperiment: Schema.optional(Schema.Boolean),
+
+  // Pipeline stages
+  currentStage: Schema.optional(WorktreeStageSchema),
+  stageHistory: Schema.optional(Schema.Array(StageTransitionSchema)),
+});
+
+/**
+ * Worktree state stored in .worktrees/.state.json (v2)
+ */
+export const WorktreeStateSchema = Schema.Struct({
+  /** Schema version */
+  version: Schema.Literal(2),
+
+  /** List of managed worktrees */
+  worktrees: Schema.Array(WorktreeEntrySchema),
 });
 
 // Type exports
@@ -162,6 +267,41 @@ export type WorktreeListItem = Schema.Schema.Type<typeof WorktreeListItemSchema>
  */
 export type WorktreeState = Schema.Schema.Type<typeof WorktreeStateSchema>;
 
+/**
+ * Worktree entry (v2)
+ */
+export type WorktreeEntry = Schema.Schema.Type<typeof WorktreeEntrySchema>;
+
+/**
+ * Progress log entry
+ */
+export type WorktreeLog = Schema.Schema.Type<typeof WorktreeLogSchema>;
+
+/**
+ * Git checkpoint
+ */
+export type WorktreeCheckpoint = Schema.Schema.Type<typeof WorktreeCheckpointSchema>;
+
+/**
+ * Pipeline stage transition
+ */
+export type StageTransition = Schema.Schema.Type<typeof StageTransitionSchema>;
+
+/**
+ * Pipeline stage
+ */
+export type WorktreeStage = Schema.Schema.Type<typeof WorktreeStageSchema>;
+
+/**
+ * Issue provider type
+ */
+export type IssueProvider = Schema.Schema.Type<typeof IssueProviderSchema>;
+
+/**
+ * Log entry type
+ */
+export type WorktreeLogType = Schema.Schema.Type<typeof WorktreeLogTypeSchema>;
+
 // Default configuration values
 
 /**
@@ -179,7 +319,7 @@ export const DEFAULT_WORKTREE_CONFIG: Required<WorktreeConfig> = {
  * Default empty worktree state
  */
 export const DEFAULT_WORKTREE_STATE: WorktreeState = {
-  version: 1,
+  version: 2,
   worktrees: [],
 };
 

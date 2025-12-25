@@ -13,6 +13,10 @@ import {
   worktreeOpen,
   worktreeClean,
   worktreeConfig,
+  worktreeEach,
+  worktreeLog,
+  worktreeClaim,
+  worktreeRelease,
 } from "./worktree/index";
 
 function printWorktreeHelp() {
@@ -22,17 +26,23 @@ grimoire wt - Git Worktree Management
 Manage isolated workspaces for parallel development and agentic coding sessions.
 
 COMMANDS:
-  new <branch>     Create a new worktree from branch
-  list             List active worktrees
-  rm <name>        Remove a worktree
-  path <name>      Print worktree path (for scripting)
+  new <branch>       Create a new worktree from branch
+  list               List active worktrees
+  rm <name>          Remove a worktree
+  path <name>        Print worktree path (for scripting)
   exec <name> <cmd>  Execute command in worktree context
-  open <name>      Open shell in worktree directory
-  clean            Remove stale worktrees
-  config [key]     View or modify configuration
+  open <name>        Open shell in worktree directory
+  clean              Remove stale worktrees
+  config [key]       View or modify configuration
+
+  each <cmd>         Run command across all worktrees
+  log <name> <msg>   Add progress log to worktree
+  logs <name>        View logs for worktree
+  claim <name>       Claim worktree for exclusive work
+  release <name>     Release claim on worktree
 
 OPTIONS:
-  -h, --help       Show this help
+  -h, --help         Show this help
 
 EXAMPLES:
   grimoire wt new feature-auth
@@ -50,6 +60,19 @@ EXAMPLES:
   grimoire wt clean --dry-run            # Preview what would be removed
   grimoire wt config                     # View configuration
   grimoire wt config base-path .wt       # Set base path
+
+  # Coordination
+  grimoire wt claim feature-auth         # Claim for exclusive work
+  grimoire wt release feature-auth       # Release claim
+  grimoire wt release feature-auth --next=test  # Handoff to next stage
+
+  # Progress tracking
+  grimoire wt log feature-auth "Implemented OAuth"
+  grimoire wt logs feature-auth
+
+  # Batch operations
+  grimoire wt each "bun test"            # Run in all worktrees
+  grimoire wt each "bun test" --parallel # Run concurrently
 
   # Use in scripts
   cd $(grimoire wt path feature-auth)
@@ -88,6 +111,15 @@ export const worktreeCommand = (args: ParsedArgs) =>
         return yield* worktreeClean(args);
       case "config":
         return yield* worktreeConfig(args);
+      case "each":
+        return yield* worktreeEach(args);
+      case "log":
+      case "logs":
+        return yield* worktreeLog(args);
+      case "claim":
+        return yield* worktreeClaim(args);
+      case "release":
+        return yield* worktreeRelease(args);
       default:
         console.log(`Unknown worktree command: ${subcommand}`);
         printWorktreeHelp();
