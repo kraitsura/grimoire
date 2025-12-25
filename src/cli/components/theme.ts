@@ -12,8 +12,8 @@
 export const selectionStyle = {
   // Primary selection (focused item)
   primary: {
-    backgroundColor: "blue" as const,
-    color: "white" as const,
+    backgroundColor: "cyan" as const,
+    color: "black" as const,
     bold: true,
   },
   // Secondary selection (current but not focused)
@@ -50,8 +50,8 @@ export const safeBorderStyle = "classic" as const;
  * Selection props type for consistent usage
  */
 export interface SelectionProps {
-  backgroundColor?: "blue" | undefined;
-  color?: "white" | "cyan" | "yellow" | undefined;
+  backgroundColor?: "cyan" | undefined;
+  color?: "black" | "cyan" | "yellow" | undefined;
   bold?: boolean | undefined;
 }
 

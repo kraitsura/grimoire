@@ -466,8 +466,8 @@ export const ListScreen: React.FC = () => {
               <Box key={prompt.id}>
                 <Text
                   inverse={isSelected}
-                  color={isSelected ? "white" : undefined}
-                  backgroundColor={isSelected ? "blue" : undefined}
+                  color={isSelected ? "black" : undefined}
+                  backgroundColor={isSelected ? "cyan" : undefined}
                 >
                   {prefix}
                   {truncate(prompt.name, 30)} <Text color="gray">{truncate(tags, 25)}</Text>{" "}
@@ -504,7 +504,7 @@ export const ListScreen: React.FC = () => {
                   <Text
                     key={tag}
                     color={isActive ? "green" : "gray"}
-                    backgroundColor={isSelected ? "white" : undefined}
+                    backgroundColor={isSelected ? "cyan" : undefined}
                     inverse={isSelected}
                     bold={isActive}
                   >
