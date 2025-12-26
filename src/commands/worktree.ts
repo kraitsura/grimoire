@@ -3,6 +3,8 @@
  */
 
 import { Effect } from "effect";
+import { render } from "ink";
+import React from "react";
 import type { ParsedArgs } from "../cli/parser";
 import {
   worktreeNew,
@@ -22,7 +24,9 @@ import {
   worktreeStatus,
   worktreeHandoff,
   worktreeAvailable,
+  worktreeSpawn,
 } from "./worktree/index";
+import { WorktreeDashboard } from "../cli/components/worktree";
 
 function printWorktreeHelp() {
   console.log(`
@@ -32,6 +36,7 @@ Manage isolated workspaces for parallel development and agentic coding sessions.
 
 COMMANDS:
   new <branch>       Create a new worktree from branch
+  spawn <name>       Create worktree + launch sandboxed Claude session
   from-issue <id>    Create worktree from issue ID
   list               List active worktrees
   status             Rich status with claims, logs, stages
@@ -53,6 +58,7 @@ COMMANDS:
   available          List unclaimed worktrees
 
 OPTIONS:
+  -i, --interactive  Launch TUI dashboard
   -h, --help         Show this help
 
 EXAMPLES:
@@ -72,7 +78,10 @@ EXAMPLES:
   grimoire wt config                     # View configuration
   grimoire wt config base-path .wt       # Set base path
 
-  # Agentic workflow
+  # Agentic workflow (sandboxed Claude sessions)
+  grimoire wt spawn auth-feature         # Create + launch Claude
+  grimoire wt spawn auth -p "Add OAuth"  # With initial prompt
+  grimoire wt spawn fix --no-sandbox     # Skip sandboxing
   grimoire wt from-issue grimoire-123    # Create from issue
   grimoire wt status                     # Rich status view
   grimoire wt available                  # Find unclaimed work
@@ -99,6 +108,15 @@ EXAMPLES:
 export const worktreeCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const subcommand = args.positional[0];
+
+    // Launch TUI dashboard with --interactive flag
+    if (args.flags["interactive"] || args.flags["i"]) {
+      const { waitUntilExit } = render(React.createElement(WorktreeDashboard), {
+        exitOnCtrlC: true,
+      });
+      yield* Effect.promise(() => waitUntilExit());
+      return;
+    }
 
     if (!subcommand || args.flags["help"] || args.flags["h"]) {
       printWorktreeHelp();
@@ -144,6 +162,8 @@ export const worktreeCommand = (args: ParsedArgs) =>
         return yield* worktreeHandoff(args);
       case "available":
         return yield* worktreeAvailable(args);
+      case "spawn":
+        return yield* worktreeSpawn(args);
       default:
         console.log(`Unknown worktree command: ${subcommand}`);
         printWorktreeHelp();

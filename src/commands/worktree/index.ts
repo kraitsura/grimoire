@@ -18,3 +18,4 @@ export { worktreeFromIssue } from "./from-issue";
 export { worktreeStatus } from "./status";
 export { worktreeHandoff } from "./handoff";
 export { worktreeAvailable } from "./available";
+export { worktreeSpawn } from "./spawn";
