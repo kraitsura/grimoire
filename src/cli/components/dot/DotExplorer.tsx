@@ -18,9 +18,6 @@ interface DotFile {
   isDirectory: boolean;
   size: number;
   modified: Date;
-  depth: number; // Indentation level in tree
-  parentName?: string; // Root dotfile this belongs to
-  isExpanded?: boolean; // For directories
 }
 
 interface DotExplorerProps {
@@ -49,9 +46,9 @@ const EDITOR_PRESETS: Record<string, { command: string; args: string[]; wait?: b
 export function DotExplorer({ initialPath, editorConfig, onExit }: DotExplorerProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const [currentPath, setCurrentPath] = useState(initialPath ?? process.cwd());
   const [rootPath] = useState(initialPath ?? process.cwd());
   const [files, setFiles] = useState<DotFile[]>([]);
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [focusedPanel, setFocusedPanel] = useState<Panel>("list");
   const [modal, setModal] = useState<Modal>("none");
@@ -60,6 +57,10 @@ export function DotExplorer({ initialPath, editorConfig, onExit }: DotExplorerPr
   const [previewScroll, setPreviewScroll] = useState(0);
   const [listScroll, setListScroll] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [pathHistory, setPathHistory] = useState<string[]>([]);
+
+  // Are we at the root (showing only dotfiles) or inside a dotfile folder?
+  const isAtRoot = currentPath === rootPath;
 
   // Enter alternate screen buffer on mount
   useLayoutEffect(() => {
@@ -69,119 +70,44 @@ export function DotExplorer({ initialPath, editorConfig, onExit }: DotExplorerPr
     };
   }, [stdout]);
 
-  // Recursively scan directory contents
-  const scanDirectory = (
-    dirPath: string,
-    depth: number,
-    parentName: string,
-    maxDepth: number = 3
-  ): DotFile[] => {
-    if (depth > maxDepth) return [];
-
-    try {
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-      const items: DotFile[] = [];
-
-      // Sort: directories first, then alphabetically
-      const sorted = entries.sort((a, b) => {
-        if (a.isDirectory() && !b.isDirectory()) return -1;
-        if (!a.isDirectory() && b.isDirectory()) return 1;
-        return a.name.localeCompare(b.name);
-      });
-
-      for (const entry of sorted) {
-        // Skip common large/noisy directories
-        if (
-          entry.name === "node_modules" ||
-          entry.name === ".git/objects" ||
-          entry.name === "objects"
-        ) {
-          continue;
-        }
-
-        const fullPath = path.join(dirPath, entry.name);
-        let stats: fs.Stats | null = null;
-        try {
-          stats = fs.statSync(fullPath);
-        } catch {
-          continue;
-        }
-
-        const isDir = entry.isDirectory();
-        const isExpanded = expandedDirs.has(fullPath);
-
-        items.push({
-          name: entry.name,
-          path: fullPath,
-          isDirectory: isDir,
-          size: stats?.size ?? 0,
-          modified: stats?.mtime ?? new Date(),
-          depth,
-          parentName,
-          isExpanded,
-        });
-
-        // If directory is expanded, recursively add children
-        if (isDir && isExpanded) {
-          items.push(...scanDirectory(fullPath, depth + 1, parentName, maxDepth));
-        }
-      }
-
-      return items;
-    } catch {
-      return [];
-    }
-  };
-
-  // Load dotfiles from root path - scan inside each dot folder
+  // Load files from current path
   const loadFiles = () => {
     setLoading(true);
     try {
-      const entries = fs.readdirSync(rootPath, { withFileTypes: true });
-      const allFiles: DotFile[] = [];
+      const entries = fs.readdirSync(currentPath, { withFileTypes: true });
 
-      // Get root-level dotfiles/dotfolders
-      const dotEntries = entries
-        .filter((entry) => entry.name.startsWith("."))
+      // At root: only show dotfiles. Inside: show all files
+      const filtered = isAtRoot
+        ? entries.filter((e) => e.name.startsWith("."))
+        : entries;
+
+      const fileList: DotFile[] = filtered
+        .map((entry) => {
+          const fullPath = path.join(currentPath, entry.name);
+          let stats: fs.Stats | null = null;
+          try {
+            stats = fs.statSync(fullPath);
+          } catch {
+            // Skip files we can't stat
+          }
+          return {
+            name: entry.name,
+            path: fullPath,
+            isDirectory: entry.isDirectory(),
+            size: stats?.size ?? 0,
+            modified: stats?.mtime ?? new Date(),
+          };
+        })
         .sort((a, b) => {
-          if (a.isDirectory() && !b.isDirectory()) return -1;
-          if (!a.isDirectory() && b.isDirectory()) return 1;
+          // Directories first, then alphabetically
+          if (a.isDirectory && !b.isDirectory) return -1;
+          if (!a.isDirectory && b.isDirectory) return 1;
           return a.name.localeCompare(b.name);
         });
 
-      for (const entry of dotEntries) {
-        const fullPath = path.join(rootPath, entry.name);
-        let stats: fs.Stats | null = null;
-        try {
-          stats = fs.statSync(fullPath);
-        } catch {
-          continue;
-        }
-
-        const isDir = entry.isDirectory();
-        const isExpanded = expandedDirs.has(fullPath);
-
-        // Add the root dotfile
-        allFiles.push({
-          name: entry.name,
-          path: fullPath,
-          isDirectory: isDir,
-          size: stats?.size ?? 0,
-          modified: stats?.mtime ?? new Date(),
-          depth: 0,
-          parentName: entry.name,
-          isExpanded,
-        });
-
-        // If it's an expanded directory, add its contents
-        if (isDir && isExpanded) {
-          allFiles.push(...scanDirectory(fullPath, 1, entry.name));
-        }
-      }
-
-      setFiles(allFiles);
-      // Keep selection valid
-      setSelectedIndex((i) => Math.min(i, Math.max(0, allFiles.length - 1)));
+      setFiles(fileList);
+      setSelectedIndex(0);
+      setListScroll(0);
       setPreviewScroll(0);
     } catch (error) {
       setStatusMessage(`Error loading files: ${error}`);
@@ -189,30 +115,27 @@ export function DotExplorer({ initialPath, editorConfig, onExit }: DotExplorerPr
     setLoading(false);
   };
 
-  // Toggle directory expansion
-  const toggleExpand = (file: DotFile) => {
-    if (!file.isDirectory) return;
-
-    setExpandedDirs((prev) => {
-      const next = new Set(prev);
-      if (next.has(file.path)) {
-        // Collapse: remove this and all children
-        for (const p of prev) {
-          if (p === file.path || p.startsWith(file.path + "/")) {
-            next.delete(p);
-          }
-        }
-      } else {
-        next.add(file.path);
-      }
-      return next;
-    });
+  // Navigate into directory
+  const enterDirectory = (dir: DotFile) => {
+    if (dir.isDirectory) {
+      setPathHistory([...pathHistory, currentPath]);
+      setCurrentPath(dir.path);
+    }
   };
 
-  // Load/reload when expanded dirs change
+  // Go back to parent
+  const goBack = () => {
+    if (pathHistory.length > 0) {
+      const prev = pathHistory[pathHistory.length - 1];
+      setPathHistory(pathHistory.slice(0, -1));
+      setCurrentPath(prev);
+    }
+  };
+
+  // Reload when path changes
   useEffect(() => {
     loadFiles();
-  }, [expandedDirs.size]);
+  }, [currentPath]);
 
   // Auto-scroll list to keep selection visible
   const termHeight = stdout.rows ?? 24;
@@ -380,41 +303,27 @@ export function DotExplorer({ initialPath, editorConfig, onExit }: DotExplorerPr
         return;
       }
 
-      // Enter/toggle directory or open file
-      if (key.return) {
+      // Enter directory or open file
+      if (key.return || input === "l" || key.rightArrow) {
         if (selectedFile?.isDirectory) {
-          toggleExpand(selectedFile);
-        } else if (selectedFile) {
+          enterDirectory(selectedFile);
+        } else if (selectedFile && key.return) {
           openInEditor(selectedFile.path);
         }
         return;
       }
 
-      // Open in editor (even if directory, opens the dir in editor)
+      // Open in editor
       if (input === "e" && selectedFile) {
         openInEditor(selectedFile.path);
         return;
       }
 
-      // Collapse directory (or go to parent item)
-      if (input === "h" || key.leftArrow) {
-        if (selectedFile?.isDirectory && selectedFile.isExpanded) {
-          toggleExpand(selectedFile);
+      // Go back
+      if (input === "h" || key.leftArrow || key.backspace) {
+        if (!isAtRoot) {
+          goBack();
         }
-        return;
-      }
-
-      // Expand directory with right arrow or l
-      if ((input === "l" || key.rightArrow) && selectedFile?.isDirectory) {
-        if (!selectedFile.isExpanded) {
-          toggleExpand(selectedFile);
-        }
-        return;
-      }
-
-      // Space to toggle expand/collapse
-      if (input === " " && selectedFile?.isDirectory) {
-        toggleExpand(selectedFile);
         return;
       }
     } else if (focusedPanel === "preview") {
@@ -457,7 +366,10 @@ export function DotExplorer({ initialPath, editorConfig, onExit }: DotExplorerPr
           DOTFILES
         </Text>
         <Text dimColor> - </Text>
-        <Text>{rootPath}</Text>
+        <Text>{currentPath}</Text>
+        {!isAtRoot && (
+          <Text dimColor> (h to go back)</Text>
+        )}
       </Box>
 
       {/* Main panels */}
@@ -476,17 +388,11 @@ export function DotExplorer({ initialPath, editorConfig, onExit }: DotExplorerPr
           </Box>
           <Box flexDirection="column" paddingX={1} height={listHeight}>
             {files.length === 0 ? (
-              <Text dimColor>No dotfiles found</Text>
+              <Text dimColor>{isAtRoot ? "No dotfiles found" : "Empty directory"}</Text>
             ) : (
               files.slice(listScroll, listScroll + listHeight).map((file, idx) => {
                 const actualIndex = listScroll + idx;
                 const isSelected = actualIndex === selectedIndex;
-                const indent = "  ".repeat(file.depth);
-                const icon = file.isDirectory
-                  ? file.isExpanded
-                    ? "v "
-                    : "> "
-                  : "  ";
                 return (
                   <Box key={file.path}>
                     <Text
@@ -496,14 +402,10 @@ export function DotExplorer({ initialPath, editorConfig, onExit }: DotExplorerPr
                           ? selectionStyle.primary.color
                           : file.isDirectory
                             ? "blue"
-                            : file.depth === 0
-                              ? "yellow"
-                              : undefined
+                            : undefined
                       }
                     >
-                      {isSelected ? ">" : " "}
-                      {indent}
-                      {icon}
+                      {isSelected ? "> " : "  "}
                       {file.isDirectory ? `${file.name}/` : file.name}
                     </Text>
                   </Box>
@@ -542,12 +444,12 @@ export function DotExplorer({ initialPath, editorConfig, onExit }: DotExplorerPr
       <Box paddingX={1} gap={2}>
         <Text dimColor>[j/k]</Text>
         <Text>nav</Text>
-        <Text dimColor>[Enter/Space]</Text>
-        <Text>expand</Text>
+        <Text dimColor>[Enter/l]</Text>
+        <Text>open</Text>
+        <Text dimColor>[h]</Text>
+        <Text>back</Text>
         <Text dimColor>[e]</Text>
         <Text>edit</Text>
-        <Text dimColor>[h/l]</Text>
-        <Text>collapse/expand</Text>
         <Text dimColor>[Tab]</Text>
         <Text>panel</Text>
         <Text dimColor>[?]</Text>
@@ -585,23 +487,18 @@ export function DotExplorer({ initialPath, editorConfig, onExit }: DotExplorerPr
           <Text>
             <Text bold>Navigation</Text>
           </Text>
-          <Text>  j/k or arrows  Move up/down in tree</Text>
+          <Text>  j/k or arrows  Move up/down</Text>
           <Text>  g/G            Go to top/bottom</Text>
+          <Text>  l or Enter     Enter directory</Text>
+          <Text>  h or Backspace Go back</Text>
           <Text>  Tab            Switch panels</Text>
           <Text> </Text>
           <Text>
-            <Text bold>Tree Actions</Text>
-          </Text>
-          <Text>  Enter/Space    Toggle expand/collapse directory</Text>
-          <Text>  l or right     Expand directory</Text>
-          <Text>  h or left      Collapse directory</Text>
-          <Text> </Text>
-          <Text>
-            <Text bold>File Actions</Text>
+            <Text bold>Actions</Text>
           </Text>
           <Text>  Enter          Open file in editor</Text>
-          <Text>  e              Open in editor (files or dirs)</Text>
-          <Text>  R              Refresh tree</Text>
+          <Text>  e              Edit (files or dirs)</Text>
+          <Text>  R              Refresh</Text>
           <Text> </Text>
           <Text>
             <Text bold>General</Text>
