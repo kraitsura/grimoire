@@ -5,3 +5,4 @@
  */
 
 export * from "./srt-service";
+export * from "./srt-config-service";
