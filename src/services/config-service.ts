@@ -18,11 +18,19 @@ export class ConfigWriteError extends Data.TaggedError("ConfigWriteError")<{
   message: string;
 }> {}
 
+// Editor configuration
+export interface EditorConfig {
+  name: string; // vim, code, zed, nano, etc.
+  command?: string; // Custom command if different from name
+  args?: string[]; // Additional arguments
+}
+
 // Config schema
 export interface GrimoireConfig {
   defaultProvider?: string;
   defaultModel?: string;
   providers: string[];
+  editor?: EditorConfig;
 }
 
 const DEFAULT_CONFIG: GrimoireConfig = {
@@ -38,6 +46,8 @@ interface ConfigServiceImpl {
   readonly addProvider: (provider: string) => Effect.Effect<void, ConfigWriteError | ConfigReadError>;
   readonly removeProvider: (provider: string) => Effect.Effect<void, ConfigWriteError | ConfigReadError>;
   readonly isConfigured: () => Effect.Effect<boolean, ConfigReadError>;
+  readonly getEditor: () => Effect.Effect<EditorConfig, ConfigReadError>;
+  readonly setEditor: (editor: EditorConfig) => Effect.Effect<void, ConfigWriteError | ConfigReadError>;
 }
 
 // Service tag
@@ -204,6 +214,26 @@ const makeConfigService = (): ConfigServiceImpl => ({
     Effect.gen(function* () {
       const config = yield* readConfig();
       return config.providers.length > 0 && !!config.defaultModel;
+    }),
+
+  getEditor: () =>
+    Effect.gen(function* () {
+      const config = yield* readConfig();
+      return config.editor ?? { name: "vim" };
+    }),
+
+  setEditor: (editor: EditorConfig) =>
+    Effect.gen(function* () {
+      const current = yield* readConfig().pipe(
+        Effect.catchTag("ConfigReadError", () => Effect.succeed({ ...DEFAULT_CONFIG }))
+      );
+
+      const updated: GrimoireConfig = {
+        ...current,
+        editor,
+      };
+
+      yield* writeConfig(updated);
     }),
 });
 

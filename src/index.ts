@@ -67,6 +67,7 @@ import {
   configCommand,
   copyCommand,
   costCommand,
+  dotCommand,
   exportCommand,
   favoriteCommand,
   formatCommand,
@@ -133,6 +134,7 @@ const RESERVED_COMMANDS = new Set([
   "import",
   "worktree",
   "wt",
+  "dot",
 ]);
 
 /**
@@ -178,6 +180,7 @@ COMMANDS:
   show <name>         Show prompt details
   rm <name>           Delete a prompt
   copy <name>         Copy prompt to clipboard
+  dot [path]          Browse and edit dotfiles (TUI)
   benchmark <file>    Run automated test suite
   compare <p1> <p2>   A/B test prompts with same input
   cost <name>         Estimate token costs for a prompt
@@ -252,6 +255,9 @@ Run 'grim' with no arguments to launch interactive mode.
         break;
       case "copy":
         yield* copyCommand(parsedArgs);
+        break;
+      case "dot":
+        yield* Effect.promise(() => dotCommand(parsedArgs));
         break;
       case "benchmark":
         yield* benchmarkCommand(parsedArgs);
