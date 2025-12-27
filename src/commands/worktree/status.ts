@@ -14,50 +14,18 @@ import {
 import type { WorktreeListItem } from "../../models/worktree";
 
 /**
- * Pad string to length
+ * Get issue status from beads
  */
-function pad(str: string, len: number): string {
-  if (str.length >= len) return str.substring(0, len - 1) + "…";
-  return str + " ".repeat(len - str.length);
-}
-
-/**
- * Format relative time
- */
-function formatRelativeTime(isoString: string): string {
-  const date = new Date(isoString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffDays > 0) return `${diffDays}d`;
-  if (diffHours > 0) return `${diffHours}h`;
-  if (diffMins > 0) return `${diffMins}m`;
-  return "now";
-}
-
-/**
- * Get issue status indicator
- */
-function getIssueIndicator(issueId: string): string {
+function getIssueStatus(issueId: string): string {
   try {
     const output = execSync(`bd show ${issueId} --json`, {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
     });
     const data = JSON.parse(output);
-    switch (data.status) {
-      case "in_progress":
-        return "●";
-      case "closed":
-        return "✓";
-      case "blocked":
-        return "⚠";
-      default:
-        return "○";
-    }
+    // bd show --json returns an array
+    const issue = Array.isArray(data) ? data[0] : data;
+    return issue?.status || "";
   } catch {
     return "";
   }
@@ -143,48 +111,22 @@ export const worktreeStatus = (args: ParsedArgs) =>
       return;
     }
 
-    // Rich view
-    console.log();
-    console.log("Worktree Status");
-    console.log("═".repeat(80));
-    console.log();
-
-    // Header
-    console.log(
-      `${pad("NAME", 22)}${pad("STATUS", 10)}${pad("CLAIMED", 14)}${pad("ISSUE", 16)}${pad("LOGS", 6)}STAGE`
-    );
-    console.log("─".repeat(80));
-
+    // Compact default view (optimized for agents)
+    console.log(`worktrees: ${active} active, ${claimed} claimed, ${available} available${stale > 0 ? `, ${stale} stale` : ""}`);
     for (const wt of richData) {
-      const statusStr = wt.status === "stale" ? "stale" : "active";
-      const claimedStr = wt.claimedBy
-        ? wt.claimedBy.length > 12
-          ? wt.claimedBy.slice(0, 11) + "…"
-          : wt.claimedBy
-        : "-";
-
-      let issueStr = wt.linkedIssue || "-";
-      if (wt.linkedIssue && wt.issueProvider === "beads") {
-        const indicator = getIssueIndicator(wt.linkedIssue);
-        issueStr = `${wt.linkedIssue} ${indicator}`;
+      const parts: string[] = [`name=${wt.name}`, `status=${wt.status}`];
+      if (wt.claimedBy) parts.push(`claimed_by=${wt.claimedBy}`);
+      if (wt.linkedIssue) {
+        parts.push(`issue=${wt.linkedIssue}`);
+        if (wt.issueProvider === "beads") {
+          const issueStatus = getIssueStatus(wt.linkedIssue);
+          if (issueStatus) parts.push(`issue_status=${issueStatus}`);
+        }
       }
-
-      const logsStr = wt.logs.length.toString();
-      const stageStr = wt.currentStage || "-";
-
-      console.log(
-        `${pad(wt.name, 22)}${pad(statusStr, 10)}${pad(claimedStr, 14)}${pad(issueStr, 16)}${pad(logsStr, 6)}${stageStr}`
-      );
+      if (wt.logs.length > 0) parts.push(`logs=${wt.logs.length}`);
+      if (wt.currentStage) parts.push(`stage=${wt.currentStage}`);
+      console.log(`  ${parts.join(" ")}`);
     }
-
-    console.log();
-    console.log("Summary:");
-    console.log(`  Active: ${active} (${claimed} claimed, ${available} available)`);
-    if (stale > 0) {
-      console.log(`  Stale: ${stale} (ready for cleanup)`);
-    }
-    console.log(`  Total logs: ${totalLogs}, checkpoints: ${totalCheckpoints}`);
-    console.log();
   }).pipe(
     Effect.provide(WorktreeServiceLive),
     Effect.provide(WorktreeStateServiceLive)
