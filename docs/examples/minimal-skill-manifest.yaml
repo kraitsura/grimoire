@@ -1,0 +1,21 @@
+# Minimal Skill Manifest
+# This is the simplest possible skill manifest with only required fields
+
+name: my-skill
+version: 1.0.0
+description: A simple skill that adds custom instructions to your project
+type: prompt
+
+# Agent-specific configuration - minimal example
+agents:
+  claude_code:
+    inject:
+      content: |
+        ## My Skill
+
+        This skill provides custom instructions for your project.
+
+        ### Usage
+
+        Simply enable this skill and the instructions will be available
+        to Claude Code in this project.

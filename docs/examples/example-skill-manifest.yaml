@@ -1,0 +1,132 @@
+# Example Skill Manifest
+# This is a comprehensive example showing all available configuration options
+# for a Grimoire skill.
+
+# Required: Basic skill metadata
+name: example-skill
+version: 1.0.0
+description: An example skill demonstrating all available configuration options
+type: prompt # Can be: prompt, mcp, plugin, or hybrid
+
+# Optional: Author information
+author: Your Name
+repository: https://github.com/yourusername/example-skill
+
+# Optional: CLI dependencies required by this skill
+# These will be auto-installed when the skill is enabled
+cli:
+  # Binary name as key
+  gh:
+    # Command to check if binary is installed
+    check: gh --version
+    # Installation methods for different package managers
+    install:
+      brew: gh
+      npm: "@github/cli"
+      # Can also specify: cargo, go
+
+  # Example with multiple package managers
+  jq:
+    check: jq --version
+    install:
+      brew: jq
+      npm: node-jq
+
+# Optional: Initialization commands to run after skill is enabled
+# These run in the project directory
+init:
+  commands:
+    - npm install
+    - echo "Skill initialized successfully"
+
+# Optional: Agent-specific configurations
+# Different behavior for different AI coding assistants
+agents:
+  # Claude Code specific configuration
+  claude_code:
+    # Content to inject into CLAUDE.md
+    inject:
+      content: |
+        ## Example Skill
+
+        This skill provides example functionality for demonstration purposes.
+
+        ### Commands
+
+        - `example-command`: Does something useful
+        - `example-query`: Queries example data
+
+        ### Best Practices
+
+        - Always check input validation
+        - Use error handling
+        - Document your changes
+
+    # Whether to copy SKILL.md to .claude/skills/ (default: true)
+    skill_file: true
+
+    # Optional: Plugin configuration (if this is a plugin skill)
+    plugin:
+      marketplace: official
+      name: example-plugin
+
+    # Optional: MCP (Model Context Protocol) server configuration
+    mcp:
+      # Server command to run
+      command: npx
+      args:
+        - -y
+        - example-mcp-server
+
+      # Environment variables for the server
+      env:
+        EXAMPLE_API_KEY: ${EXAMPLE_API_KEY}
+
+      # Server type (stdio or sse)
+      transport: stdio
+
+  # OpenCode specific configuration
+  opencode:
+    inject:
+      content: |
+        ## Example Skill
+
+        OpenCode-specific instructions and examples.
+
+    skill_file: true
+
+    # MCP configuration (same structure as claude_code)
+    mcp:
+      command: npx
+      args:
+        - -y
+        - example-mcp-server
+      transport: stdio
+
+  # Generic configuration (fallback for other agents)
+  generic:
+    inject:
+      content: |
+        ## Example Skill
+
+        Generic instructions that work with any AI coding assistant.
+
+    skill_file: true
+
+# Optional: Tags for categorization and search
+tags:
+  - example
+  - demonstration
+  - reference
+
+# Optional: Minimum Grimoire version required
+min_grimoire_version: 0.1.0
+
+# Optional: Links to documentation
+documentation:
+  readme: https://github.com/yourusername/example-skill/blob/main/README.md
+  docs: https://example-skill.dev/docs
+  changelog: https://github.com/yourusername/example-skill/blob/main/CHANGELOG.md
+
+# Optional: License
+license: MIT
