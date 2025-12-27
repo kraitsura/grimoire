@@ -290,17 +290,33 @@ export const App: React.FC = () => {
   );
 };
 
+// Alternate screen buffer escape sequences (used by vim, htop, less, etc.)
+const ENTER_ALT_SCREEN = "\x1b[?1049h";
+const LEAVE_ALT_SCREEN = "\x1b[?1049l";
+
 /**
  * Run the interactive Ink UI
  *
  * Launches the full-screen terminal UI for browsing and managing prompts.
+ * Uses the alternate screen buffer so the original terminal content is
+ * preserved and restored when the app exits.
  * Returns an Effect that completes when the UI exits.
  */
 export const runInteractive = (): Effect.Effect<void, never> => {
   return Effect.sync(() => {
-    // Move cursor to home position (top-left) without clearing terminal
-    process.stdout.write("\x1b[H");
+    // Switch to alternate screen buffer (clean slate, preserves original terminal)
+    process.stdout.write(ENTER_ALT_SCREEN);
+
+    // Ensure we restore the main screen on exit (normal or crash)
+    const cleanup = () => process.stdout.write(LEAVE_ALT_SCREEN);
+    process.on("exit", cleanup);
+    process.on("SIGINT", cleanup);
+    process.on("SIGTERM", cleanup);
+
     const { waitUntilExit } = render(<App />);
     return waitUntilExit();
-  }).pipe(Effect.flatMap((promise) => Effect.promise(() => promise)));
+  }).pipe(
+    Effect.flatMap((promise) => Effect.promise(() => promise)),
+    Effect.ensuring(Effect.sync(() => process.stdout.write(LEAVE_ALT_SCREEN)))
+  );
 };
