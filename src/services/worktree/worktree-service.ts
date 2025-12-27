@@ -533,8 +533,9 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
           return [];
         }
 
-        // Parse git worktree list output
-        const entries: WorktreeListItem[] = [];
+        // Parse git worktree list output - collect all matches first
+        const basePath = join(repoRoot, config.basePath);
+        const gitWorktrees: Array<{ path: string; branch: string }> = [];
         const lines = result.stdout.split("\n");
         let current: Partial<{ path: string; branch: string }> = {};
 
@@ -545,39 +546,48 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
             current.branch = line.substring(18);
           } else if (line === "") {
             if (current.path && current.branch) {
-              // Skip the main worktree
-              const basePath = join(repoRoot, config.basePath);
               if (current.path.startsWith(basePath)) {
-                const name = basename(current.path);
-                const uncommittedChanges = yield* getUncommittedChanges(current.path);
-                const merged = yield* isBranchMerged(repoRoot, current.branch);
-
-                // Get state info
-                const stateEntry = yield* Effect.tryPromise({
-                  try: async () => {
-                    const statePath = join(repoRoot, config.basePath, ".state.json");
-                    const file = Bun.file(statePath);
-                    if (!(await file.exists())) return null;
-                    const state = JSON.parse(await file.text());
-                    return state.worktrees?.find((w: { name: string }) => w.name === name) || null;
-                  },
-                  catch: () => null,
-                }).pipe(Effect.catchAll(() => Effect.succeed(null)));
-
-                entries.push({
-                  name,
-                  branch: current.branch,
-                  path: current.path,
-                  createdAt: stateEntry?.createdAt || new Date().toISOString(),
-                  linkedIssue: stateEntry?.linkedIssue,
-                  status: merged ? "stale" : "active",
-                  uncommittedChanges: uncommittedChanges > 0 ? uncommittedChanges : undefined,
-                  metadata: stateEntry?.metadata,
-                });
+                gitWorktrees.push({ path: current.path, branch: current.branch });
               }
             }
             current = {};
           }
+        }
+
+        // Handle the last entry (trim() removes trailing newline, so last entry may not hit blank line)
+        if (current.path && current.branch && current.path.startsWith(basePath)) {
+          gitWorktrees.push({ path: current.path, branch: current.branch });
+        }
+
+        // Now process each worktree (yield* outside the loop body)
+        const entries: WorktreeListItem[] = [];
+        for (const wt of gitWorktrees) {
+          const name = basename(wt.path);
+          const uncommittedChanges = yield* getUncommittedChanges(wt.path);
+          const merged = yield* isBranchMerged(repoRoot, wt.branch);
+
+          // Get state info
+          const stateEntry = yield* Effect.tryPromise({
+            try: async () => {
+              const statePath = join(repoRoot, config.basePath, ".state.json");
+              const file = Bun.file(statePath);
+              if (!(await file.exists())) return null;
+              const state = JSON.parse(await file.text());
+              return state.worktrees?.find((w: { name: string }) => w.name === name) || null;
+            },
+            catch: () => null,
+          }).pipe(Effect.catchAll(() => Effect.succeed(null)));
+
+          entries.push({
+            name,
+            branch: wt.branch,
+            path: wt.path,
+            createdAt: stateEntry?.createdAt || new Date().toISOString(),
+            linkedIssue: stateEntry?.linkedIssue,
+            status: merged ? "stale" : "active",
+            uncommittedChanges: uncommittedChanges > 0 ? uncommittedChanges : undefined,
+            metadata: stateEntry?.metadata,
+          });
         }
 
         return entries;
