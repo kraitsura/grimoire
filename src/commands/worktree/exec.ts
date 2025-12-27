@@ -20,7 +20,6 @@ export const worktreeExec = (args: ParsedArgs) =>
       console.log("Examples:");
       console.log("  grimoire wt exec feature-auth bun test");
       console.log("  grimoire wt exec feature-auth git status");
-      console.log("  grimoire wt exec feature-auth claude");
       console.log();
       console.log("Environment variables set:");
       console.log("  GRIMOIRE_WORKTREE        Worktree name");

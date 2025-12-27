@@ -154,11 +154,12 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       console.log();
 
       // Build the claude command
+      // Prompt is passed as positional argument, not --prompt flag
       let claudeCommand = "claude";
       if (prompt) {
         // Escape the prompt for shell
         const escapedPrompt = prompt.replace(/'/g, "'\\''");
-        claudeCommand = `claude --prompt '${escapedPrompt}'`;
+        claudeCommand = `claude '${escapedPrompt}'`;
       }
 
       // Wrap with SRT
@@ -209,9 +210,10 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       console.log();
 
       // Build the claude command
+      // Prompt is passed as positional argument, not --prompt flag
       const claudeArgs: string[] = [];
       if (prompt) {
-        claudeArgs.push("--prompt", prompt);
+        claudeArgs.push(prompt);
       }
 
       const child = spawn("claude", claudeArgs, {
