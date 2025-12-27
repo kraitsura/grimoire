@@ -13,17 +13,6 @@ import {
 } from "../../services/worktree";
 import type { WorktreeLog, WorktreeLogType } from "../../models/worktree";
 
-/**
- * Get author identifier
- */
-function getAuthor(): string {
-  return (
-    process.env.CLAUDE_SESSION_ID ||
-    process.env.GRIMOIRE_SESSION ||
-    "human"
-  );
-}
-
 export const worktreeHandoff = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const name = args.positional[1];
@@ -77,7 +66,7 @@ export const worktreeHandoff = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const author = getAuthor();
+    const author = (args.flags["author"] as string) || "human";
     const now = new Date().toISOString();
 
     // Build handoff message

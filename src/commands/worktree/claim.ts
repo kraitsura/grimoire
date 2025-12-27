@@ -14,17 +14,6 @@ import {
 import type { WorktreeLog, WorktreeLogType } from "../../models/worktree";
 
 /**
- * Get author identifier
- */
-function getAuthor(): string {
-  return (
-    process.env.CLAUDE_SESSION_ID ||
-    process.env.GRIMOIRE_SESSION ||
-    "human"
-  );
-}
-
-/**
  * Format relative time
  */
 function formatRelativeTime(isoString: string): string {
@@ -50,7 +39,8 @@ export const worktreeClaim = (args: ParsedArgs) =>
       console.log("Claim a worktree for exclusive work.");
       console.log();
       console.log("Options:");
-      console.log("  --force, -f   Override existing claim");
+      console.log("  --force, -f      Override existing claim");
+      console.log("  --author <id>    Author identifier (default: human)");
       console.log();
       console.log("Examples:");
       console.log("  grimoire wt claim feature-auth");
@@ -80,7 +70,7 @@ export const worktreeClaim = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const author = getAuthor();
+    const author = (args.flags["author"] as string) || "human";
     const now = new Date().toISOString();
 
     // Check if already claimed
@@ -175,7 +165,7 @@ export const worktreeRelease = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const author = getAuthor();
+    const author = (args.flags["author"] as string) || "human";
     const now = new Date().toISOString();
 
     // Determine log type and message

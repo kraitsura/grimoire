@@ -14,17 +14,6 @@ import {
 import type { WorktreeLog, IssueProvider } from "../../models/worktree";
 
 /**
- * Get author identifier
- */
-function getAuthor(): string {
-  return (
-    process.env.CLAUDE_SESSION_ID ||
-    process.env.GRIMOIRE_SESSION ||
-    "human"
-  );
-}
-
-/**
  * Sanitize string for use as branch/worktree name
  */
 function sanitize(str: string): string {
@@ -56,10 +45,13 @@ function fetchBeadsIssue(issueId: string): { title?: string; priority?: number; 
       stdio: ["pipe", "pipe", "pipe"],
     });
     const data = JSON.parse(output);
+    // bd show --json returns an array with a single element
+    const issue = Array.isArray(data) ? data[0] : data;
+    if (!issue) return null;
     return {
-      title: data.title,
-      priority: data.priority,
-      status: data.status,
+      title: issue.title,
+      priority: issue.priority,
+      status: issue.status,
     };
   } catch {
     return null;
@@ -78,8 +70,9 @@ export const worktreeFromIssue = (args: ParsedArgs) =>
       console.log("Create a worktree linked to an issue.");
       console.log();
       console.log("Options:");
-      console.log("  --name <name>   Custom worktree name");
-      console.log("  --no-claim      Don't auto-claim the worktree");
+      console.log("  --name <name>     Custom worktree name");
+      console.log("  --author <id>     Author identifier (default: human)");
+      console.log("  --no-claim        Don't auto-claim the worktree");
       console.log();
       console.log("Examples:");
       console.log("  grimoire wt from-issue grimoire-123");
@@ -133,14 +126,15 @@ export const worktreeFromIssue = (args: ParsedArgs) =>
     }
 
     // Create the worktree
+    const author = (args.flags["author"] as string) || "human";
+
     const createResult = yield* Effect.either(
       service.create(cwd, {
         branch: branchName,
         name: worktreeName,
         linkedIssue: issueId,
         createBranch: true,
-        createdBy: "agent",
-        sessionId: getAuthor(),
+        createdBy: author,
       })
     );
 
@@ -151,7 +145,6 @@ export const worktreeFromIssue = (args: ParsedArgs) =>
     }
 
     const info = createResult.right;
-    const author = getAuthor();
     const now = new Date().toISOString();
 
     // Update state with provider and claim info

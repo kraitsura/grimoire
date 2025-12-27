@@ -21,16 +21,6 @@ function detectCurrentWorktree(cwd: string): string | null {
   return match ? match[1] : null;
 }
 
-/**
- * Get author identifier
- */
-function getAuthor(): string {
-  return (
-    process.env.CLAUDE_SESSION_ID ||
-    process.env.GRIMOIRE_SESSION ||
-    "human"
-  );
-}
 
 export const worktreeCheckpoint = (args: ParsedArgs) =>
   Effect.gen(function* () {
@@ -168,7 +158,7 @@ export const worktreeCheckpoint = (args: ParsedArgs) =>
       console.log(`No changes to commit, recording HEAD: ${commitHash.slice(0, 7)}`);
     }
 
-    const author = getAuthor();
+    const author = (args.flags["author"] as string) || "human";
     const now = new Date().toISOString();
 
     // Get current state

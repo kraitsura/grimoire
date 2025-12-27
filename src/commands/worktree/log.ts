@@ -45,16 +45,6 @@ function detectCurrentWorktree(cwd: string): string | null {
   return match ? match[1] : null;
 }
 
-/**
- * Get author identifier
- */
-function getAuthor(): string {
-  return (
-    process.env.CLAUDE_SESSION_ID ||
-    process.env.GRIMOIRE_SESSION ||
-    "human"
-  );
-}
 
 export const worktreeLog = (args: ParsedArgs) =>
   Effect.gen(function* () {
@@ -175,7 +165,7 @@ export const worktreeLog = (args: ParsedArgs) =>
     const newLog: WorktreeLog = {
       time: new Date().toISOString(),
       message,
-      author: getAuthor(),
+      author: (args.flags["author"] as string) || "human",
       type: "log",
     };
 
