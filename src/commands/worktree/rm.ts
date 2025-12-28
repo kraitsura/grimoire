@@ -16,12 +16,15 @@ export const worktreeRm = (args: ParsedArgs) =>
       console.log("Options:");
       console.log("  --branch, -b    Also delete the branch");
       console.log("  --force, -f     Remove even with uncommitted changes");
+      console.log("  -D              Full cleanup: --force --branch (no confirmation)");
       console.log("  -y              Skip confirmation prompts");
       process.exit(1);
     }
 
-    const deleteBranch = args.flags["branch"] === true || args.flags["b"] === true;
-    const force = args.flags["force"] === true || args.flags["f"] === true;
+    // -D is shorthand for full cleanup: force + delete branch
+    const fullCleanup = args.flags["D"] === true;
+    const deleteBranch = fullCleanup || args.flags["branch"] === true || args.flags["b"] === true;
+    const force = fullCleanup || args.flags["force"] === true || args.flags["f"] === true;
 
     const service = yield* WorktreeService;
     const cwd = process.cwd();

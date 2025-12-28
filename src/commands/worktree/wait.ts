@@ -16,7 +16,7 @@ import type { WorktreeListItem } from "../../models/worktree";
 
 interface WaitResult {
   worktree: string;
-  status: "completed" | "crashed" | "timeout" | "running";
+  status: "completed" | "timeout" | "running";
   exitCode: number | null;
 }
 
@@ -140,21 +140,17 @@ export const worktreeWait = (args: ParsedArgs) =>
           continue;
         }
 
-        // Check session status
+        // Check session status - refreshSessionStatus updates crashed sessions automatically
         const sessionResult = yield* Effect.either(
           sessionService.refreshSessionStatus(wt.path)
         );
 
         if (sessionResult._tag === "Right" && sessionResult.right) {
           const session = sessionResult.right;
-          const alive = sessionService.isPidAlive(session.pid);
 
-          if (isCompleted(session.status) || !alive) {
-            if (session.status === "crashed" || (session.status === "running" && !alive)) {
-              current.status = "crashed";
-            } else {
-              current.status = "completed";
-            }
+          if (isCompleted(session.status)) {
+            // Both stopped and crashed mean work is done
+            current.status = "completed";
             current.exitCode = session.exitCode ?? null;
             anyCompleted = true;
             completedCount++;
@@ -196,25 +192,23 @@ export const worktreeWait = (args: ParsedArgs) =>
     if (json) {
       const allCompleted = resultArray.every((r) => r.status === "completed");
       const anyTimeout = resultArray.some((r) => r.status === "timeout");
-      const anyCrashed = resultArray.some((r) => r.status === "crashed");
 
       console.log(JSON.stringify({
-        status: anyTimeout ? "timeout" : (anyCrashed ? "partial" : (allCompleted ? "success" : "partial")),
+        status: anyTimeout ? "timeout" : (allCompleted ? "success" : "partial"),
         results: resultArray,
       }, null, 2));
     } else {
       const completed = resultArray.filter((r) => r.status === "completed").length;
-      const crashed = resultArray.filter((r) => r.status === "crashed").length;
       const timedOut = resultArray.filter((r) => r.status === "timeout").length;
       const running = resultArray.filter((r) => r.status === "running").length;
 
       console.log();
-      console.log(`Done: ${completed} completed, ${crashed} crashed, ${timedOut} timeout, ${running} still running`);
+      console.log(`Done: ${completed} completed, ${timedOut} timeout, ${running} still running`);
     }
 
-    // Exit with error if any failed
-    const anyFailed = resultArray.some((r) => r.status === "crashed" || r.status === "timeout");
-    if (anyFailed) {
+    // Exit with error if any timed out
+    const anyTimeout = resultArray.some((r) => r.status === "timeout");
+    if (anyTimeout) {
       process.exitCode = 1;
     }
   }).pipe(

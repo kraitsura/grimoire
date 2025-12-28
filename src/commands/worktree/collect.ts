@@ -48,13 +48,13 @@ function isCompleted(entry: WorktreeEntry, sessionService: { isPidAlive: (pid: n
     return true;
   }
 
-  // Check agent session
+  // Check agent session - stopped or crashed means work is done
   if (sessionStatus) {
-    if (sessionStatus.status === "stopped") {
+    if (sessionStatus.status === "stopped" || sessionStatus.status === "crashed") {
       return true;
     }
     if (sessionStatus.status === "running" && !sessionService.isPidAlive(sessionStatus.pid)) {
-      return true; // Crashed but done
+      return true; // Process died but status not updated
     }
   }
 

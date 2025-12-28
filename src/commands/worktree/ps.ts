@@ -64,16 +64,17 @@ export const worktreePs = (args: ParsedArgs) =>
 
     const worktrees = worktreesResult.right as WorktreeListItem[];
 
-    // Get session info for each worktree
+    // Get session info for each worktree - refreshSessionStatus updates crashed sessions automatically
     const results: WorktreeWithSession[] = [];
     for (const wt of worktrees) {
-      const session = yield* Effect.either(
+      const sessionResult = yield* Effect.either(
         sessionService.refreshSessionStatus(wt.path)
       );
 
-      if (session._tag === "Right" && session.right) {
-        const s = session.right;
-        const alive = sessionService.isPidAlive(s.pid);
+      if (sessionResult._tag === "Right" && sessionResult.right) {
+        const s = sessionResult.right;
+        // Use session status directly - refreshSessionStatus already marks crashed sessions
+        const alive = s.status === "running";
         results.push({ worktree: wt, session: s, alive });
       } else {
         results.push({ worktree: wt, session: null, alive: false });
@@ -126,15 +127,10 @@ export const worktreePs = (args: ParsedArgs) =>
         ? formatRelativeTime(r.session.startedAt)
         : "-";
 
-      // Determine actual status
-      let status: string;
-      if (!r.session) {
-        status = "-";
-      } else if (r.session.status === "running" && !r.alive) {
-        status = "crashed";
-      } else {
-        status = r.session.status;
-      }
+      // Status is already accurate from refreshSessionStatus
+      // Map stopped/crashed to completed (both mean work is done)
+      const rawStatus = r.session?.status;
+      const status = (rawStatus === "stopped" || rawStatus === "crashed") ? "completed" : (rawStatus ?? "-");
 
       const mode = r.session?.mode ?? "-";
 

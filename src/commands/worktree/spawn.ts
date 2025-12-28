@@ -154,10 +154,9 @@ const printUsage = () => {
   console.log("  --prompt, -p <text>    Initial prompt for Claude");
   console.log("  --issue, -i <id>       Link to beads issue");
   console.log("  --new-tab              Open Claude in a new terminal tab/window");
-  console.log("  --no-sandbox           Skip SRT sandboxing (for debugging)");
   console.log("  --no-copy              Skip copying config files");
   console.log("  --no-hooks             Skip running post-create hooks");
-  console.log("  --create-branch        Create new branch if doesn't exist");
+  console.log("  --no-create            Don't create branch if missing (error instead)");
   console.log();
   console.log("Headless Mode (background agents):");
   console.log("  -H, --headless         Run Claude in background (--print mode)");
@@ -191,7 +190,9 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     const noSandbox = args.flags["no-sandbox"] === true;
     const skipCopy = args.flags["no-copy"] === true;
     const skipHooks = args.flags["no-hooks"] === true;
-    const createBranch = args.flags["create-branch"] === true;
+    // Default: create branch if it doesn't exist (unless --no-create)
+    const noCreate = args.flags["no-create"] === true;
+    const createBranch = !noCreate;
     const newTab = args.flags["new-tab"] === true;
 
     // Headless mode options
@@ -254,7 +255,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
         console.log(`Worktree '${name}' already exists, using existing...`);
       } else if (e._tag === "BranchNotFoundError") {
         console.log(`Error: ${e.message}`);
-        console.log("Use --create-branch to create a new branch.");
+        console.log("Remove --no-create to auto-create the branch.");
         process.exit(1);
       } else {
         console.log(`Error creating worktree: ${e.message || String(createResult.left)}`);
