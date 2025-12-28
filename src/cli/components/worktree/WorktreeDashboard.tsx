@@ -20,7 +20,7 @@ import {
 import type { WorktreeListItem, WorktreeEntry } from "../../../models/worktree";
 
 type Panel = "list" | "detail";
-type Modal = "none" | "help" | "log" | "newWorktree" | "confirmDelete" | "confirmDeleteWithBranch";
+type Modal = "none" | "help" | "log" | "newWorktree" | "deleteWarning" | "confirmDeleteBranch";
 
 interface RichWorktree extends WorktreeListItem {
   claimedBy?: string;
@@ -39,8 +39,8 @@ export function WorktreeDashboard() {
   const [modal, setModal] = useState<Modal>("none");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [deleteWithBranch, setDeleteWithBranch] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [forceDelete, setForceDelete] = useState(false);
 
   // Enter alternate screen buffer on mount, exit on unmount
   useLayoutEffect(() => {
@@ -144,7 +144,7 @@ export function WorktreeDashboard() {
     }
   };
 
-  const handleDelete = async (withBranch: boolean) => {
+  const handleDelete = async (withBranch: boolean, force: boolean) => {
     if (!selectedWorktree) return;
     setIsDeleting(true);
     try {
@@ -153,7 +153,7 @@ export function WorktreeDashboard() {
         const service = yield* WorktreeService;
         yield* service.remove(cwd, selectedWorktree.name, {
           deleteBranch: withBranch,
-          force: false,
+          force,
         });
       }).pipe(Effect.provide(WorktreeServiceLive));
 
@@ -161,7 +161,7 @@ export function WorktreeDashboard() {
       const branchMsg = withBranch ? ` and branch '${selectedWorktree.branch}'` : "";
       setStatusMessage(`Removed worktree '${selectedWorktree.name}'${branchMsg}`);
       setModal("none");
-      setDeleteWithBranch(false);
+      setForceDelete(false);
       // Adjust selected index if needed
       if (selectedIndex >= worktrees.length - 1 && selectedIndex > 0) {
         setSelectedIndex(selectedIndex - 1);
@@ -171,35 +171,45 @@ export function WorktreeDashboard() {
       const error = e as { message?: string };
       setStatusMessage(`Error: ${error.message || String(e)}`);
       setModal("none");
+      setForceDelete(false);
     }
     setIsDeleting(false);
   };
 
+  // Check if worktree has any warnings (uncommitted changes or unpushed commits)
+  const hasWarnings = (wt: RichWorktree | undefined): boolean => {
+    if (!wt) return false;
+    return (wt.uncommittedChanges && wt.uncommittedChanges > 0) ||
+           (wt.unpushedCommits && wt.unpushedCommits > 0) || false;
+  };
+
   // Global keyboard handler
   useInput((input, key) => {
-    // Handle delete confirmation modals
-    if (modal === "confirmDelete") {
+    // Handle delete warning modal (when there are uncommitted/unpushed changes)
+    if (modal === "deleteWarning") {
       if (key.escape || input === "n" || input === "N") {
         setModal("none");
-        setDeleteWithBranch(false);
-      } else if (input === "y" || input === "Y") {
-        // Confirm: proceed to ask about branch deletion
-        setModal("confirmDeleteWithBranch");
+        setForceDelete(false);
+      } else if (input === "f" || input === "F") {
+        // Force delete - proceed to branch deletion question
+        setForceDelete(true);
+        setModal("confirmDeleteBranch");
       }
       return;
     }
 
-    if (modal === "confirmDeleteWithBranch") {
-      if (key.escape || input === "n" || input === "N") {
+    // Handle branch deletion confirmation
+    if (modal === "confirmDeleteBranch") {
+      if (key.escape || input === "c" || input === "C") {
+        // Cancel entirely
+        setModal("none");
+        setForceDelete(false);
+      } else if (input === "n" || input === "N") {
         // Delete worktree only (no branch)
-        handleDelete(false);
+        handleDelete(false, forceDelete);
       } else if (input === "y" || input === "Y") {
         // Delete worktree AND branch
-        handleDelete(true);
-      } else if (input === "c" || input === "C") {
-        // Cancel
-        setModal("none");
-        setDeleteWithBranch(false);
+        handleDelete(true, forceDelete);
       }
       return;
     }
@@ -239,7 +249,14 @@ export function WorktreeDashboard() {
         handleRelease();
       }
       if ((input === "d" || input === "x") && selectedWorktree) {
-        setModal("confirmDelete");
+        // Check for warnings - if any, show warning modal first
+        if (hasWarnings(selectedWorktree)) {
+          setModal("deleteWarning");
+        } else {
+          // No warnings - go straight to branch deletion question
+          setForceDelete(false);
+          setModal("confirmDeleteBranch");
+        }
       }
     }
   });
@@ -296,7 +313,10 @@ export function WorktreeDashboard() {
     );
   }
 
-  if (modal === "confirmDelete" && selectedWorktree) {
+  if (modal === "deleteWarning" && selectedWorktree) {
+    const uncommitted = selectedWorktree.uncommittedChanges || 0;
+    const unpushed = selectedWorktree.unpushedCommits || 0;
+
     return (
       <Box flexDirection="column" height="100%" justifyContent="center" alignItems="center">
         <Box
@@ -305,26 +325,34 @@ export function WorktreeDashboard() {
           borderColor="red"
           paddingX={2}
           paddingY={1}
+          minWidth={50}
         >
-          <Text bold color="red">Delete Worktree</Text>
+          <Text bold color="red">Warning: Unsaved Work</Text>
           <Text> </Text>
-          <Text>Are you sure you want to delete worktree:</Text>
+          <Text>Worktree has unsaved changes that will be lost:</Text>
           <Text bold>  {selectedWorktree.name}</Text>
           <Text dimColor>  Branch: {selectedWorktree.branch}</Text>
-          {selectedWorktree.uncommittedChanges && selectedWorktree.uncommittedChanges > 0 && (
-            <Text color="yellow">  Warning: {selectedWorktree.uncommittedChanges} uncommitted changes!</Text>
+          <Text> </Text>
+          {uncommitted > 0 && (
+            <Text color="yellow">  {uncommitted} uncommitted change{uncommitted > 1 ? "s" : ""}</Text>
+          )}
+          {unpushed > 0 && (
+            <Text color="yellow">  {unpushed} unpushed commit{unpushed > 1 ? "s" : ""}</Text>
           )}
           <Text> </Text>
+          <Text dimColor>Uncommitted changes will be permanently lost.</Text>
+          <Text dimColor>Unpushed commits can be recovered from reflog.</Text>
+          <Text> </Text>
           <Box gap={2}>
-            <Text color="green">[y] Yes, continue</Text>
-            <Text color="red">[n] Cancel</Text>
+            <Text color="red">[f] Force delete</Text>
+            <Text color="green">[n] Cancel</Text>
           </Box>
         </Box>
       </Box>
     );
   }
 
-  if (modal === "confirmDeleteWithBranch" && selectedWorktree) {
+  if (modal === "confirmDeleteBranch" && selectedWorktree) {
     return (
       <Box flexDirection="column" height="100%" justifyContent="center" alignItems="center">
         <Box
@@ -333,19 +361,27 @@ export function WorktreeDashboard() {
           borderColor="yellow"
           paddingX={2}
           paddingY={1}
+          minWidth={50}
         >
-          <Text bold color="yellow">Delete Branch?</Text>
+          <Text bold color="yellow">Delete Worktree</Text>
           <Text> </Text>
-          <Text>Also delete the branch?</Text>
-          <Text bold>  {selectedWorktree.branch}</Text>
+          <Text>Delete worktree and branch?</Text>
+          <Text bold>  {selectedWorktree.name}</Text>
+          <Text dimColor>  Branch: {selectedWorktree.branch}</Text>
           <Text> </Text>
           {isDeleting ? (
             <Text dimColor>Deleting...</Text>
           ) : (
-            <Box gap={2}>
-              <Text color="red">[y] Yes, delete branch</Text>
-              <Text color="green">[n] No, keep branch</Text>
-              <Text dimColor>[c] Cancel</Text>
+            <Box flexDirection="column">
+              <Box gap={2}>
+                <Text color="red">[y] Delete worktree + branch</Text>
+              </Box>
+              <Box gap={2}>
+                <Text color="green">[n] Delete worktree only</Text>
+              </Box>
+              <Box gap={2}>
+                <Text dimColor>[c] Cancel</Text>
+              </Box>
             </Box>
           )}
         </Box>

@@ -133,6 +133,53 @@ const getUncommittedChanges = (
   });
 
 /**
+ * Get number of unpushed commits (commits ahead of remote)
+ */
+const getUnpushedCommits = (
+  path: string
+): Effect.Effect<number, never> =>
+  Effect.gen(function* () {
+    // First check if there's a remote tracking branch
+    const trackingResult = yield* execCommand(
+      "git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null",
+      path
+    );
+    if (trackingResult.exitCode !== 0 || !trackingResult.stdout.trim()) {
+      // No tracking branch - check if there are any commits that could be pushed
+      // by comparing to origin/<branch>
+      const branchResult = yield* execCommand("git rev-parse --abbrev-ref HEAD", path);
+      if (branchResult.exitCode !== 0) return 0;
+      const branch = branchResult.stdout.trim();
+
+      // Check if origin/<branch> exists
+      const remoteRefResult = yield* execCommand(`git rev-parse --verify origin/${branch} 2>/dev/null`, path);
+      if (remoteRefResult.exitCode !== 0) {
+        // Remote branch doesn't exist - count all commits as unpushed
+        const allCommitsResult = yield* execCommand("git rev-list HEAD --count 2>/dev/null", path);
+        if (allCommitsResult.exitCode === 0) {
+          return parseInt(allCommitsResult.stdout.trim(), 10) || 0;
+        }
+        return 0;
+      }
+
+      // Remote branch exists, count commits ahead
+      const aheadResult = yield* execCommand(`git rev-list origin/${branch}..HEAD --count 2>/dev/null`, path);
+      if (aheadResult.exitCode === 0) {
+        return parseInt(aheadResult.stdout.trim(), 10) || 0;
+      }
+      return 0;
+    }
+
+    // Has tracking branch - use rev-list to count ahead commits
+    const upstream = trackingResult.stdout.trim();
+    const aheadResult = yield* execCommand(`git rev-list ${upstream}..HEAD --count 2>/dev/null`, path);
+    if (aheadResult.exitCode === 0) {
+      return parseInt(aheadResult.stdout.trim(), 10) || 0;
+    }
+    return 0;
+  });
+
+/**
  * Check if a branch has been merged to main/master
  */
 const isBranchMerged = (
@@ -564,6 +611,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
         for (const wt of gitWorktrees) {
           const name = basename(wt.path);
           const uncommittedChanges = yield* getUncommittedChanges(wt.path);
+          const unpushedCommits = yield* getUnpushedCommits(wt.path);
           const merged = yield* isBranchMerged(repoRoot, wt.branch);
 
           // Get state info
@@ -586,6 +634,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
             linkedIssue: stateEntry?.linkedIssue,
             status: merged ? "stale" : "active",
             uncommittedChanges: uncommittedChanges > 0 ? uncommittedChanges : undefined,
+            unpushedCommits: unpushedCommits > 0 ? unpushedCommits : undefined,
             metadata: stateEntry?.metadata,
           });
         }

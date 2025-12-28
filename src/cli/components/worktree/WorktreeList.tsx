@@ -13,6 +13,7 @@ interface WorktreeItem {
   linkedIssue?: string;
   claimedBy?: string;
   uncommittedChanges?: number;
+  unpushedCommits?: number;
 }
 
 interface WorktreeListProps {
@@ -55,9 +56,14 @@ export function WorktreeList({ worktrees, selectedIndex, onSelect, focused }: Wo
         // Claim indicator
         const claimBadge = wt.claimedBy ? `[${wt.claimedBy}]` : "";
 
-        // Changes indicator
-        const changesBadge = wt.uncommittedChanges && wt.uncommittedChanges > 0
+        // Changes indicator (uncommitted changes)
+        const uncommittedBadge = wt.uncommittedChanges && wt.uncommittedChanges > 0
           ? `*${wt.uncommittedChanges}`
+          : "";
+
+        // Unpushed commits indicator
+        const unpushedBadge = wt.unpushedCommits && wt.unpushedCommits > 0
+          ? `↑${wt.unpushedCommits}`
           : "";
 
         return (
@@ -74,8 +80,11 @@ export function WorktreeList({ worktrees, selectedIndex, onSelect, focused }: Wo
             {claimBadge && (
               <Text color="magenta"> {claimBadge}</Text>
             )}
-            {changesBadge && (
-              <Text color="yellow"> {changesBadge}</Text>
+            {uncommittedBadge && (
+              <Text color="yellow"> {uncommittedBadge}</Text>
+            )}
+            {unpushedBadge && (
+              <Text color="cyan"> {unpushedBadge}</Text>
             )}
           </Box>
         );

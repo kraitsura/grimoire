@@ -103,6 +103,8 @@ export const WorktreeListItemSchema = Schema.extend(
     status: WorktreeStatusSchema,
     /** Number of uncommitted changes (from git status) */
     uncommittedChanges: Schema.optional(Schema.Number),
+    /** Number of commits ahead of remote (unpushed) */
+    unpushedCommits: Schema.optional(Schema.Number),
   })
 );
 
