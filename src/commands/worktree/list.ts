@@ -7,10 +7,22 @@ import type { ParsedArgs } from "../../cli/parser";
 import { WorktreeService, WorktreeServiceLive } from "../../services/worktree";
 import type { WorktreeListItem } from "../../models/worktree";
 
+// ANSI color codes
+const c = {
+  reset: "\x1b[0m",
+  dim: "\x1b[2m",
+  bold: "\x1b[1m",
+  green: "\x1b[32m",
+  red: "\x1b[31m",
+  yellow: "\x1b[33m",
+  cyan: "\x1b[36m",
+  magenta: "\x1b[35m",
+};
+
 /**
- * Format relative time (e.g., "2h ago", "3d ago")
+ * Format relative time (e.g., "2d", "3h")
  */
-function formatRelativeTime(dateStr: string): string {
+function formatAge(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -18,19 +30,74 @@ function formatRelativeTime(dateStr: string): string {
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffDays > 0) return `${diffDays}d ago`;
-  if (diffHours > 0) return `${diffHours}h ago`;
-  if (diffMins > 0) return `${diffMins}m ago`;
-  return "just now";
+  if (diffDays > 0) return `${diffDays}d`;
+  if (diffHours > 0) return `${diffHours}h`;
+  if (diffMins > 0) return `${diffMins}m`;
+  return "now";
 }
 
 /**
- * Pad string to length
+ * Right-pad a string to a fixed width, truncating if needed
  */
-function pad(str: string, len: number): string {
-  if (str.length >= len) return str.substring(0, len - 1) + "…";
-  return str + " ".repeat(len - str.length);
+function col(str: string, width: number): string {
+  if (str.length > width) {
+    return str.slice(0, width - 2) + "..";
+  }
+  return str.padEnd(width);
 }
+
+/**
+ * Get diff stats for a worktree compared to main/master
+ */
+async function getDiffStats(
+  worktreePath: string
+): Promise<{ ins: number; del: number } | null> {
+  try {
+    // Find the main branch
+    const mainProc = Bun.spawn(
+      [
+        "sh",
+        "-c",
+        "git rev-parse --verify refs/heads/main 2>/dev/null && echo main || (git rev-parse --verify refs/heads/master 2>/dev/null && echo master)",
+      ],
+      { cwd: worktreePath, stdout: "pipe", stderr: "pipe" }
+    );
+    const mainOut = (await new Response(mainProc.stdout).text()).trim();
+    await mainProc.exited;
+    const mainBranch = mainOut.split("\n").pop() || "main";
+
+    // Get diff stats
+    const proc = Bun.spawn(
+      ["git", "diff", "--shortstat", `${mainBranch}...HEAD`],
+      { cwd: worktreePath, stdout: "pipe", stderr: "pipe" }
+    );
+    const output = (await new Response(proc.stdout).text()).trim();
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0 || !output) return null;
+
+    // Parse: "X files changed, Y insertions(+), Z deletions(-)"
+    const insMatch = output.match(/(\d+) insertion/);
+    const delMatch = output.match(/(\d+) deletion/);
+
+    return {
+      ins: insMatch ? parseInt(insMatch[1], 10) : 0,
+      del: delMatch ? parseInt(delMatch[1], 10) : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Column widths
+const COL = {
+  name: 20,
+  branch: 24,
+  issue: 14,
+  age: 5,
+  diff: 12,
+  status: 10,
+};
 
 export const worktreeList = (args: ParsedArgs) =>
   Effect.gen(function* () {
@@ -56,7 +123,9 @@ export const worktreeList = (args: ParsedArgs) =>
       : worktrees;
 
     if (json) {
-      console.log(JSON.stringify({ worktrees: filtered, basePath: ".worktrees" }, null, 2));
+      console.log(
+        JSON.stringify({ worktrees: filtered, basePath: ".worktrees" }, null, 2)
+      );
       return;
     }
 
@@ -71,25 +140,74 @@ export const worktreeList = (args: ParsedArgs) =>
       return;
     }
 
-    // Table header
-    console.log(
-      `${pad("NAME", 16)}${pad("BRANCH", 20)}${pad("ISSUE", 12)}${pad("CREATED", 10)}STATUS`
+    // Get diff stats for all worktrees in parallel
+    const diffStatsArr = yield* Effect.promise(() =>
+      Promise.all(filtered.map((wt) => getDiffStats(wt.path)))
     );
 
-    // Table rows
-    for (const wt of filtered) {
-      const issue = wt.linkedIssue || "-";
-      const created = formatRelativeTime(wt.createdAt);
-      const statusIcon = wt.status === "stale" ? " (merged)" : "";
-      const changesNote = wt.uncommittedChanges
-        ? ` [${wt.uncommittedChanges} changes]`
-        : "";
+    // Header
+    console.log(
+      `${c.dim}${col("NAME", COL.name)}${col("BRANCH", COL.branch)}${col("ISSUE", COL.issue)}${col("AGE", COL.age)}${col("DIFF", COL.diff)}STATUS${c.reset}`
+    );
+
+    // Rows
+    for (let i = 0; i < filtered.length; i++) {
+      const wt = filtered[i];
+      const stats = diffStatsArr[i];
+
+      // Name column
+      const nameStr = col(wt.name, COL.name);
+
+      // Branch column - show "=" if same as name
+      const branchDisplay = wt.branch === wt.name ? "=" : wt.branch;
+      const branchStr =
+        wt.branch === wt.name
+          ? `${c.dim}${col(branchDisplay, COL.branch)}${c.reset}`
+          : col(branchDisplay, COL.branch);
+
+      // Issue column
+      const issueDisplay = wt.linkedIssue || "-";
+      const issueStr = wt.linkedIssue
+        ? `${c.cyan}${col(issueDisplay, COL.issue)}${c.reset}`
+        : `${c.dim}${col(issueDisplay, COL.issue)}${c.reset}`;
+
+      // Age column
+      const ageStr = col(formatAge(wt.createdAt), COL.age);
+
+      // Diff column
+      let diffStr: string;
+      if (!stats || (stats.ins === 0 && stats.del === 0)) {
+        diffStr = `${c.dim}${col("-", COL.diff)}${c.reset}`;
+      } else {
+        const diffParts: string[] = [];
+        if (stats.ins > 0) diffParts.push(`${c.green}+${stats.ins}${c.reset}`);
+        if (stats.del > 0) diffParts.push(`${c.red}-${stats.del}${c.reset}`);
+        const diffText = diffParts.join(" ");
+        // Calculate visible length for padding
+        const visLen =
+          (stats.ins > 0 ? `+${stats.ins}`.length : 0) +
+          (stats.del > 0 ? `-${stats.del}`.length : 0) +
+          (stats.ins > 0 && stats.del > 0 ? 1 : 0);
+        diffStr = diffText + " ".repeat(Math.max(0, COL.diff - visLen));
+      }
+
+      // Status column
+      let statusStr: string;
+      if (wt.status === "stale") {
+        statusStr = `${c.yellow}merged${c.reset}`;
+      } else if (wt.uncommittedChanges && wt.uncommittedChanges > 0) {
+        statusStr = `${c.magenta}${wt.uncommittedChanges} dirty${c.reset}`;
+      } else {
+        statusStr = `${c.dim}clean${c.reset}`;
+      }
 
       console.log(
-        `${pad(wt.name, 16)}${pad(wt.branch, 20)}${pad(issue, 12)}${pad(created, 10)}${wt.status}${statusIcon}${changesNote}`
+        `${nameStr}${branchStr}${issueStr}${ageStr}${diffStr}${statusStr}`
       );
     }
 
     console.log();
-    console.log(`${filtered.length} worktree${filtered.length === 1 ? "" : "s"} (.worktrees/)`);
+    console.log(
+      `${c.dim}${filtered.length} worktree${filtered.length === 1 ? "" : "s"} in .worktrees/${c.reset}`
+    );
   }).pipe(Effect.provide(WorktreeServiceLive));
