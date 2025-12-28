@@ -97,15 +97,10 @@ export const worktreeCollect = (args: ParsedArgs) =>
     const sessionService = yield* AgentSessionService;
     const cwd = process.cwd();
 
-    // Detect current worktree/session
+    // Detect current worktree/session or use explicit args
     const currentWorktree = process.env.GRIMOIRE_WORKTREE;
     const currentSession = process.env.GRIMOIRE_SESSION_ID;
-
-    if (!currentWorktree && !currentSession) {
-      console.log("Not running in a spawned worktree context.");
-      console.log("Usage: grim wt collect [--dry-run] [--strategy merge|rebase|squash]");
-      process.exit(1);
-    }
+    const explicitWorktrees = args.positional.slice(1); // Skip "collect" subcommand
 
     // Get all worktrees
     const worktreesResult = yield* Effect.either(worktreeService.list(cwd));
@@ -118,16 +113,34 @@ export const worktreeCollect = (args: ParsedArgs) =>
     const worktrees = worktreesResult.right as WorktreeListItem[];
     const state = yield* stateService.getState(cwd);
 
-    // Find children of current worktree/session
-    const childEntries = state.worktrees.filter(
-      (w) => w.parentWorktree === currentWorktree || w.parentSession === currentSession
-    );
+    // Find worktrees to collect - either explicit args, or children of current session
+    let childEntries: typeof state.worktrees;
+
+    if (explicitWorktrees.length > 0) {
+      // Explicit worktrees specified
+      childEntries = state.worktrees.filter((w) => explicitWorktrees.includes(w.name));
+    } else if (currentWorktree || currentSession) {
+      // Auto-detect children of current worktree/session
+      childEntries = state.worktrees.filter(
+        (w) => w.parentWorktree === currentWorktree || w.parentSession === currentSession
+      );
+    } else {
+      console.log("Usage: grim wt collect <worktree1> <worktree2> ...");
+      console.log("       grim wt collect  (auto-detect children when in spawned context)");
+      console.log();
+      console.log("Options:");
+      console.log("  --dry-run              Preview what would be merged");
+      console.log("  --strategy <type>      merge (default), rebase, or squash");
+      console.log("  --delete               Delete worktree after successful merge");
+      console.log("  --json                 Output structured JSON");
+      process.exit(1);
+    }
 
     if (childEntries.length === 0) {
       if (json) {
-        console.log(JSON.stringify({ status: "no_children", results: [] }));
+        console.log(JSON.stringify({ status: "no_matches", results: [] }));
       } else {
-        console.log("No child worktrees to collect.");
+        console.log("No matching worktrees to collect.");
       }
       return;
     }

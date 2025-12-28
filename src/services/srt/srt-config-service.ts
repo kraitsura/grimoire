@@ -300,6 +300,20 @@ const makeSrtConfigService = (): SrtConfigServiceImpl => ({
     Effect.gen(function* () {
       const loaded = yield* makeSrtConfigService().loadConfig(projectPath);
 
+      // Build allowed write paths
+      // Include worktree path and parent repo's .git for git operations
+      const allowWritePaths = [
+        worktreePath,
+        ...DEFAULT_ALLOW_WRITE_EXTRA,
+        ...(loaded.config.filesystem?.additionalWritePaths ?? []),
+      ];
+
+      // Git worktrees need write access to parent repo's .git directory
+      // for commits, index updates, and worktree metadata
+      if (projectPath) {
+        allowWritePaths.push(join(projectPath, ".git"));
+      }
+
       // Build final config with defaults and mandatory protections
       const config: SrtConfig = {
         network: {
@@ -317,11 +331,7 @@ const makeSrtConfigService = (): SrtConfigServiceImpl => ({
             ...DEFAULT_DENY_READ,
             ...(loaded.config.filesystem?.denyRead ?? []),
           ]),
-          allowWrite: dedupe([
-            worktreePath,
-            ...DEFAULT_ALLOW_WRITE_EXTRA,
-            ...(loaded.config.filesystem?.additionalWritePaths ?? []),
-          ]),
+          allowWrite: dedupe(allowWritePaths),
           denyWrite: dedupe([
             ...MANDATORY_DENY_WRITE,
             ...DEFAULT_DENY_WRITE,

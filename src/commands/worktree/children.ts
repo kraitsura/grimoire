@@ -53,22 +53,28 @@ export const worktreeChildren = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const json = args.flags["json"] === true;
     const all = args.flags["all"] === true;
+    const explicitParent = args.positional[1]; // Optional: grim wt children <parent-name>
 
     const worktreeService = yield* WorktreeService;
     const stateService = yield* WorktreeStateService;
     const sessionService = yield* AgentSessionService;
     const cwd = process.cwd();
 
-    // Detect current worktree/session from environment
-    const currentWorktree = process.env.GRIMOIRE_WORKTREE;
+    // Detect current worktree/session from environment or explicit arg
+    const currentWorktree = explicitParent || process.env.GRIMOIRE_WORKTREE;
     const currentSession = process.env.GRIMOIRE_SESSION_ID;
 
     if (!currentWorktree && !currentSession && !all) {
-      console.log("Not running in a spawned worktree context.");
-      console.log("Use --all to show all parent-child relationships.");
+      console.log("Usage: grim wt children [parent-name] [--all] [--json]");
       console.log();
-      console.log("Hint: This command works best when run from within a spawned worktree,");
-      console.log("      or set GRIMOIRE_WORKTREE/GRIMOIRE_SESSION_ID environment variables.");
+      console.log("Show worktrees spawned by a parent worktree.");
+      console.log();
+      console.log("Arguments:");
+      console.log("  <parent-name>    Name of parent worktree (optional if in spawned context)");
+      console.log();
+      console.log("Options:");
+      console.log("  --all            Show all parent-child relationships");
+      console.log("  --json           Output structured JSON");
       return;
     }
 
