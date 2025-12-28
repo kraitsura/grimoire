@@ -40,9 +40,21 @@ function execGit(cmd: string, cwd: string): { success: boolean; output: string }
 }
 
 /**
- * Check if a worktree is completed (agent finished)
+ * Check if a worktree is completed (agent finished or no agent)
+ *
+ * A worktree is considered completed if:
+ * - mergeStatus is "ready" or "merged"
+ * - Agent session is stopped or crashed
+ * - completedAt timestamp is set
+ * - No session exists (worktree created with `wt new`, work done manually)
+ * - Explicitly specified in args (user knows it's ready)
  */
-function isCompleted(entry: WorktreeEntry, sessionService: { isPidAlive: (pid: number) => boolean }, sessionStatus?: { status: string; pid: number }): boolean {
+function isCompleted(
+  entry: WorktreeEntry,
+  sessionService: { isPidAlive: (pid: number) => boolean },
+  sessionStatus?: { status: string; pid: number } | null,
+  isExplicitlySpecified?: boolean
+): boolean {
   // Check mergeStatus
   if (entry.mergeStatus === "ready" || entry.mergeStatus === "merged") {
     return true;
@@ -56,10 +68,18 @@ function isCompleted(entry: WorktreeEntry, sessionService: { isPidAlive: (pid: n
     if (sessionStatus.status === "running" && !sessionService.isPidAlive(sessionStatus.pid)) {
       return true; // Process died but status not updated
     }
+    // If session exists and is running, not completed
+    return false;
   }
 
   // Check completedAt timestamp
   if (entry.completedAt) {
+    return true;
+  }
+
+  // No session exists - if explicitly specified, treat as ready to collect
+  // This handles worktrees created with `wt new` where work is done manually
+  if (isExplicitlySpecified) {
     return true;
   }
 
@@ -114,16 +134,35 @@ export const worktreeCollect = (args: ParsedArgs) =>
     const state = yield* stateService.getState(cwd);
 
     // Find worktrees to collect - either explicit args, or children of current session
-    let childEntries: typeof state.worktrees;
+    let childEntries: WorktreeEntry[];
+    const isExplicitlySpecified = explicitWorktrees.length > 0;
+    const explicitSet = new Set(explicitWorktrees);
 
     if (explicitWorktrees.length > 0) {
-      // Explicit worktrees specified
-      childEntries = state.worktrees.filter((w) => explicitWorktrees.includes(w.name));
+      // Explicit worktrees specified - look in both state and git worktrees
+      childEntries = [...state.worktrees.filter((w) => explicitWorktrees.includes(w.name))];
+
+      // Also check for worktrees that exist in git but not in state
+      // (created with `wt new`, not tracked in state yet)
+      for (const wtName of explicitWorktrees) {
+        const existsInState = state.worktrees.some((w) => w.name === wtName);
+        if (!existsInState) {
+          const wt = worktrees.find((w) => w.name === wtName);
+          if (wt) {
+            // Create a minimal entry for the worktree
+            childEntries.push({
+              name: wt.name,
+              branch: wt.branch,
+              createdAt: new Date().toISOString(),
+            } as WorktreeEntry);
+          }
+        }
+      }
     } else if (currentWorktree || currentSession) {
       // Auto-detect children of current worktree/session
-      childEntries = state.worktrees.filter(
+      childEntries = [...state.worktrees.filter(
         (w) => w.parentWorktree === currentWorktree || w.parentSession === currentSession
-      );
+      )];
     } else {
       console.log("Usage: grim wt collect <worktree1> <worktree2> ...");
       console.log("       grim wt collect  (auto-detect children when in spawned context)");
@@ -170,7 +209,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
 
     // Filter to completed children
     const completed = childrenWithStatus.filter((c) =>
-      isCompleted(c.entry, sessionService, c.sessionStatus || undefined)
+      isCompleted(c.entry, sessionService, c.sessionStatus, explicitSet.has(c.entry.name))
     );
 
     // Get topological order
@@ -207,7 +246,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
       }
 
       // Check if child is actually completed
-      if (!isCompleted(entry, sessionService, child.sessionStatus || undefined)) {
+      if (!isCompleted(entry, sessionService, child.sessionStatus, explicitSet.has(entry.name))) {
         results.push({
           worktree: entry.name,
           branch: entry.branch,

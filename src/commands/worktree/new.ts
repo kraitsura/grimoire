@@ -26,6 +26,10 @@ export const worktreeNew = (args: ParsedArgs) =>
       console.log("  --no-copy             Skip copying config files");
       console.log("  --no-hooks            Skip running post-create hooks");
       console.log("  --no-create           Don't create branch if missing (error instead)");
+      console.log("  -o, --output-path     Output only the path (for cd integration)");
+      console.log();
+      console.log("Integration:");
+      console.log("  cd $(grimoire wt new -o <name>)    Create and cd into worktree");
       process.exit(1);
     }
 
@@ -34,6 +38,7 @@ export const worktreeNew = (args: ParsedArgs) =>
     const skipCopy = args.flags["no-copy"] === true;
     const skipHooks = args.flags["no-hooks"] === true;
     const noCreate = args.flags["no-create"] === true;
+    const outputPath = args.flags["output-path"] === true || args.flags["o"] === true;
     // Default: create branch if it doesn't exist (unless --no-create)
     const createBranch = !noCreate;
 
@@ -44,10 +49,15 @@ export const worktreeNew = (args: ParsedArgs) =>
     const existingResult = yield* Effect.either(service.get(cwd, name || branch));
     if (existingResult._tag === "Right") {
       const existing = existingResult.right as WorktreeInfo;
-      console.log(`Worktree '${existing.name}' already exists at ${existing.path}`);
-      console.log(`  Branch: ${existing.branch}`);
-      console.log();
-      console.log(`  cd ${existing.path}`);
+      if (outputPath) {
+        // -o flag: output only the path for shell integration
+        console.log(existing.path);
+      } else {
+        console.log(`Worktree '${existing.name}' already exists at ${existing.path}`);
+        console.log(`  Branch: ${existing.branch}`);
+        console.log();
+        console.log(`  cd ${existing.path}`);
+      }
       return;
     }
 
@@ -78,11 +88,16 @@ export const worktreeNew = (args: ParsedArgs) =>
 
     const result = createResult.right as WorktreeInfo;
 
-    console.log(`Created worktree '${result.name}' at ${result.path}`);
-    console.log(`  Branch: ${result.branch}`);
-    if (result.linkedIssue) {
-      console.log(`  Linked issue: ${result.linkedIssue}`);
+    if (outputPath) {
+      // -o flag: output only the path for shell integration
+      console.log(result.path);
+    } else {
+      console.log(`Created worktree '${result.name}' at ${result.path}`);
+      console.log(`  Branch: ${result.branch}`);
+      if (result.linkedIssue) {
+        console.log(`  Linked issue: ${result.linkedIssue}`);
+      }
+      console.log();
+      console.log(`  cd ${result.path}`);
     }
-    console.log();
-    console.log(`  cd ${result.path}`);
   }).pipe(Effect.provide(WorktreeServiceLive));

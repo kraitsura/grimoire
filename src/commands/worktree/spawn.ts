@@ -142,12 +142,14 @@ const spawnHeadless = (params: SpawnHeadlessParams) =>
  * Print usage and exit
  */
 const printUsage = () => {
-  console.log("Usage: grimoire wt spawn <name> [options]");
+  console.log("Usage: grimoire wt spawn <name> [options] [prompt]");
   console.log();
   console.log("Create a worktree and launch a sandboxed Claude session.");
+  console.log("If the worktree/branch already exists, deploys an agent to it.");
   console.log();
   console.log("Arguments:");
   console.log("  <name>                 Worktree/branch name");
+  console.log("  [prompt]               Optional prompt (with -bg/--background)");
   console.log();
   console.log("Options:");
   console.log("  --branch, -b <name>    Use different branch name");
@@ -158,7 +160,11 @@ const printUsage = () => {
   console.log("  --no-hooks             Skip running post-create hooks");
   console.log("  --no-create            Don't create branch if missing (error instead)");
   console.log();
-  console.log("Headless Mode (background agents):");
+  console.log("Background Mode (recommended for parallel agents):");
+  console.log("  -bg, --background      Quick background agent (-H --srt combined)");
+  console.log("                         Usage: grim wt spawn <name> -bg \"prompt\"");
+  console.log();
+  console.log("Headless Mode (granular control):");
   console.log("  -H, --headless         Run Claude in background (--print mode)");
   console.log("  --srt                  Sandboxed autonomous execution (recommended)");
   console.log("                         Agent runs freely within sandbox constraints");
@@ -169,6 +175,7 @@ const printUsage = () => {
   console.log("Examples:");
   console.log('  grimoire wt spawn auth-feature --prompt "Implement OAuth2"');
   console.log("  grimoire wt spawn --issue grimoire-123");
+  console.log('  grimoire wt spawn task-1 -bg "Fix the login bug"');
   console.log('  grimoire wt spawn task-1 -H --srt --prompt "Fix the login bug"');
   process.exit(1);
 };
@@ -181,10 +188,19 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       return;
     }
 
+    // Check for --background / -bg flag (combines -H --srt --prompt)
+    const isBackground = args.flags["background"] === true || args.flags["bg"] === true;
+
     // Parse options
     const branchName =
       (args.flags["branch"] as string) || (args.flags["b"] as string) || name;
-    const prompt = (args.flags["prompt"] as string) || (args.flags["p"] as string);
+
+    // For -bg mode, the prompt can be positional (args.positional[2]) or via --prompt/-p
+    let prompt = (args.flags["prompt"] as string) || (args.flags["p"] as string);
+    if (isBackground && !prompt && args.positional[2]) {
+      prompt = args.positional[2];
+    }
+
     const linkedIssue =
       (args.flags["issue"] as string) || (args.flags["i"] as string);
     const noSandbox = args.flags["no-sandbox"] === true;
@@ -196,16 +212,18 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     const newTab = args.flags["new-tab"] === true;
 
     // Headless mode options
-    const headless = args.flags["headless"] === true || args.flags["H"] === true;
-    const useSrt = args.flags["srt"] === true;
+    // --background implies both --headless and --srt
+    const headless = args.flags["headless"] === true || args.flags["H"] === true || isBackground;
+    const useSrt = args.flags["srt"] === true || isBackground;
     // SRT implies skip-permissions - the sandbox IS the safety mechanism
     const dangerouslySkipPermissions =
       args.flags["dangerously-skip-permissions"] === true || useSrt;
 
-    // Validate headless mode requirements
+    // Validate headless mode requirements (skip for -bg since it auto-enables srt)
     if (headless && !useSrt && !dangerouslySkipPermissions) {
       console.log("Error: Headless mode requires --srt or --dangerously-skip-permissions");
       console.log("Hint: Use --srt for sandboxed autonomous execution (recommended)");
+      console.log("Hint: Or use -bg/--background for quick background mode (-H --srt combined)");
       process.exit(1);
     }
 
@@ -232,48 +250,50 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       }
     }
 
-    // Step 2: Create the worktree
-    console.log(`Creating worktree '${name}'...`);
+    // Step 2: Check if worktree exists, create if needed
+    const existingResult = yield* Effect.either(worktreeService.get(cwd, name));
+    let worktree: WorktreeInfo;
+    let isExisting = false;
 
-    const createResult = yield* Effect.either(
-      worktreeService.create(cwd, {
-        branch: branchName,
-        name,
-        linkedIssue,
-        skipCopy,
-        skipHooks,
-        createBranch,
-        createdBy: "agent",
-        sessionId: randomUUID(),
-      })
-    );
+    if (existingResult._tag === "Right") {
+      // Worktree already exists - deploy agent to it
+      worktree = existingResult.right as WorktreeInfo;
+      isExisting = true;
+      console.log(`Using existing worktree '${name}'...`);
+    } else {
+      // Create the worktree
+      console.log(`Creating worktree '${name}'...`);
 
-    if (createResult._tag === "Left") {
-      const e = createResult.left as { _tag?: string; message?: string };
-      if (e._tag === "WorktreeAlreadyExistsError") {
-        // Worktree exists, try to use it
-        console.log(`Worktree '${name}' already exists, using existing...`);
-      } else if (e._tag === "BranchNotFoundError") {
-        console.log(`Error: ${e.message}`);
-        console.log("Remove --no-create to auto-create the branch.");
-        process.exit(1);
-      } else {
-        console.log(`Error creating worktree: ${e.message || String(createResult.left)}`);
-        process.exit(1);
+      const createResult = yield* Effect.either(
+        worktreeService.create(cwd, {
+          branch: branchName,
+          name,
+          linkedIssue,
+          skipCopy,
+          skipHooks,
+          createBranch,
+          createdBy: "agent",
+          sessionId: randomUUID(),
+        })
+      );
+
+      if (createResult._tag === "Left") {
+        const e = createResult.left as { _tag?: string; message?: string };
+        if (e._tag === "BranchNotFoundError") {
+          console.log(`Error: ${e.message}`);
+          console.log("Remove --no-create to auto-create the branch.");
+          process.exit(1);
+        } else {
+          console.log(`Error creating worktree: ${e.message || String(createResult.left)}`);
+          process.exit(1);
+        }
       }
-    }
 
-    // Get worktree info (either newly created or existing)
-    const worktreeResult = yield* Effect.either(worktreeService.get(cwd, name));
-    if (worktreeResult._tag === "Left") {
-      console.log("Error: Failed to get worktree info");
-      process.exit(1);
+      worktree = createResult.right as WorktreeInfo;
     }
-
-    const worktree = worktreeResult.right as WorktreeInfo;
     console.log(`  Branch: ${worktree.branch}`);
     console.log(`  Path: ${worktree.path}`);
-    if (linkedIssue) {
+    if (linkedIssue && !isExisting) {
       console.log(`  Issue: ${linkedIssue}`);
     }
 
@@ -282,7 +302,9 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     const parentSessionId = process.env.GRIMOIRE_SESSION_ID;
     const parentWorktreeName = process.env.GRIMOIRE_WORKTREE;
 
-    if (parentSessionId || parentWorktreeName) {
+    // Only set parent relationship if this is a new worktree being spawned
+    // Existing worktrees retain their original relationships
+    if (!isExisting && (parentSessionId || parentWorktreeName)) {
       const now = new Date().toISOString();
 
       // Update the new worktree with parent info

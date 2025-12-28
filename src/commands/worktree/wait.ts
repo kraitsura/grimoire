@@ -26,9 +26,10 @@ interface WaitResult {
 const sleep = (ms: number) => Effect.promise(() => new Promise((resolve) => setTimeout(resolve, ms)));
 
 /**
- * Check if a worktree's agent has completed
+ * Check if a worktree's agent has completed (or has no agent)
  */
-function isCompleted(status: string): boolean {
+function isSessionCompleted(status: string | null): boolean {
+  if (!status) return true; // No session = no agent to wait for
   return status === "stopped" || status === "crashed";
 }
 
@@ -148,7 +149,7 @@ export const worktreeWait = (args: ParsedArgs) =>
         if (sessionResult._tag === "Right" && sessionResult.right) {
           const session = sessionResult.right;
 
-          if (isCompleted(session.status)) {
+          if (isSessionCompleted(session.status)) {
             // Both stopped and crashed mean work is done
             current.status = "completed";
             current.exitCode = session.exitCode ?? null;
@@ -160,8 +161,10 @@ export const worktreeWait = (args: ParsedArgs) =>
             }
           }
         } else {
-          // No session info - check if mergeStatus indicates completion
+          // No session info - check if mergeStatus indicates completion or if explicitly specified
           const entry = state.worktrees.find((w) => w.name === wt.name);
+          const isExplicit = specifiedWorktrees.includes(wt.name);
+
           if (entry?.mergeStatus && entry.mergeStatus !== "pending") {
             current.status = "completed";
             completedCount++;
@@ -169,6 +172,16 @@ export const worktreeWait = (args: ParsedArgs) =>
 
             if (!json) {
               console.log(`  [completed] ${wt.name} (${entry.mergeStatus})`);
+            }
+          } else if (isExplicit) {
+            // Explicitly specified worktree with no agent session - consider it done
+            // (worktrees created with `wt new` have no session, nothing to wait for)
+            current.status = "completed";
+            completedCount++;
+            anyCompleted = true;
+
+            if (!json) {
+              console.log(`  [completed] ${wt.name} (no agent)`);
             }
           }
         }
