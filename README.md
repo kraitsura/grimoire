@@ -52,15 +52,17 @@ Supported agents:
 Manage git worktrees for parallel development. Spawn isolated Claude sessions, track progress, and hand off work between agents.
 
 ```bash
-grimoire wt new feature-branch         # Create worktree
-grimoire wt spawn feature-branch       # Launch Claude session
-grimoire wt status                     # View all worktrees
+grimoire wt new feature-branch              # Create worktree
+cd $(grimoire wt new -o feature-branch)     # Create and cd into worktree
+grimoire wt spawn task -bg "Fix the bug"    # Background agent
+grimoire wt status                          # View all worktrees
 ```
 
 - Link worktrees to issues
 - Progress logging and checkpoints
 - Claim/release for exclusive access
 - Agent handoff protocol
+- Parallel background agents with `-bg` flag
 
 [View documentation](docs/worktrees.md)
 
