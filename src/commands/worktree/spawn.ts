@@ -16,6 +16,8 @@ import type { ParsedArgs } from "../../cli/parser";
 import {
   WorktreeService,
   WorktreeServiceLive,
+  WorktreeStateService,
+  WorktreeStateServiceLive,
   AgentSessionService,
   AgentSessionServiceLive,
 } from "../../services/worktree";
@@ -157,11 +159,14 @@ const printUsage = () => {
   console.log("  --no-hooks             Skip running post-create hooks");
   console.log("  --create-branch        Create new branch if doesn't exist");
   console.log();
+  console.log("Sandbox Mode:");
+  console.log("  --srt                  Enable SRT sandbox (opt-in, breaks TTY)");
+  console.log("  --no-sandbox           Disable sandbox even if --srt specified");
+  console.log();
   console.log("Headless Mode:");
   console.log("  -H, --headless         Run Claude in background (--print mode)");
-  console.log("  --srt                  Use SRT sandbox (required for headless)");
   console.log("  --dangerously-skip-permissions");
-  console.log("                         Skip permission checks (required if no --srt)");
+  console.log("                         Skip permission checks (headless without --srt)");
   console.log();
   console.log("Examples:");
   console.log('  grimoire wt spawn auth-feature --prompt "Implement OAuth2"');
@@ -210,18 +215,18 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     const terminalService = yield* TerminalService;
     const cwd = process.cwd();
 
-    // Step 1: Check SRT availability (unless --no-sandbox)
-    if (!noSandbox) {
+    // Step 1: Check SRT availability (only if --srt explicitly requested)
+    if (useSrt && !noSandbox) {
       const platformInfo = yield* srtService.checkPlatform();
       if (!platformInfo.srtAvailable) {
-        console.log("Warning: SRT sandboxing not available");
+        console.log("Warning: SRT sandboxing requested but not available");
         if (platformInfo.instructions) {
           console.log();
           console.log("To enable sandboxing:");
           console.log(platformInfo.instructions);
         }
         console.log();
-        console.log("Continuing without sandbox (use --no-sandbox to suppress this warning)");
+        console.log("Continuing without sandbox...");
         console.log();
       }
     }
@@ -270,6 +275,29 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     if (linkedIssue) {
       console.log(`  Issue: ${linkedIssue}`);
     }
+
+    // Record parent-child relationship for swarm coordination
+    const worktreeStateService = yield* WorktreeStateService;
+    const parentSessionId = process.env.GRIMOIRE_SESSION_ID;
+    const parentWorktreeName = process.env.GRIMOIRE_WORKTREE;
+
+    if (parentSessionId || parentWorktreeName) {
+      const now = new Date().toISOString();
+
+      // Update the new worktree with parent info
+      yield* worktreeStateService.updateWorktree(cwd, name, {
+        parentSession: parentSessionId,
+        parentWorktree: parentWorktreeName,
+        spawnedAt: now,
+        mergeStatus: "pending",
+      });
+
+      // If we have a parent worktree name, add this as a child
+      if (parentWorktreeName) {
+        yield* worktreeStateService.addChildWorktree(cwd, parentWorktreeName, name);
+        console.log(`  Parent: ${parentWorktreeName}`);
+      }
+    }
     console.log();
 
     // Headless mode - spawn background agent
@@ -285,7 +313,9 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     }
 
     // Step 3: Generate SRT config
-    const useSandbox = !noSandbox && (yield* srtService.isAvailable());
+    // Note: SRT sandbox breaks TTY passthrough for interactive sessions
+    // Only use sandbox if explicitly requested with --srt flag (not just available)
+    const useSandbox = !noSandbox && useSrt && (yield* srtService.isAvailable());
 
     // Build the claude command
     const shellEscape = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
@@ -424,6 +454,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     );
   }).pipe(
     Effect.provide(WorktreeServiceLive),
+    Effect.provide(WorktreeStateServiceLive),
     Effect.provide(SrtServiceLive),
     Effect.provide(SrtConfigServiceLive),
     Effect.provide(AgentSessionServiceLive),

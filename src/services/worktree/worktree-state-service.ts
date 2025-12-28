@@ -65,6 +65,12 @@ type MutableWorktreeEntry = {
   // Pipeline stages
   currentStage?: "plan" | "implement" | "test" | "review";
   stageHistory?: MutableStageTransition[];
+  // Swarm coordination - parent/child tracking
+  parentSession?: string;
+  childWorktrees?: string[];
+  spawnedAt?: string;
+  completedAt?: string;
+  mergeStatus?: "pending" | "ready" | "merged" | "conflict" | "abandoned";
 };
 
 type MutableWorktreeState = {
@@ -229,6 +235,12 @@ interface WorktreeStateServiceImpl {
       | "isExperiment"
       | "currentStage"
       | "stageHistory"
+      // Swarm coordination
+      | "parentSession"
+      | "childWorktrees"
+      | "spawnedAt"
+      | "completedAt"
+      | "mergeStatus"
     >>,
     basePath?: string
   ) => Effect.Effect<void, WorktreeStateReadError | WorktreeStateWriteError>;
@@ -248,6 +260,25 @@ interface WorktreeStateServiceImpl {
     repoRoot: string,
     basePath?: string
   ) => Effect.Effect<boolean, never>;
+
+  /**
+   * Add a child worktree reference to a parent worktree
+   */
+  readonly addChildWorktree: (
+    repoRoot: string,
+    parentName: string,
+    childName: string,
+    basePath?: string
+  ) => Effect.Effect<void, WorktreeStateReadError | WorktreeStateWriteError>;
+
+  /**
+   * Find a worktree by its session ID
+   */
+  readonly getWorktreeBySessionId: (
+    repoRoot: string,
+    sessionId: string,
+    basePath?: string
+  ) => Effect.Effect<MutableWorktreeEntry | null, WorktreeStateReadError>;
 }
 
 // Service tag
@@ -319,6 +350,12 @@ const makeWorktreeStateService = (): WorktreeStateServiceImpl => ({
       | "isExperiment"
       | "currentStage"
       | "stageHistory"
+      // Swarm coordination
+      | "parentSession"
+      | "childWorktrees"
+      | "spawnedAt"
+      | "completedAt"
+      | "mergeStatus"
     >>,
     basePath = DEFAULT_BASE_PATH
   ) =>
@@ -376,6 +413,23 @@ const makeWorktreeStateService = (): WorktreeStateServiceImpl => ({
         worktree.stageHistory = updates.stageHistory;
       }
 
+      // Swarm coordination - parent/child tracking
+      if (updates.parentSession !== undefined) {
+        worktree.parentSession = updates.parentSession;
+      }
+      if (updates.childWorktrees !== undefined) {
+        worktree.childWorktrees = updates.childWorktrees;
+      }
+      if (updates.spawnedAt !== undefined) {
+        worktree.spawnedAt = updates.spawnedAt;
+      }
+      if (updates.completedAt !== undefined) {
+        worktree.completedAt = updates.completedAt;
+      }
+      if (updates.mergeStatus !== undefined) {
+        worktree.mergeStatus = updates.mergeStatus;
+      }
+
       yield* writeStateFile(repoRoot, basePath, state);
     }),
 
@@ -390,6 +444,38 @@ const makeWorktreeStateService = (): WorktreeStateServiceImpl => ({
       const statePath = getStateFilePath(repoRoot, basePath);
       const file = Bun.file(statePath);
       return yield* Effect.promise(() => file.exists());
+    }),
+
+  addChildWorktree: (
+    repoRoot: string,
+    parentName: string,
+    childName: string,
+    basePath = DEFAULT_BASE_PATH
+  ) =>
+    Effect.gen(function* () {
+      const state = yield* readStateFile(repoRoot, basePath);
+
+      const parent = state.worktrees.find((w) => w.name === parentName);
+      if (!parent) {
+        return; // Parent not found, no-op
+      }
+
+      // Initialize childWorktrees if not exists
+      if (!parent.childWorktrees) {
+        parent.childWorktrees = [];
+      }
+
+      // Add child if not already present
+      if (!parent.childWorktrees.includes(childName)) {
+        parent.childWorktrees.push(childName);
+        yield* writeStateFile(repoRoot, basePath, state);
+      }
+    }),
+
+  getWorktreeBySessionId: (repoRoot: string, sessionId: string, basePath = DEFAULT_BASE_PATH) =>
+    Effect.gen(function* () {
+      const state = yield* readStateFile(repoRoot, basePath);
+      return state.worktrees.find((w) => w.metadata?.sessionId === sessionId) || null;
     }),
 });
 

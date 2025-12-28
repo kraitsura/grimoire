@@ -48,7 +48,7 @@ function detectCurrentWorktree(cwd: string): string | null {
 
 export const worktreeLog = (args: ParsedArgs) =>
   Effect.gen(function* () {
-    const subcommand = args.positional[1];
+    const subcommand = args.positional[0]; // "log" or "logs"
     const cwd = process.cwd();
     const service = yield* WorktreeService;
     const stateService = yield* WorktreeStateService;
@@ -57,7 +57,7 @@ export const worktreeLog = (args: ParsedArgs) =>
     // "logs" subcommand = view, otherwise = add
     if (subcommand === "logs") {
       // View logs: grimoire wt logs [name] [--json]
-      const name = args.positional[2] || detectCurrentWorktree(cwd);
+      const name = args.positional[1] || detectCurrentWorktree(cwd);
       const json = args.flags["json"] === true;
 
       if (!name) {
@@ -112,6 +112,7 @@ export const worktreeLog = (args: ParsedArgs) =>
     }
 
     // Add log: grimoire wt log <name> "message" OR grimoire wt log "message"
+    // positional[0] = "log", positional[1] = name or message, positional[2+] = message parts
     let name: string | null;
     let message: string;
 

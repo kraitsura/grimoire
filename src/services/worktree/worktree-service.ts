@@ -413,6 +413,8 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
         }).pipe(Effect.catchAll(() => Effect.succeed([]))),
       hasState: (repoRoot, basePath = ".worktrees") =>
         Effect.promise(() => Bun.file(join(repoRoot, basePath, ".state.json")).exists()),
+      addChildWorktree: () => Effect.succeed(undefined),
+      getWorktreeBySessionId: () => Effect.succeed(null),
     })
   );
 

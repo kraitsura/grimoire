@@ -190,6 +190,18 @@ export const WorktreeStageSchema = Schema.Literal(
 );
 
 /**
+ * Merge status for swarm coordination
+ * Tracks the merge state of child worktrees back into parent
+ */
+export const MergeStatusSchema = Schema.Literal(
+  "pending",   // Work in progress, not ready to merge
+  "ready",     // Work complete, ready for merge/review
+  "merged",    // Successfully merged
+  "conflict",  // Merge conflicts need resolution
+  "abandoned"  // Work abandoned, won't be merged
+);
+
+/**
  * Worktree entry in state file (v2)
  */
 export const WorktreeEntrySchema = Schema.Struct({
@@ -224,6 +236,18 @@ export const WorktreeEntrySchema = Schema.Struct({
   // Pipeline stages
   currentStage: Schema.optional(WorktreeStageSchema),
   stageHistory: Schema.optional(Schema.Array(StageTransitionSchema)),
+
+  // Swarm coordination - parent/child tracking
+  /** Session ID of the parent that spawned this worktree */
+  parentSession: Schema.optional(Schema.String),
+  /** Names of child worktrees spawned from this one */
+  childWorktrees: Schema.optional(Schema.Array(Schema.String)),
+  /** When the agent was spawned (distinct from createdAt) */
+  spawnedAt: Schema.optional(Schema.String),
+  /** When the agent work completed */
+  completedAt: Schema.optional(Schema.String),
+  /** Merge status for swarm coordination */
+  mergeStatus: Schema.optional(MergeStatusSchema),
 });
 
 /**
@@ -303,6 +327,11 @@ export type IssueProvider = Schema.Schema.Type<typeof IssueProviderSchema>;
  * Log entry type
  */
 export type WorktreeLogType = Schema.Schema.Type<typeof WorktreeLogTypeSchema>;
+
+/**
+ * Merge status for swarm coordination
+ */
+export type MergeStatus = Schema.Schema.Type<typeof MergeStatusSchema>;
 
 // Default configuration values
 
