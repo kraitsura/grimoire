@@ -66,93 +66,128 @@ grimoire wt status                          # View all worktrees
 
 #### Agent Instructions
 
-Add this to your `CLAUDE.md` or `AGENTS.md` to enable parallel agent workflows:
+Add to your `CLAUDE.md` or `AGENTS.md`:
 
 ```markdown
-## Parallel Work with Worktrees
+## Git Worktrees (grim wt)
 
-When a task can be parallelized, use grimoire worktrees to spawn background agents:
+Use `grim wt` instead of raw git worktree commands - it handles branch creation, cleanup, and agent coordination automatically.
 
-### Spawning Background Agents
+### Essential Commands
 \`\`\`bash
-# Spawn parallel agents for independent subtasks
-grim wt spawn task-1 -bg "Implement feature A"
-grim wt spawn task-2 -bg "Write tests for feature B"
-grim wt spawn task-3 -bg "Update documentation"
-
-# Monitor progress
-grim wt ps                    # List running agents
-grim wt logs <name>           # View agent output
+grim wt new <name>                # Create worktree + branch
+grim wt list                      # Show all worktrees
+grim wt status                    # Rich status view
+grim wt rm <name>                 # Remove worktree
+cd $(grim wt new -o <name>)       # Create and cd in one step
 \`\`\`
 
-### Collecting Results
-\`\`\`bash
-# Wait for agents to complete
-grim wt wait task-1 task-2 task-3
+### Parallel Agents
+When subtasks are independent, run them in parallel:
 
-# Merge their work back
-grim wt collect task-1 task-2 task-3 --delete
+\`\`\`bash
+# Spawn background agents (each gets isolated worktree)
+grim wt spawn fix-auth -bg "Fix the authentication bug in login.ts"
+grim wt spawn add-tests -bg "Add unit tests for the user service"
+grim wt spawn update-docs -bg "Update API documentation"
+
+# Check status anytime
+grim wt ps
+
+# When ready, collect all work back
+grim wt wait fix-auth add-tests update-docs
+grim wt collect fix-auth add-tests update-docs --delete
 \`\`\`
 
-### When to Parallelize
-- Independent features or bug fixes
-- Tests that don't depend on each other
-- Documentation updates
-- Refactoring separate modules
+### Decision: Parallel vs Sequential
+**Parallelize when:**
+- Tasks touch different files/modules
+- No task needs another's output
+- Combined time savings > spawn overhead (~30s per agent)
 
-### When NOT to Parallelize
-- Sequential dependencies (B needs A's output)
-- Shared state modifications
-- Small tasks (overhead not worth it)
+**Stay sequential when:**
+- Task B needs Task A's code
+- Tasks modify shared state/config
+- Only 1-2 small tasks (overhead not worth it)
+
+### If Something Goes Wrong
+\`\`\`bash
+grim wt logs <name>               # See what agent did
+grim wt ps                        # Check if still running
+grim wt collect --dry-run         # Preview merge before doing it
+grim wt collect --strategy rebase # Try rebase if merge conflicts
+\`\`\`
 ```
 
-**With Beads Integration** (for projects using `bd` issue tracking):
+**With Beads** (if project has `.beads/`):
 
 ```markdown
-## Parallel Work with Worktrees + Beads
+## Git Worktrees (grim wt)
 
-Use grimoire worktrees with beads for tracked, parallel agent workflows.
+Use `grim wt` instead of raw git worktree commands - it handles branch creation, cleanup, and agent coordination automatically.
 
-### Creating Tracked Work
+### Essential Commands
 \`\`\`bash
-# Create issues for subtasks
-bd create --title="Implement feature A" --type=task --priority=2
-bd create --title="Write tests for B" --type=task --priority=2
-bd create --title="Update docs" --type=task --priority=3
-
-# Spawn agents linked to issues
-grim wt spawn feature-a -bg "Implement feature A" -i beads-xxx
-grim wt spawn tests-b -bg "Write tests for B" -i beads-yyy
-grim wt spawn docs -bg "Update documentation" -i beads-zzz
+grim wt new <name>                # Create worktree + branch
+grim wt list                      # Show all worktrees
+grim wt status                    # Rich status view
+grim wt rm <name>                 # Remove worktree
+cd $(grim wt new -o <name>)       # Create and cd in one step
 \`\`\`
 
-### Monitoring & Completion
+### Parallel Agents
+When subtasks are independent, run them in parallel:
+
 \`\`\`bash
-# Check agent status
+# Spawn background agents (each gets isolated worktree)
+grim wt spawn fix-auth -bg "Fix the authentication bug in login.ts"
+grim wt spawn add-tests -bg "Add unit tests for the user service"
+grim wt spawn update-docs -bg "Update API documentation"
+
+# Check status
 grim wt ps
-bd list --status=in_progress
 
-# Wait and collect
-grim wt wait feature-a tests-b docs
-grim wt collect feature-a tests-b docs --delete
+# Collect all work back
+grim wt wait fix-auth add-tests update-docs
+grim wt collect fix-auth add-tests update-docs --delete
+\`\`\`
 
-# Close completed issues
-bd close beads-xxx beads-yyy beads-zzz
+### With Issue Tracking
+Link agents to beads issues for traceability:
+
+\`\`\`bash
+# Create tracked subtasks
+bd create --title="Fix auth bug" --type=bug --priority=1
+bd create --title="Add user service tests" --type=task --priority=2
+
+# Spawn with issue links
+grim wt spawn fix-auth -bg "Fix auth bug" -i beads-xxx
+grim wt spawn add-tests -bg "Add tests" -i beads-yyy
+
+# After collecting, close issues
+bd close beads-xxx beads-yyy
 bd sync
 \`\`\`
 
-### Workflow Pattern
-1. Break task into subtasks with `bd create`
-2. Spawn background agents with `grim wt spawn -bg`
-3. Monitor with `grim wt ps` and `bd list`
-4. Collect work with `grim wt collect`
-5. Close issues with `bd close` and sync
+### Decision: Parallel vs Sequential
+**Parallelize when:**
+- Tasks touch different files/modules
+- No task needs another's output
+- Combined time savings > spawn overhead (~30s per agent)
 
-### Best Practices
-- Link worktrees to issues with `-i <issue-id>`
-- Use `bd dep add` for dependent subtasks
-- Run `bd sync` after completing work
-- Use `grim wt collect --dry-run` before merging
+**Stay sequential when:**
+- Task B needs Task A's code
+- Tasks modify shared state/config
+- Only 1-2 small tasks (overhead not worth it)
+
+### If Something Goes Wrong
+\`\`\`bash
+grim wt logs <name>               # See what agent did
+grim wt ps                        # Check if still running
+grim wt collect --dry-run         # Preview merge before doing it
+grim wt collect --strategy rebase # Try rebase if merge conflicts
+bd show <issue>                   # Check issue context
+\`\`\`
 ```
 
 [View documentation](docs/worktrees.md)

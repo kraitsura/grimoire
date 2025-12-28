@@ -566,6 +566,80 @@ git push                # Push to remote
 
 <!-- end-bv-agent-instructions -->
 
+---
+
+## Git Worktrees (grim wt)
+
+Use `grim wt` instead of raw git worktree commands - it handles branch creation, cleanup, and agent coordination automatically.
+
+### Essential Commands
+
+```bash
+grim wt new <name>                # Create worktree + branch
+grim wt list                      # Show all worktrees
+grim wt status                    # Rich status view
+grim wt rm <name>                 # Remove worktree
+cd $(grim wt new -o <name>)       # Create and cd in one step
+```
+
+### Parallel Agents
+
+When subtasks are independent, run them in parallel:
+
+```bash
+# Spawn background agents (each gets isolated worktree)
+grim wt spawn fix-auth -bg "Fix the authentication bug in login.ts"
+grim wt spawn add-tests -bg "Add unit tests for the user service"
+grim wt spawn update-docs -bg "Update API documentation"
+
+# Check status
+grim wt ps
+
+# Collect all work back
+grim wt wait fix-auth add-tests update-docs
+grim wt collect fix-auth add-tests update-docs --delete
+```
+
+### With Issue Tracking
+
+Link agents to beads issues for traceability:
+
+```bash
+# Create tracked subtasks
+bd create --title="Fix auth bug" --type=bug --priority=1
+bd create --title="Add user service tests" --type=task --priority=2
+
+# Spawn with issue links
+grim wt spawn fix-auth -bg "Fix auth bug" -i beads-xxx
+grim wt spawn add-tests -bg "Add tests" -i beads-yyy
+
+# After collecting, close issues
+bd close beads-xxx beads-yyy
+bd sync
+```
+
+### Decision: Parallel vs Sequential
+
+**Parallelize when:**
+- Tasks touch different files/modules
+- No task needs another's output
+- Combined time savings > spawn overhead (~30s per agent)
+
+**Stay sequential when:**
+- Task B needs Task A's code
+- Tasks modify shared state/config
+- Only 1-2 small tasks (overhead not worth it)
+
+### If Something Goes Wrong
+
+```bash
+grim wt logs <name>               # See what agent did
+grim wt ps                        # Check if still running
+grim wt collect --dry-run         # Preview merge before doing it
+grim wt collect --strategy rebase # Try rebase if merge conflicts
+bd show <issue>                   # Check issue context
+```
+
 <!-- skills:managed:start -->
 <!-- This section is managed by grimoire skills -->
 <!-- skills:managed:end -->
