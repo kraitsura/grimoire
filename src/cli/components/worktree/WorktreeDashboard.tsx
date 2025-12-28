@@ -20,7 +20,7 @@ import {
 import type { WorktreeListItem, WorktreeEntry } from "../../../models/worktree";
 
 type Panel = "list" | "detail";
-type Modal = "none" | "help" | "log" | "newWorktree" | "confirmDelete";
+type Modal = "none" | "help" | "log" | "newWorktree" | "confirmDelete" | "confirmDeleteWithBranch";
 
 interface RichWorktree extends WorktreeListItem {
   claimedBy?: string;
@@ -39,6 +39,8 @@ export function WorktreeDashboard() {
   const [modal, setModal] = useState<Modal>("none");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleteWithBranch, setDeleteWithBranch] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Enter alternate screen buffer on mount, exit on unmount
   useLayoutEffect(() => {
@@ -142,8 +144,66 @@ export function WorktreeDashboard() {
     }
   };
 
+  const handleDelete = async (withBranch: boolean) => {
+    if (!selectedWorktree) return;
+    setIsDeleting(true);
+    try {
+      const cwd = process.cwd();
+      const program = Effect.gen(function* () {
+        const service = yield* WorktreeService;
+        yield* service.remove(cwd, selectedWorktree.name, {
+          deleteBranch: withBranch,
+          force: false,
+        });
+      }).pipe(Effect.provide(WorktreeServiceLive));
+
+      await Effect.runPromise(program);
+      const branchMsg = withBranch ? ` and branch '${selectedWorktree.branch}'` : "";
+      setStatusMessage(`Removed worktree '${selectedWorktree.name}'${branchMsg}`);
+      setModal("none");
+      setDeleteWithBranch(false);
+      // Adjust selected index if needed
+      if (selectedIndex >= worktrees.length - 1 && selectedIndex > 0) {
+        setSelectedIndex(selectedIndex - 1);
+      }
+      loadWorktrees();
+    } catch (e) {
+      const error = e as { message?: string };
+      setStatusMessage(`Error: ${error.message || String(e)}`);
+      setModal("none");
+    }
+    setIsDeleting(false);
+  };
+
   // Global keyboard handler
   useInput((input, key) => {
+    // Handle delete confirmation modals
+    if (modal === "confirmDelete") {
+      if (key.escape || input === "n" || input === "N") {
+        setModal("none");
+        setDeleteWithBranch(false);
+      } else if (input === "y" || input === "Y") {
+        // Confirm: proceed to ask about branch deletion
+        setModal("confirmDeleteWithBranch");
+      }
+      return;
+    }
+
+    if (modal === "confirmDeleteWithBranch") {
+      if (key.escape || input === "n" || input === "N") {
+        // Delete worktree only (no branch)
+        handleDelete(false);
+      } else if (input === "y" || input === "Y") {
+        // Delete worktree AND branch
+        handleDelete(true);
+      } else if (input === "c" || input === "C") {
+        // Cancel
+        setModal("none");
+        setDeleteWithBranch(false);
+      }
+      return;
+    }
+
     if (modal !== "none") {
       if (key.escape || input === "q") {
         setModal("none");
@@ -177,6 +237,9 @@ export function WorktreeDashboard() {
       }
       if (input === "r" && selectedWorktree?.claimedBy) {
         handleRelease();
+      }
+      if ((input === "d" || input === "x") && selectedWorktree) {
+        setModal("confirmDelete");
       }
     }
   });
@@ -247,6 +310,8 @@ export function WorktreeDashboard() {
         <Text>claim</Text>
         <Text dimColor>[r]</Text>
         <Text>release</Text>
+        <Text dimColor>[d]</Text>
+        <Text color="red">delete</Text>
         <Text dimColor>[R]</Text>
         <Text>refresh</Text>
         <Text dimColor>[?]</Text>
@@ -284,6 +349,7 @@ export function WorktreeDashboard() {
           <Text><Text bold>Actions</Text></Text>
           <Text>  c              Claim worktree</Text>
           <Text>  r              Release claim</Text>
+          <Text>  d/x            <Text color="red">Delete worktree</Text></Text>
           <Text>  R              Refresh list</Text>
           <Text> </Text>
           <Text><Text bold>General</Text></Text>
@@ -291,6 +357,63 @@ export function WorktreeDashboard() {
           <Text>  q              Quit</Text>
           <Text> </Text>
           <Text dimColor>Press any key to close</Text>
+        </Box>
+      )}
+
+      {/* Delete confirmation modal - Step 1 */}
+      {modal === "confirmDelete" && selectedWorktree && (
+        <Box
+          position="absolute"
+          marginLeft={10}
+          marginTop={5}
+          flexDirection="column"
+          borderStyle={safeBorderStyle}
+          borderColor="red"
+          paddingX={2}
+          paddingY={1}
+        >
+          <Text bold color="red">Delete Worktree</Text>
+          <Text> </Text>
+          <Text>Are you sure you want to delete worktree:</Text>
+          <Text bold>  {selectedWorktree.name}</Text>
+          <Text dimColor>  Branch: {selectedWorktree.branch}</Text>
+          {selectedWorktree.uncommittedChanges && selectedWorktree.uncommittedChanges > 0 && (
+            <Text color="yellow">  Warning: {selectedWorktree.uncommittedChanges} uncommitted changes!</Text>
+          )}
+          <Text> </Text>
+          <Box gap={2}>
+            <Text color="green">[y] Yes</Text>
+            <Text color="red">[n] No</Text>
+          </Box>
+        </Box>
+      )}
+
+      {/* Delete confirmation modal - Step 2: Branch deletion */}
+      {modal === "confirmDeleteWithBranch" && selectedWorktree && (
+        <Box
+          position="absolute"
+          marginLeft={10}
+          marginTop={5}
+          flexDirection="column"
+          borderStyle={safeBorderStyle}
+          borderColor="yellow"
+          paddingX={2}
+          paddingY={1}
+        >
+          <Text bold color="yellow">Delete Branch?</Text>
+          <Text> </Text>
+          <Text>Also delete the branch?</Text>
+          <Text bold>  {selectedWorktree.branch}</Text>
+          <Text> </Text>
+          {isDeleting ? (
+            <Text dimColor>Deleting...</Text>
+          ) : (
+            <Box gap={2}>
+              <Text color="red">[y] Yes, delete branch</Text>
+              <Text color="green">[n] No, keep branch</Text>
+              <Text dimColor>[c] Cancel</Text>
+            </Box>
+          )}
         </Box>
       )}
     </Box>

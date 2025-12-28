@@ -15,3 +15,4 @@ export * from "./agent";
 export * from "./agent-errors";
 export * from "./worktree";
 export * from "./worktree-errors";
+export * from "./enhancement-template";

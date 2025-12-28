@@ -31,7 +31,8 @@ export type Screen =
   | { name: "llmconfig" }
   | { name: "pinned" }
   | { name: "templates" }
-  | { name: "stash" };
+  | { name: "stash" }
+  | { name: "enhance"; promptId: string; content?: string };
 
 /**
  * Notification types

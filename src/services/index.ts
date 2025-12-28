@@ -108,6 +108,21 @@ export {
 } from "./config-service";
 export type { GrimoireConfig } from "./config-service";
 
+// Re-export Enhancement service (EnhancementService is a Context.Tag class)
+export {
+  EnhancementService,
+  EnhancementServiceLive,
+  EnhancementError,
+  TemplateNotFoundError,
+  NoDefaultModelError,
+} from "./enhancement-service";
+export type {
+  EnhancementRequest,
+  EnhancementEstimate,
+  EnhancementResult,
+  EnhancementErrors,
+} from "./enhancement-service";
+
 // Re-export Search service (SearchService is a Context.Tag class)
 export { SearchService, SearchServiceLive } from "./search-service";
 export type { SearchOptions, SearchResult, Range } from "./search-service";
@@ -565,6 +580,14 @@ const PluginServicesLayer = Layer.mergeAll(
 // Import ConfigServiceLive
 import { ConfigServiceLive as ConfigServiceLiveImport } from "./config-service";
 
+// Import EnhancementServiceLive
+import { EnhancementServiceLive as EnhancementServiceLiveImport } from "./enhancement-service";
+
+// EnhancementService needs LLMService, TokenCounterService, ConfigService
+const EnhancementLayer = EnhancementServiceLiveImport.pipe(
+  Layer.provide(Layer.mergeAll(LLMServiceLive, TokenCounterServiceLive, ConfigServiceLiveImport))
+);
+
 export const MainLive = Layer.mergeAll(
   SqlLayer,
   PromptStorageLayer,
@@ -584,7 +607,8 @@ export const MainLive = Layer.mergeAll(
   LLMServiceLive,
   TokenCounterServiceLive,
   ApiKeyServiceLive,
-  ConfigServiceLiveImport
+  ConfigServiceLiveImport,
+  EnhancementLayer
 );
 
 export const MainLiveWithEditor = Layer.mergeAll(MainLive, EditorServiceLiveImport);

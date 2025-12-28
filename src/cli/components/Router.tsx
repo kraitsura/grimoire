@@ -24,6 +24,7 @@ import {
   PinnedScreen,
   TemplatesScreen,
   StashScreen,
+  EnhanceScreen,
 } from "../screens/index.js";
 
 /**
@@ -173,6 +174,9 @@ export const Router: React.FC<RouterProps> = ({ screen, loading = false }) => {
 
       case "stash":
         return <StashScreen />;
+
+      case "enhance":
+        return <EnhanceScreen promptId={screen.promptId} content={screen.content} />;
 
       default: {
         // Type-safe exhaustive check

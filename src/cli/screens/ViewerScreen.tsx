@@ -383,6 +383,16 @@ export const ViewerScreen: React.FC<ViewerScreenProps> = ({ promptId }) => {
         return;
       }
 
+      // e - enhance
+      if (input === "e") {
+        if (isDirty) {
+          void handleSave().then(() => actions.navigate({ name: "enhance", promptId }));
+        } else {
+          actions.navigate({ name: "enhance", promptId });
+        }
+        return;
+      }
+
       // j/k or arrows - scroll content
       if (input === "j" || key.downArrow) {
         setScrollOffset(Math.min(Math.max(0, contentLines.length - visibleHeight), scrollOffset + 1));

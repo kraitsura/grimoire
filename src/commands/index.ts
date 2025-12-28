@@ -15,6 +15,7 @@ export { configCommand } from "./config";
 export { copyCommand } from "./copy";
 export { costCommand } from "./cost";
 export { dotCommand } from "./dot";
+export { enhanceCommand } from "./enhance";
 export { exportCommand } from "./export";
 export { favoriteCommand } from "./favorite";
 export { formatCommand } from "./format";

@@ -68,6 +68,7 @@ import {
   copyCommand,
   costCommand,
   dotCommand,
+  enhanceCommand,
   exportCommand,
   favoriteCommand,
   formatCommand,
@@ -135,6 +136,7 @@ const RESERVED_COMMANDS = new Set([
   "worktree",
   "wt",
   "dot",
+  "enhance",
 ]);
 
 /**
@@ -185,6 +187,7 @@ COMMANDS:
   compare <p1> <p2>   A/B test prompts with same input
   cost <name>         Estimate token costs for a prompt
   test <name>         Test a prompt with an LLM
+  enhance <name>      AI-powered prompt enhancement
   search <query>      Search prompts
   reindex             Rebuild search index
   stats [name]        Show statistics
@@ -258,6 +261,9 @@ Run 'grim' with no arguments to launch interactive mode.
         break;
       case "dot":
         yield* Effect.promise(() => dotCommand(parsedArgs));
+        break;
+      case "enhance":
+        yield* enhanceCommand(parsedArgs);
         break;
       case "benchmark":
         yield* benchmarkCommand(parsedArgs);

@@ -18,3 +18,4 @@ export { LLMConfigScreen } from "./LLMConfigScreen.js";
 export { PinnedScreen } from "./PinnedScreen.js";
 export { TemplatesScreen } from "./TemplatesScreen.js";
 export { StashScreen } from "./StashScreen.js";
+export { EnhanceScreen } from "./EnhanceScreen.js";
