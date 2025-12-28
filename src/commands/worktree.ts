@@ -26,6 +26,9 @@ import {
   worktreeAvailable,
   worktreeSpawn,
   worktreePs,
+  worktreeChildren,
+  worktreeWait,
+  worktreeCollect,
 } from "./worktree/index";
 import { WorktreeDashboard } from "../cli/components/worktree";
 
@@ -39,6 +42,9 @@ COMMANDS:
   new <branch>       Create a new worktree from branch
   spawn <name>       Create worktree + launch sandboxed Claude session
   ps                 List running/spawned agents
+  children           Show worktrees spawned by current session
+  wait               Block until child worktrees complete
+  collect            Merge completed children back into current branch
   from-issue <id>    Create worktree from issue ID
   list               List active worktrees
   status             Rich status with claims, logs, stages
@@ -170,6 +176,12 @@ export const worktreeCommand = (args: ParsedArgs) =>
         return yield* worktreeSpawn(args);
       case "ps":
         return yield* worktreePs(args);
+      case "children":
+        return yield* worktreeChildren(args);
+      case "wait":
+        return yield* worktreeWait(args);
+      case "collect":
+        return yield* worktreeCollect(args);
       default:
         console.log(`Unknown worktree command: ${subcommand}`);
         printWorktreeHelp();

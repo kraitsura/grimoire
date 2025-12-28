@@ -20,3 +20,6 @@ export { worktreeHandoff } from "./handoff";
 export { worktreeAvailable } from "./available";
 export { worktreeSpawn } from "./spawn";
 export { worktreePs } from "./ps";
+export { worktreeChildren } from "./children";
+export { worktreeWait } from "./wait";
+export { worktreeCollect } from "./collect";
