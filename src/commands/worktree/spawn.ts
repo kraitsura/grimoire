@@ -25,6 +25,11 @@ import {
   SrtConfigService,
   SrtConfigServiceLive,
 } from "../../services/srt";
+import {
+  TerminalService,
+  TerminalServiceLive,
+  TerminalNotSupportedError,
+} from "../../services/terminal";
 import type { WorktreeInfo } from "../../models/worktree";
 import type { AgentSessionMode } from "../../models/agent-session";
 
@@ -146,6 +151,7 @@ const printUsage = () => {
   console.log("  --branch, -b <name>    Use different branch name");
   console.log("  --prompt, -p <text>    Initial prompt for Claude");
   console.log("  --issue, -i <id>       Link to beads issue");
+  console.log("  --new-tab              Open Claude in a new terminal tab/window");
   console.log("  --no-sandbox           Skip SRT sandboxing (for debugging)");
   console.log("  --no-copy              Skip copying config files");
   console.log("  --no-hooks             Skip running post-create hooks");
@@ -183,6 +189,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     const skipCopy = args.flags["no-copy"] === true;
     const skipHooks = args.flags["no-hooks"] === true;
     const createBranch = args.flags["create-branch"] === true;
+    const newTab = args.flags["new-tab"] === true;
 
     // Headless mode options
     const headless = args.flags["headless"] === true || args.flags["H"] === true;
@@ -200,6 +207,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     const srtService = yield* SrtService;
     const srtConfigService = yield* SrtConfigService;
     const agentSessionService = yield* AgentSessionService;
+    const terminalService = yield* TerminalService;
     const cwd = process.cwd();
 
     // Step 1: Check SRT availability (unless --no-sandbox)
@@ -279,6 +287,17 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     // Step 3: Generate SRT config
     const useSandbox = !noSandbox && (yield* srtService.isAvailable());
 
+    // Build the claude command
+    const shellEscape = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+    let claudeCommand = "claude";
+    if (prompt) {
+      claudeCommand = `claude ${shellEscape(prompt)}`;
+    }
+
+    // Wrap with SRT if using sandbox
+    let fullCommand = claudeCommand;
+    let configPath: string | undefined;
+
     if (useSandbox) {
       console.log("Generating sandbox configuration...");
       const resolved = yield* srtConfigService.resolveConfig(worktree.path, cwd);
@@ -287,156 +306,126 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       console.log();
 
       // Write config to temp file
-      const configPath = yield* srtService.writeConfigFile(resolved.config);
+      configPath = yield* srtService.writeConfigFile(resolved.config);
+      fullCommand = srtService.wrapCommand(claudeCommand, configPath);
+    }
 
-      // Step 4: Build and launch Claude command
-      console.log("Launching Claude Code session...");
-      const sessionId = `sess_${randomUUID().slice(0, 8)}`;
-      const mode: AgentSessionMode = "interactive";
-      console.log(`  Session ID: ${sessionId}`);
-      console.log();
+    // Handle --new-tab mode
+    if (newTab) {
+      const terminal = yield* terminalService.detect();
 
-      // Build the claude command
-      // Prompt is passed as positional argument, not --prompt flag
-      let claudeCommand = "claude";
-      if (prompt) {
-        // Escape the prompt for shell
-        const escapedPrompt = prompt.replace(/'/g, "'\\''");
-        claudeCommand = `claude '${escapedPrompt}'`;
+      if (!terminal.supportsNewTab) {
+        console.log();
+        console.log(terminalService.getUnsupportedMessage(terminal, fullCommand, worktree.path));
+        process.exit(1);
       }
 
-      // Wrap with SRT
-      const fullCommand = srtService.wrapCommand(claudeCommand, configPath);
+      console.log(`Opening Claude in new ${terminal.opensTab ? "tab" : "window"} (${terminal.name})...`);
+      const sessionId = `sess_${randomUUID().slice(0, 8)}`;
+      console.log(`  Session ID: ${sessionId}`);
+      console.log(`  Worktree: ${worktree.path}`);
+      console.log();
 
-      // Spawn the process
-      const child = spawn("sh", ["-c", fullCommand], {
-        cwd: worktree.path,
-        env: {
-          ...process.env,
-          GRIMOIRE_WORKTREE: name,
-          GRIMOIRE_WORKTREE_PATH: worktree.path,
-          GRIMOIRE_SESSION_ID: sessionId,
-        },
-        stdio: "inherit",
-      });
+      // Set environment variables in the command
+      const envPrefix = [
+        `GRIMOIRE_WORKTREE=${shellEscape(name)}`,
+        `GRIMOIRE_WORKTREE_PATH=${shellEscape(worktree.path)}`,
+        `GRIMOIRE_SESSION_ID=${shellEscape(sessionId)}`,
+      ].join(" ");
+      const commandWithEnv = `${envPrefix} ${fullCommand}`;
 
-      // Create session state (linkedIssue is in main worktree state, not here)
-      yield* agentSessionService.createSession(worktree.path, {
-        sessionId,
-        pid: child.pid!,
-        mode,
-        prompt,
-      });
-
-      // Wait for process to exit
-      yield* Effect.promise(
-        () =>
-          new Promise<void>((resolve) => {
-            child.on("close", (code) => {
-              // Cleanup config file and update session state
-              Promise.all([
-                import("fs/promises").then((fs) => fs.unlink(configPath).catch(() => {})),
-                Effect.runPromise(
-                  agentSessionService.updateSession(worktree.path, {
-                    status: code === 0 ? "stopped" : "crashed",
-                    endedAt: new Date().toISOString(),
-                    exitCode: code ?? undefined,
-                  })
-                ).catch(() => {}),
-              ]).finally(() => {
-                process.exitCode = code ?? 0;
-                resolve();
-              });
-            });
-            child.on("error", (err) => {
-              console.error(`Error launching Claude: ${err.message}`);
-              Effect.runPromise(
-                agentSessionService.updateSession(worktree.path, {
-                  status: "crashed",
-                  endedAt: new Date().toISOString(),
-                })
-              ).catch(() => {});
-              process.exitCode = 1;
-              resolve();
-            });
-          })
+      const openResult = yield* Effect.either(
+        terminalService.openNewTab(commandWithEnv, worktree.path)
       );
-    } else {
-      // No sandbox - launch Claude directly
-      if (noSandbox) {
-        console.log("Launching Claude Code session (sandbox disabled)...");
-      } else {
-        console.log("Launching Claude Code session (sandbox not available)...");
+
+      if (openResult._tag === "Left") {
+        const err = openResult.left;
+        if (err._tag === "TerminalNotSupportedError") {
+          console.log();
+          console.log(terminalService.getUnsupportedMessage(err.terminal, fullCommand, worktree.path));
+        } else {
+          console.log(`Error opening new tab: ${err.stderr}`);
+        }
+        process.exit(1);
       }
 
-      const sessionId = `sess_${randomUUID().slice(0, 8)}`;
-      const mode: AgentSessionMode = "interactive";
-      console.log(`  Session ID: ${sessionId}`);
+      console.log("Claude session launched in new terminal.");
       console.log();
+      console.log(`Monitor: grimoire wt logs ${name}`);
+      console.log(`Status:  grimoire wt ps`);
+      return;
+    }
 
-      // Build the claude command
-      // Prompt is passed as positional argument, not --prompt flag
-      const claudeArgs: string[] = [];
-      if (prompt) {
-        claudeArgs.push(prompt);
-      }
+    // Default: run in current terminal
+    console.log("Launching Claude Code session...");
+    const sessionId = `sess_${randomUUID().slice(0, 8)}`;
+    const mode: AgentSessionMode = "interactive";
+    console.log(`  Session ID: ${sessionId}`);
+    console.log();
 
-      const child = spawn("claude", claudeArgs, {
-        cwd: worktree.path,
-        env: {
-          ...process.env,
-          GRIMOIRE_WORKTREE: name,
-          GRIMOIRE_WORKTREE_PATH: worktree.path,
-          GRIMOIRE_SESSION_ID: sessionId,
-        },
-        stdio: "inherit",
-      });
+    // Spawn the process
+    const child = spawn("sh", ["-c", fullCommand], {
+      cwd: worktree.path,
+      env: {
+        ...process.env,
+        GRIMOIRE_WORKTREE: name,
+        GRIMOIRE_WORKTREE_PATH: worktree.path,
+        GRIMOIRE_SESSION_ID: sessionId,
+      },
+      stdio: "inherit",
+    });
 
-      // Create session state (linkedIssue is in main worktree state, not here)
-      yield* agentSessionService.createSession(worktree.path, {
-        sessionId,
-        pid: child.pid!,
-        mode,
-        prompt,
-      });
+    // Create session state (linkedIssue is in main worktree state, not here)
+    yield* agentSessionService.createSession(worktree.path, {
+      sessionId,
+      pid: child.pid!,
+      mode,
+      prompt,
+    });
 
-      // Wait for process to exit
-      yield* Effect.promise(
-        () =>
-          new Promise<void>((resolve) => {
-            child.on("close", (code) => {
-              // Update session state
+    // Wait for process to exit
+    yield* Effect.promise(
+      () =>
+        new Promise<void>((resolve) => {
+          child.on("close", (code) => {
+            // Cleanup config file and update session state
+            const cleanupPromises: Promise<unknown>[] = [
               Effect.runPromise(
                 agentSessionService.updateSession(worktree.path, {
                   status: code === 0 ? "stopped" : "crashed",
                   endedAt: new Date().toISOString(),
                   exitCode: code ?? undefined,
                 })
-              )
-                .catch(() => {})
-                .finally(() => {
-                  process.exitCode = code ?? 0;
-                  resolve();
-                });
-            });
-            child.on("error", (err) => {
-              console.error(`Error launching Claude: ${err.message}`);
-              console.error("Make sure 'claude' CLI is installed and in your PATH");
-              Effect.runPromise(
-                agentSessionService.updateSession(worktree.path, {
-                  status: "crashed",
-                  endedAt: new Date().toISOString(),
-                })
-              ).catch(() => {});
-              process.exitCode = 1;
+              ).catch(() => {}),
+            ];
+            if (configPath) {
+              cleanupPromises.push(
+                import("fs/promises").then((fs) => fs.unlink(configPath!).catch(() => {}))
+              );
+            }
+            Promise.all(cleanupPromises).finally(() => {
+              process.exitCode = code ?? 0;
               resolve();
             });
-          })
-      );
-    }
+          });
+          child.on("error", (err) => {
+            console.error(`Error launching Claude: ${err.message}`);
+            console.error("Make sure 'claude' CLI is installed and in your PATH");
+            Effect.runPromise(
+              agentSessionService.updateSession(worktree.path, {
+                status: "crashed",
+                endedAt: new Date().toISOString(),
+              })
+            ).catch(() => {});
+            process.exitCode = 1;
+            resolve();
+          });
+        })
+    );
   }).pipe(
     Effect.provide(WorktreeServiceLive),
     Effect.provide(SrtServiceLive),
     Effect.provide(SrtConfigServiceLive),
-    Effect.provide(AgentSessionServiceLive)
+    Effect.provide(AgentSessionServiceLive),
+    Effect.provide(TerminalServiceLive)
   );

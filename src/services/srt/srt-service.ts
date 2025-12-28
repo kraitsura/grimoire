@@ -152,7 +152,11 @@ export const DEFAULT_DENY_WRITE = [
 ];
 
 /** Default additional write paths */
-export const DEFAULT_ALLOW_WRITE_EXTRA = ["/tmp"];
+export const DEFAULT_ALLOW_WRITE_EXTRA = [
+  "/tmp",
+  "~/.claude.json", // Claude Code config file
+  "~/.claude", // Claude Code directory
+];
 
 // =============================================================================
 // Service Interface
