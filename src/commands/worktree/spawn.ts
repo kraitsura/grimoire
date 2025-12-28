@@ -12,7 +12,12 @@ import { spawn } from "child_process";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import type { ParsedArgs } from "../../cli/parser";
-import { WorktreeService, WorktreeServiceLive } from "../../services/worktree";
+import {
+  WorktreeService,
+  WorktreeServiceLive,
+  AgentSessionService,
+  AgentSessionServiceLive,
+} from "../../services/worktree";
 import {
   SrtService,
   SrtServiceLive,
@@ -20,6 +25,7 @@ import {
   SrtConfigServiceLive,
 } from "../../services/srt";
 import type { WorktreeInfo } from "../../models/worktree";
+import type { AgentSessionMode } from "../../models/agent-session";
 
 /**
  * Print usage and exit
@@ -70,6 +76,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     const worktreeService = yield* WorktreeService;
     const srtService = yield* SrtService;
     const srtConfigService = yield* SrtConfigService;
+    const agentSessionService = yield* AgentSessionService;
     const cwd = process.cwd();
 
     // Step 1: Check SRT availability (unless --no-sandbox)
@@ -149,8 +156,9 @@ export const worktreeSpawn = (args: ParsedArgs) =>
 
       // Step 4: Build and launch Claude command
       console.log("Launching Claude Code session...");
-      const sessionId = randomUUID().slice(0, 8);
-      console.log(`  Session ID: sess_${sessionId}`);
+      const sessionId = `sess_${randomUUID().slice(0, 8)}`;
+      const mode: AgentSessionMode = "interactive";
+      console.log(`  Session ID: ${sessionId}`);
       console.log();
 
       // Build the claude command
@@ -172,9 +180,17 @@ export const worktreeSpawn = (args: ParsedArgs) =>
           ...process.env,
           GRIMOIRE_WORKTREE: name,
           GRIMOIRE_WORKTREE_PATH: worktree.path,
-          GRIMOIRE_SESSION_ID: `sess_${sessionId}`,
+          GRIMOIRE_SESSION_ID: sessionId,
         },
         stdio: "inherit",
+      });
+
+      // Create session state (linkedIssue is in main worktree state, not here)
+      yield* agentSessionService.createSession(worktree.path, {
+        sessionId,
+        pid: child.pid!,
+        mode,
+        prompt,
       });
 
       // Wait for process to exit
@@ -182,16 +198,29 @@ export const worktreeSpawn = (args: ParsedArgs) =>
         () =>
           new Promise<void>((resolve) => {
             child.on("close", (code) => {
-              // Cleanup config file
-              import("fs/promises")
-                .then((fs) => fs.unlink(configPath).catch(() => {}))
-                .finally(() => {
-                  process.exitCode = code ?? 0;
-                  resolve();
-                });
+              // Cleanup config file and update session state
+              Promise.all([
+                import("fs/promises").then((fs) => fs.unlink(configPath).catch(() => {})),
+                Effect.runPromise(
+                  agentSessionService.updateSession(worktree.path, {
+                    status: code === 0 ? "stopped" : "crashed",
+                    endedAt: new Date().toISOString(),
+                    exitCode: code ?? undefined,
+                  })
+                ).catch(() => {}),
+              ]).finally(() => {
+                process.exitCode = code ?? 0;
+                resolve();
+              });
             });
             child.on("error", (err) => {
               console.error(`Error launching Claude: ${err.message}`);
+              Effect.runPromise(
+                agentSessionService.updateSession(worktree.path, {
+                  status: "crashed",
+                  endedAt: new Date().toISOString(),
+                })
+              ).catch(() => {});
               process.exitCode = 1;
               resolve();
             });
@@ -205,8 +234,9 @@ export const worktreeSpawn = (args: ParsedArgs) =>
         console.log("Launching Claude Code session (sandbox not available)...");
       }
 
-      const sessionId = randomUUID().slice(0, 8);
-      console.log(`  Session ID: sess_${sessionId}`);
+      const sessionId = `sess_${randomUUID().slice(0, 8)}`;
+      const mode: AgentSessionMode = "interactive";
+      console.log(`  Session ID: ${sessionId}`);
       console.log();
 
       // Build the claude command
@@ -222,9 +252,17 @@ export const worktreeSpawn = (args: ParsedArgs) =>
           ...process.env,
           GRIMOIRE_WORKTREE: name,
           GRIMOIRE_WORKTREE_PATH: worktree.path,
-          GRIMOIRE_SESSION_ID: `sess_${sessionId}`,
+          GRIMOIRE_SESSION_ID: sessionId,
         },
         stdio: "inherit",
+      });
+
+      // Create session state (linkedIssue is in main worktree state, not here)
+      yield* agentSessionService.createSession(worktree.path, {
+        sessionId,
+        pid: child.pid!,
+        mode,
+        prompt,
       });
 
       // Wait for process to exit
@@ -232,12 +270,29 @@ export const worktreeSpawn = (args: ParsedArgs) =>
         () =>
           new Promise<void>((resolve) => {
             child.on("close", (code) => {
-              process.exitCode = code ?? 0;
-              resolve();
+              // Update session state
+              Effect.runPromise(
+                agentSessionService.updateSession(worktree.path, {
+                  status: code === 0 ? "stopped" : "crashed",
+                  endedAt: new Date().toISOString(),
+                  exitCode: code ?? undefined,
+                })
+              )
+                .catch(() => {})
+                .finally(() => {
+                  process.exitCode = code ?? 0;
+                  resolve();
+                });
             });
             child.on("error", (err) => {
               console.error(`Error launching Claude: ${err.message}`);
               console.error("Make sure 'claude' CLI is installed and in your PATH");
+              Effect.runPromise(
+                agentSessionService.updateSession(worktree.path, {
+                  status: "crashed",
+                  endedAt: new Date().toISOString(),
+                })
+              ).catch(() => {});
               process.exitCode = 1;
               resolve();
             });
@@ -247,5 +302,6 @@ export const worktreeSpawn = (args: ParsedArgs) =>
   }).pipe(
     Effect.provide(WorktreeServiceLive),
     Effect.provide(SrtServiceLive),
-    Effect.provide(SrtConfigServiceLive)
+    Effect.provide(SrtConfigServiceLive),
+    Effect.provide(AgentSessionServiceLive)
   );
