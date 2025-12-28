@@ -127,15 +127,6 @@ export type {
 export { SearchService, SearchServiceLive } from "./search-service";
 export type { SearchOptions, SearchResult, Range } from "./search-service";
 
-// Re-export Chain service (ChainService is a Context.Tag class)
-export {
-  ChainService,
-  ChainServiceLive,
-  ChainNotFoundError,
-  ChainValidationError,
-} from "./chain-service";
-export type { ChainDefinition, ChainStep, VariableSpec, ValidationResult as ChainValidationResult } from "./chain-service";
-
 // Re-export Alias service (AliasService is a Context.Tag class)
 export {
   AliasService,
@@ -454,7 +445,6 @@ import {
 import { RetentionServiceLive as RetentionServiceLiveImport } from "./retention-service";
 import { SyncLive as SyncLiveImport } from "./sync-service";
 import { StorageServiceLive as StorageServiceLiveImport } from "./storage-service";
-import { ChainServiceLive as ChainServiceLiveImport } from "./chain-service";
 import { SkillCacheServiceLive as SkillCacheServiceLiveImport } from "./skills/skill-cache-service";
 import { SkillStateServiceLive as SkillStateServiceLiveImport } from "./skills/skill-state-service";
 import { SkillConfigServiceLive as SkillConfigServiceLiveImport } from "./skills/skill-config-service";
@@ -530,11 +520,6 @@ const SqlOnlyDependentServices = Layer.mergeAll(
   StashServiceLiveImport
 ).pipe(Layer.provide(SqlLayer));
 
-// Chain needs StorageService (which includes Sql, PromptStorage, Sync)
-const ChainLayer = ChainServiceLiveImport.pipe(
-  Layer.provide(Layer.mergeAll(SqlLayer, StorageLayer))
-);
-
 // Export and Import need StorageService
 const StorageDependentServices = Layer.mergeAll(
   ExportServiceLiveImport,
@@ -596,7 +581,6 @@ export const MainLive = Layer.mergeAll(
   VersionLayer,
   BranchLayer,
   MigrationLayer,
-  ChainLayer,
   SqlAndStorageDependentServices,
   SqlOnlyDependentServices,
   StorageDependentServices,

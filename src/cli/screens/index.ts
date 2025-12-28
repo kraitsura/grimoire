@@ -11,7 +11,6 @@ export { SearchScreen } from "./SearchScreen.js";
 export { SettingsScreen } from "./SettingsScreen.js";
 export { HistoryScreen } from "./HistoryScreen.js";
 export { TestScreen } from "./TestScreen.js";
-export { ChainScreen } from "./ChainScreen.js";
 export { BenchmarkScreen } from "./BenchmarkScreen.js";
 export { CompareScreen } from "./CompareScreen.js";
 export { LLMConfigScreen } from "./LLMConfigScreen.js";

@@ -25,7 +25,6 @@ export type Screen =
   | { name: "settings" }
   | { name: "history"; promptId: string }
   | { name: "test"; promptId?: string }
-  | { name: "chain"; chainName?: string }
   | { name: "benchmark" }
   | { name: "compare" }
   | { name: "llmconfig" }

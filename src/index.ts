@@ -61,7 +61,6 @@ import {
   archiveCommand,
   benchmarkCommand,
   branchCommand,
-  chainCommand,
   compareCommand,
   completionCommand,
   configCommand,
@@ -120,7 +119,6 @@ const RESERVED_COMMANDS = new Set([
   "archive",
   "branch",
   "alias",
-  "chain",
   "favorite",
   "pin",
   "format",
@@ -195,7 +193,6 @@ COMMANDS:
   templates           List templates
   history <name>      Show edit history
   versions <name>     List versions
-  chain               Manage prompt chains (workflows)
   favorite [name]     Manage favorite prompts
   pin [name]          Manage pinned prompts
   format [name]       Format prompt content
@@ -312,9 +309,6 @@ Run 'grim' with no arguments to launch interactive mode.
         break;
       case "alias":
         yield* aliasCommand(parsedArgs);
-        break;
-      case "chain":
-        yield* chainCommand(parsedArgs);
         break;
       case "compare":
         yield* compareCommand(parsedArgs);

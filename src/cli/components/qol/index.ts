@@ -5,5 +5,4 @@
 export * from "./stats-dashboard";
 export * from "./format-preview";
 export * from "./favorite-manager";
-export * from "./chain-editor";
 export * from "./sync-manager";

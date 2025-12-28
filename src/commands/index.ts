@@ -8,7 +8,6 @@ export { aliasCommand } from "./alias";
 export { archiveCommand } from "./archive";
 export { benchmarkCommand } from "./benchmark";
 export { branchCommand } from "./branch";
-export { chainCommand } from "./chain";
 export { compareCommand } from "./compare";
 export { completionCommand } from "./completion";
 export { configCommand } from "./config";

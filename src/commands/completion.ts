@@ -50,7 +50,7 @@ _grimoire() {
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
   cmd="\${COMP_WORDS[1]}"
 
-  local commands="list add show edit rm copy test cost search reindex stats tag templates export import history versions rollback archive branch alias chain compare favorite pin format sync completion config"
+  local commands="list add show edit rm copy test cost search reindex stats tag templates export import history versions rollback archive branch alias compare favorite pin format sync completion config"
 
   case "$prev" in
     grimoire)
@@ -59,10 +59,6 @@ _grimoire() {
       ;;
     templates)
       COMPREPLY=($(compgen -W "list show vars create apply" -- "$cur"))
-      return 0
-      ;;
-    chain)
-      COMPREPLY=($(compgen -W "list show create run delete" -- "$cur"))
       return 0
       ;;
     config)
@@ -128,7 +124,6 @@ _grimoire() {
     'archive:Manage archived prompts'
     'branch:Manage prompt branches'
     'alias:Manage aliases'
-    'chain:Manage prompt chains'
     'compare:A/B test prompts'
     'favorite:Manage favorites'
     'pin:Manage pinned prompts'
@@ -139,7 +134,6 @@ _grimoire() {
   )
 
   local -a templates_cmds=(list show vars create apply)
-  local -a chain_cmds=(list show create run delete)
   local -a config_cmds=(llm)
   local -a config_llm_cmds=(list add test remove)
   local -a completion_cmds=(bash zsh fish)
@@ -158,7 +152,6 @@ _grimoire() {
     args)
       case $words[1] in
         templates) _describe 'subcommands' templates_cmds ;;
-        chain) _describe 'subcommands' chain_cmds ;;
         config)
           if (( CURRENT == 2 )); then
             _describe 'subcommands' config_cmds
@@ -207,7 +200,6 @@ complete -c grimoire -n "__fish_use_subcommand" -a rollback -d "Rollback to vers
 complete -c grimoire -n "__fish_use_subcommand" -a archive -d "Manage archived prompts"
 complete -c grimoire -n "__fish_use_subcommand" -a branch -d "Manage prompt branches"
 complete -c grimoire -n "__fish_use_subcommand" -a alias -d "Manage aliases"
-complete -c grimoire -n "__fish_use_subcommand" -a chain -d "Manage prompt chains"
 complete -c grimoire -n "__fish_use_subcommand" -a compare -d "A/B test prompts"
 complete -c grimoire -n "__fish_use_subcommand" -a favorite -d "Manage favorites"
 complete -c grimoire -n "__fish_use_subcommand" -a pin -d "Manage pinned prompts"
@@ -218,7 +210,6 @@ complete -c grimoire -n "__fish_use_subcommand" -a config -d "Configure settings
 
 # Subcommands
 complete -c grimoire -n "__fish_seen_subcommand_from templates" -a "list show vars create apply"
-complete -c grimoire -n "__fish_seen_subcommand_from chain" -a "list show create run delete"
 complete -c grimoire -n "__fish_seen_subcommand_from config" -a "llm"
 complete -c grimoire -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
 complete -c grimoire -n "__fish_seen_subcommand_from archive" -a "list show restore delete"

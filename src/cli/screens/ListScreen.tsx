@@ -332,9 +332,6 @@ export const ListScreen: React.FC = () => {
       // Test Dashboard - test selected prompt or pick one
       const prompt = paginatedPrompts[selectedIndex];
       actions.navigate({ name: "test", promptId: prompt?.id });
-    } else if (input === "C") {
-      // Chain Dashboard
-      actions.navigate({ name: "chain" });
     } else if (input === "B") {
       // Benchmark Dashboard
       actions.navigate({ name: "benchmark" });

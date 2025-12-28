@@ -17,7 +17,6 @@ import {
   SettingsScreen,
   HistoryScreen,
   TestScreen,
-  ChainScreen,
   BenchmarkScreen,
   CompareScreen,
   LLMConfigScreen,
@@ -153,9 +152,6 @@ export const Router: React.FC<RouterProps> = ({ screen, loading = false }) => {
 
       case "test":
         return <TestScreen promptId={screen.promptId} />;
-
-      case "chain":
-        return <ChainScreen chainName={screen.chainName} />;
 
       case "benchmark":
         return <BenchmarkScreen />;
