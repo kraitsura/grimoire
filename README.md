@@ -64,6 +64,97 @@ grimoire wt status                          # View all worktrees
 - Agent handoff protocol
 - Parallel background agents with `-bg` flag
 
+#### Agent Instructions
+
+Add this to your `CLAUDE.md` or `AGENTS.md` to enable parallel agent workflows:
+
+```markdown
+## Parallel Work with Worktrees
+
+When a task can be parallelized, use grimoire worktrees to spawn background agents:
+
+### Spawning Background Agents
+\`\`\`bash
+# Spawn parallel agents for independent subtasks
+grim wt spawn task-1 -bg "Implement feature A"
+grim wt spawn task-2 -bg "Write tests for feature B"
+grim wt spawn task-3 -bg "Update documentation"
+
+# Monitor progress
+grim wt ps                    # List running agents
+grim wt logs <name>           # View agent output
+\`\`\`
+
+### Collecting Results
+\`\`\`bash
+# Wait for agents to complete
+grim wt wait task-1 task-2 task-3
+
+# Merge their work back
+grim wt collect task-1 task-2 task-3 --delete
+\`\`\`
+
+### When to Parallelize
+- Independent features or bug fixes
+- Tests that don't depend on each other
+- Documentation updates
+- Refactoring separate modules
+
+### When NOT to Parallelize
+- Sequential dependencies (B needs A's output)
+- Shared state modifications
+- Small tasks (overhead not worth it)
+```
+
+**With Beads Integration** (for projects using `bd` issue tracking):
+
+```markdown
+## Parallel Work with Worktrees + Beads
+
+Use grimoire worktrees with beads for tracked, parallel agent workflows.
+
+### Creating Tracked Work
+\`\`\`bash
+# Create issues for subtasks
+bd create --title="Implement feature A" --type=task --priority=2
+bd create --title="Write tests for B" --type=task --priority=2
+bd create --title="Update docs" --type=task --priority=3
+
+# Spawn agents linked to issues
+grim wt spawn feature-a -bg "Implement feature A" -i beads-xxx
+grim wt spawn tests-b -bg "Write tests for B" -i beads-yyy
+grim wt spawn docs -bg "Update documentation" -i beads-zzz
+\`\`\`
+
+### Monitoring & Completion
+\`\`\`bash
+# Check agent status
+grim wt ps
+bd list --status=in_progress
+
+# Wait and collect
+grim wt wait feature-a tests-b docs
+grim wt collect feature-a tests-b docs --delete
+
+# Close completed issues
+bd close beads-xxx beads-yyy beads-zzz
+bd sync
+\`\`\`
+
+### Workflow Pattern
+1. Break task into subtasks with `bd create`
+2. Spawn background agents with `grim wt spawn -bg`
+3. Monitor with `grim wt ps` and `bd list`
+4. Collect work with `grim wt collect`
+5. Close issues with `bd close` and sync
+
+### Best Practices
+- Link worktrees to issues with `-i <issue-id>`
+- Use `bd dep add` for dependent subtasks
+- Run `bd sync` after completing work
+- Use `grim wt collect --dry-run` before merging
+```
+
 [View documentation](docs/worktrees.md)
 
 ---
