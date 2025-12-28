@@ -22,9 +22,9 @@ export const worktreeRm = (args: ParsedArgs) =>
     }
 
     // -D is shorthand for full cleanup: force + delete branch
-    const fullCleanup = args.flags["D"] === true;
-    const deleteBranch = fullCleanup || args.flags["branch"] === true || args.flags["b"] === true;
-    const force = fullCleanup || args.flags["force"] === true || args.flags["f"] === true;
+    const fullCleanup = args.flags.D === true;
+    const deleteBranch = fullCleanup || args.flags.branch === true || args.flags.b === true;
+    const force = fullCleanup || args.flags.force === true || args.flags.f === true;
 
     const service = yield* WorktreeService;
     const cwd = process.cwd();
@@ -38,7 +38,7 @@ export const worktreeRm = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const info = infoResult.right as WorktreeInfo;
+    const info = infoResult.right;
 
     const removeResult = yield* Effect.either(service.remove(cwd, name, { deleteBranch, force }));
 

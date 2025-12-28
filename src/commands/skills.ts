@@ -48,7 +48,7 @@ export const skillsCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const subcommand = args.positional[0];
 
-    if (!subcommand || args.flags["help"] || args.flags["h"]) {
+    if (!subcommand || args.flags.help || args.flags.h) {
       printSkillsHelp();
       return;
     }

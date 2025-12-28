@@ -23,7 +23,7 @@ const colors = {
  */
 export const agentsList = (args: ParsedArgs) =>
   Effect.gen(function* () {
-    const enabledOnly = args.flags["enabled"] === true;
+    const enabledOnly = args.flags.enabled === true;
     const projectPath = process.cwd();
 
     const agentService = yield* AgentService;

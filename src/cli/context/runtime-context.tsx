@@ -47,7 +47,7 @@ export const RuntimeProvider: React.FC<{ children: ReactNode }> = ({ children })
   const runtime = useMemo(() => {
     // Create a managed runtime with the main layer
     // Type assertion is safe because MainLive composes layers that don't produce build errors
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+     
     return ManagedRuntime.make(MainLive) as RuntimeType;
   }, []);
 

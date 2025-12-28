@@ -31,7 +31,7 @@ function formatRelativeTime(isoString: string): string {
 export const worktreeClaim = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const name = args.positional[1];
-    const force = args.flags["force"] === true || args.flags["f"] === true;
+    const force = args.flags.force === true || args.flags.f === true;
 
     if (!name) {
       console.log("Usage: grimoire wt claim <name>");
@@ -70,7 +70,7 @@ export const worktreeClaim = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const author = (args.flags["author"] as string) || "human";
+    const author = (args.flags.author as string) || "human";
     const now = new Date().toISOString();
 
     // Check if already claimed
@@ -121,9 +121,9 @@ export const worktreeClaim = (args: ParsedArgs) =>
 export const worktreeRelease = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const name = args.positional[1];
-    const note = args.flags["note"] as string | undefined;
-    const reason = args.flags["reason"] as string | undefined;
-    const nextStage = args.flags["next"] as string | undefined;
+    const note = args.flags.note as string | undefined;
+    const reason = args.flags.reason as string | undefined;
+    const nextStage = args.flags.next as string | undefined;
 
     if (!name) {
       console.log("Usage: grimoire wt release <name>");
@@ -165,7 +165,7 @@ export const worktreeRelease = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const author = (args.flags["author"] as string) || "human";
+    const author = (args.flags.author as string) || "human";
     const now = new Date().toISOString();
 
     // Determine log type and message

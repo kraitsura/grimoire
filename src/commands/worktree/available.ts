@@ -59,9 +59,9 @@ function getLastLog(logs: unknown[]): { message: string; time: string } | null {
 
 export const worktreeAvailable = (args: ParsedArgs) =>
   Effect.gen(function* () {
-    const json = args.flags["json"] === true;
-    const stageFilter = args.flags["stage"] as string | undefined;
-    const sortByPriority = args.flags["priority"] === true;
+    const json = args.flags.json === true;
+    const stageFilter = args.flags.stage as string | undefined;
+    const sortByPriority = args.flags.priority === true;
 
     const service = yield* WorktreeService;
     const stateService = yield* WorktreeStateService;
@@ -75,7 +75,7 @@ export const worktreeAvailable = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const worktrees = worktreesResult.right as WorktreeListItem[];
+    const worktrees = worktreesResult.right;
 
     if (worktrees.length === 0) {
       if (json) {

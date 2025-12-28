@@ -155,7 +155,7 @@ const fetchPluginJson = (
       catch: () => null,
     }).pipe(Effect.orElse(() => Effect.succeed(null)));
 
-    if (!response || !response.ok) return null;
+    if (!response?.ok) return null;
 
     const json = yield* Effect.tryPromise({
       try: () => response.json(),
@@ -182,7 +182,7 @@ const fetchSkillDescription = (
       catch: () => null,
     }).pipe(Effect.orElse(() => Effect.succeed(null)));
 
-    if (!response || !response.ok) return "";
+    if (!response?.ok) return "";
 
     const content = yield* Effect.tryPromise({
       try: () => response.text(),
@@ -196,7 +196,7 @@ const fetchSkillDescription = (
     if (endMarker === -1) return "";
 
     const frontmatter = content.slice(3, endMarker);
-    const descMatch = frontmatter.match(/description:\s*(.+)/);
+    const descMatch = /description:\s*(.+)/.exec(frontmatter);
     return descMatch ? descMatch[1].trim() : "";
   });
 

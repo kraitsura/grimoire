@@ -74,7 +74,7 @@ const normalizeGitHubUrl = (url: string): string => {
 
   if (normalized.startsWith("https://github.com/")) {
     normalized = normalized.replace("https://github.com/", "github:");
-    const treeBranchMatch = normalized.match(/^(github:[^/]+\/[^/]+)\/tree\/([^/]+)(\/(.+))?$/);
+    const treeBranchMatch = /^(github:[^/]+\/[^/]+)\/tree\/([^/]+)(\/(.+))?$/.exec(normalized);
     if (treeBranchMatch) {
       const [, repo, branch, , subdir] = treeBranchMatch;
       return `${repo}@${branch}${subdir ? `#${subdir}` : ""}`;
@@ -412,7 +412,7 @@ const installSingleSkill = (opts: InstallOptions) =>
 
     // Remove from cache if force flag
     if (force && !isLocal && typeof source !== "string") {
-      const githubSource = source as GitHubSource;
+      const githubSource = source;
       const potentialName = githubSource.subdir || githubSource.repo;
       const isCached = yield* cacheService.isCached(potentialName);
       if (isCached) {
@@ -444,7 +444,7 @@ const installSingleSkill = (opts: InstallOptions) =>
       console.log(`${colors.dim}Initializing project...${colors.reset}`);
 
       // Detect agent type
-      let agent: AgentType = yield* detectAgent().pipe(
+      const agent: AgentType = yield* detectAgent().pipe(
         Effect.map((detected) => detected || "claude_code")
       );
 

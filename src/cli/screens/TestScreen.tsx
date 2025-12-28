@@ -42,6 +42,8 @@ interface TestConfig {
   temperature: number;
   maxTokens: number;
   variables: Record<string, string>;
+  enableThinking: boolean;
+  thinkingBudget: number;
 }
 
 interface TestStats {
@@ -67,8 +69,10 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
   const [config, setConfig] = useState<TestConfig>({
     model: "",
     temperature: 0.7,
-    maxTokens: 1024,
+    maxTokens: 4096,
     variables: {},
+    enableThinking: false,
+    thinkingBudget: 8192,
   });
   const [output, setOutput] = useState("");
   const [stats, setStats] = useState<TestStats | null>(null);
@@ -254,6 +258,9 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
         messages: [{ role: "user", content: processedContent }],
         temperature: config.temperature,
         maxTokens: config.maxTokens,
+        thinking: config.enableThinking
+          ? { enabled: true, budgetTokens: config.thinkingBudget }
+          : undefined,
       });
 
       let fullOutput = "";
@@ -339,7 +346,13 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
     }
 
     if (mode === "setup") {
-      const totalFields = 3 + variables.length; // model, temp, tokens + vars
+      // Check if current model supports thinking
+      const supportsThinking = config.model.includes("claude") &&
+        (config.model.includes("opus") || config.model.includes("sonnet"));
+
+      // Fields: model, temp, tokens, thinking toggle (if supported), thinking budget (if enabled), + vars
+      const thinkingFields = supportsThinking ? (config.enableThinking ? 2 : 1) : 0;
+      const totalFields = 3 + thinkingFields + variables.length;
 
       // Vertical navigation with j/k or arrow keys
       if (key.upArrow || input === "k") {
@@ -364,6 +377,38 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
           const newIndex = Math.min(models.length - 1, modelIndex + 1);
           setModelIndex(newIndex);
           setConfig((c) => ({ ...c, model: models[newIndex] }));
+        }
+      }
+
+      // Temperature adjustment with h/l (field 1)
+      if (focusedField === 1) {
+        if (key.leftArrow || input === "h") {
+          setConfig((c) => ({ ...c, temperature: Math.max(0, +(c.temperature - 0.1).toFixed(1)) }));
+        } else if (key.rightArrow || input === "l") {
+          setConfig((c) => ({ ...c, temperature: Math.min(2, +(c.temperature + 0.1).toFixed(1)) }));
+        }
+      }
+
+      // Max tokens adjustment with h/l (field 2)
+      if (focusedField === 2) {
+        if (key.leftArrow || input === "h") {
+          setConfig((c) => ({ ...c, maxTokens: Math.max(256, c.maxTokens - 256) }));
+        } else if (key.rightArrow || input === "l") {
+          setConfig((c) => ({ ...c, maxTokens: Math.min(32768, c.maxTokens + 256) }));
+        }
+      }
+
+      // Thinking toggle with space (field 3 if supportsThinking)
+      if (supportsThinking && focusedField === 3 && input === " ") {
+        setConfig((c) => ({ ...c, enableThinking: !c.enableThinking }));
+      }
+
+      // Thinking budget adjustment with h/l (field 4 if thinking enabled)
+      if (supportsThinking && config.enableThinking && focusedField === 4) {
+        if (key.leftArrow || input === "h") {
+          setConfig((c) => ({ ...c, thinkingBudget: Math.max(1024, c.thinkingBudget - 1024) }));
+        } else if (key.rightArrow || input === "l") {
+          setConfig((c) => ({ ...c, thinkingBudget: Math.min(32768, c.thinkingBudget + 1024) }));
         }
       }
       return;
@@ -468,6 +513,7 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
               <Text>{config.temperature}</Text>
             )}
             <Text color={focusedField === 1 ? "cyan" : undefined}>]</Text>
+            {focusedField === 1 && <Text dimColor> (h/l ±0.1)</Text>}
           </Box>
 
           {/* Max tokens */}
@@ -483,19 +529,61 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
               <Text>{config.maxTokens}</Text>
             )}
             <Text color={focusedField === 2 ? "cyan" : undefined}>]</Text>
+            {focusedField === 2 && <Text dimColor> (h/l ±256)</Text>}
           </Box>
 
+          {/* Thinking toggle (only for Claude models) */}
+          {(() => {
+            const supportsThinking = config.model.includes("claude") &&
+              (config.model.includes("opus") || config.model.includes("sonnet"));
+            if (!supportsThinking) return null;
+            return (
+              <>
+                <Box>
+                  <Text color={focusedField === 3 ? "cyan" : undefined}>
+                    Enable Thinking: [{config.enableThinking ? "ON " : "OFF"}]
+                  </Text>
+                  {focusedField === 3 && <Text dimColor> (press space)</Text>}
+                </Box>
+
+                {/* Thinking budget (only when thinking enabled) */}
+                {config.enableThinking && (
+                  <Box>
+                    <Text color={focusedField === 4 ? "cyan" : undefined}>Thinking Budget: [</Text>
+                    {focusedField === 4 ? (
+                      <TextInput
+                        value={String(config.thinkingBudget)}
+                        onChange={(v) => setConfig((c) => ({ ...c, thinkingBudget: parseInt(v) || 4096 }))}
+                        focused={true}
+                      />
+                    ) : (
+                      <Text>{config.thinkingBudget}</Text>
+                    )}
+                    <Text color={focusedField === 4 ? "cyan" : undefined}>]</Text>
+                    {focusedField === 4 && <Text dimColor> (h/l ±1024)</Text>}
+                  </Box>
+                )}
+              </>
+            );
+          })()}
+
           {/* Variables */}
-          {variables.length > 0 && (
+          {variables.length > 0 && (() => {
+            // Calculate offset for variable fields based on thinking fields
+            const supportsThinking = config.model.includes("claude") &&
+              (config.model.includes("opus") || config.model.includes("sonnet"));
+            const thinkingOffset = supportsThinking ? (config.enableThinking ? 2 : 1) : 0;
+            const varStartField = 3 + thinkingOffset;
+            return (
             <Box flexDirection="column" marginTop={1}>
               <Text bold>Variables:</Text>
               {variables.map((variable, index) => (
                 <Box key={variable}>
-                  <Text color={focusedField === 3 + index ? "cyan" : undefined}>
+                  <Text color={focusedField === varStartField + index ? "cyan" : undefined}>
                     {"  "}
                     {variable}:{" ".repeat(Math.max(1, 12 - variable.length))}[
                   </Text>
-                  {focusedField === 3 + index ? (
+                  {focusedField === varStartField + index ? (
                     <TextInput
                       value={config.variables[variable] || ""}
                       onChange={(v) =>
@@ -509,11 +597,12 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
                   ) : (
                     <Text>{config.variables[variable] || ""}</Text>
                   )}
-                  <Text color={focusedField === 3 + index ? "cyan" : undefined}>]</Text>
+                  <Text color={focusedField === varStartField + index ? "cyan" : undefined}>]</Text>
                 </Box>
               ))}
             </Box>
-          )}
+            );
+          })()}
         </Box>
 
         <Box marginTop={2} gap={2}>

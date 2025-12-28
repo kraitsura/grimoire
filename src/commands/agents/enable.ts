@@ -27,7 +27,7 @@ const colors = {
 export const agentsEnable = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const name = args.positional[1];
-    const platformFlag = args.flags["platform"] as string | undefined;
+    const platformFlag = args.flags.platform as string | undefined;
     const projectPath = process.cwd();
 
     if (!name) {

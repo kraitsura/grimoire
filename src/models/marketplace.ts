@@ -50,6 +50,17 @@ export const MarketplaceSchema = Schema.Struct({
 
 export type Marketplace = Schema.Schema.Type<typeof MarketplaceSchema>;
 
+/** Mutable version of Marketplace for internal updates */
+export interface MutableMarketplace {
+  name: string;
+  repo: string;
+  type: MarketplaceType;
+  skillsPath?: string;
+  claudePluginId?: string;
+  description?: string;
+  addedAt?: string;
+}
+
 /**
  * Marketplace registry
  *
@@ -68,6 +79,13 @@ export const MarketplaceRegistrySchema = Schema.Struct({
 });
 
 export type MarketplaceRegistry = Schema.Schema.Type<typeof MarketplaceRegistrySchema>;
+
+/** Mutable version of MarketplaceRegistry for internal updates */
+export interface MutableMarketplaceRegistry {
+  version: number;
+  lastSync?: string;
+  marketplaces: MutableMarketplace[];
+}
 
 // ============================================================================
 // Source Analysis Types

@@ -113,9 +113,9 @@ export const worktreeConfig = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const isGlobal = args.flags["global"] === true;
-    const isProject = args.flags["project"] === true || !isGlobal;
-    const reset = args.flags["reset"] === true;
+    const isGlobal = args.flags.global === true;
+    const isProject = args.flags.project === true || !isGlobal;
+    const reset = args.flags.reset === true;
 
     const configPath = isGlobal
       ? getUserConfigPath()
@@ -173,7 +173,7 @@ export const worktreeConfig = (args: ParsedArgs) =>
     }
 
     // Load existing config
-    let config = (yield* Effect.promise(() => loadConfig(configPath))) || {};
+    const config = (yield* Effect.promise(() => loadConfig(configPath))) || {};
 
     // Handle array operations
     if (key === "copy.add" && value) {

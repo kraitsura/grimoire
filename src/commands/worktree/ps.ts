@@ -47,8 +47,8 @@ interface WorktreeWithSession {
 
 export const worktreePs = (args: ParsedArgs) =>
   Effect.gen(function* () {
-    const runningOnly = args.flags["running"] === true;
-    const json = args.flags["json"] === true;
+    const runningOnly = args.flags.running === true;
+    const json = args.flags.json === true;
 
     const worktreeService = yield* WorktreeService;
     const sessionService = yield* AgentSessionService;
@@ -62,7 +62,7 @@ export const worktreePs = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const worktrees = worktreesResult.right as WorktreeListItem[];
+    const worktrees = worktreesResult.right;
 
     // Get session info for each worktree - refreshSessionStatus updates crashed sessions automatically
     const results: WorktreeWithSession[] = [];

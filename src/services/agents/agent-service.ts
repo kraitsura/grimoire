@@ -15,6 +15,8 @@ import type {
   AgentState,
   AgentProjectState,
   CachedAgent,
+  MutableAgentState,
+  MutableAgentProjectState,
 } from "../../models/agent";
 import {
   GLOBAL_AGENT_LOCATIONS,
@@ -66,7 +68,7 @@ const getStateFilePath = (): string => {
 /**
  * Get the default state
  */
-const getDefaultState = (): AgentState => ({
+const getDefaultState = (): MutableAgentState => ({
   version: 1,
   projects: {},
 });
@@ -74,7 +76,7 @@ const getDefaultState = (): AgentState => ({
 /**
  * Read and parse the state file
  */
-const readStateFile = (): Effect.Effect<AgentState, AgentStateReadError> =>
+const readStateFile = (): Effect.Effect<MutableAgentState, AgentStateReadError> =>
   Effect.gen(function* () {
     const statePath = getStateFilePath();
     const file = Bun.file(statePath);
@@ -86,10 +88,20 @@ const readStateFile = (): Effect.Effect<AgentState, AgentStateReadError> =>
 
     const content = yield* Effect.promise(() => file.text());
     try {
-      const parsed = JSON.parse(content) as AgentState;
+      const parsed = JSON.parse(content) as MutableAgentState;
+      // Create mutable copies of project states
+      const projects: Record<string, MutableAgentProjectState> = {};
+      for (const [key, proj] of Object.entries(parsed.projects || {})) {
+        projects[key] = {
+          platforms: [...(proj.platforms || [])],
+          enabled: [...(proj.enabled || [])],
+          initializedAt: proj.initializedAt,
+          lastSync: proj.lastSync,
+        };
+      }
       return {
         version: parsed.version || 1,
-        projects: parsed.projects || {},
+        projects,
       };
     } catch {
       return getDefaultState();
@@ -102,7 +114,7 @@ const readStateFile = (): Effect.Effect<AgentState, AgentStateReadError> =>
  * Write the state file atomically
  */
 const writeStateFile = (
-  state: AgentState
+  state: MutableAgentState
 ): Effect.Effect<void, AgentStateWriteError> =>
   Effect.gen(function* () {
     const statePath = getStateFilePath();
@@ -203,17 +215,17 @@ const serializeAgent = (agent: AgentDefinition): string => {
 interface AgentServiceImpl {
   // Cache management (global agents in ~/.grimoire/agents/)
   readonly listCached: () => Effect.Effect<CachedAgent[], AgentStateReadError>;
-  readonly getCached: (name: string) => Effect.Effect<CachedAgent, AgentNotCachedError>;
+  readonly getCached: (name: string) => Effect.Effect<CachedAgent, AgentNotCachedError | AgentDefinitionError>;
   readonly cache: (agent: AgentDefinition, source?: string) => Effect.Effect<void, AgentCacheError>;
   readonly removeCached: (name: string) => Effect.Effect<void, AgentCacheError>;
 
   // Project agents
-  readonly listEnabled: (projectPath: string) => Effect.Effect<string[], AgentStateReadError>;
+  readonly listEnabled: (projectPath: string) => Effect.Effect<readonly string[], AgentStateReadError>;
   readonly isEnabled: (name: string, projectPath: string) => Effect.Effect<boolean, AgentStateReadError>;
   readonly enable: (
     name: string,
     projectPath: string
-  ) => Effect.Effect<void, AgentStateReadError | AgentStateWriteError | AgentNotCachedError>;
+  ) => Effect.Effect<void, AgentStateReadError | AgentStateWriteError | AgentNotCachedError | AgentProjectNotInitializedError>;
   readonly disable: (
     name: string,
     projectPath: string

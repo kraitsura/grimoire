@@ -67,7 +67,7 @@ function parseFrontmatter(content: string): {
       }
     }
 
-    const match = line.match(/^(\w[\w-]*?):\s*(.*)$/);
+    const match = /^(\w[\w-]*?):\s*(.*)$/.exec(line);
     if (match) {
       currentKey = match[1];
       const value = match[2];

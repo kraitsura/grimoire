@@ -190,7 +190,7 @@ function LogsView({
   }
 
   // Merge logs and checkpoints into timeline
-  type TimelineEntry = { time: string; type: "log" | "checkpoint"; data: LogEntry | Checkpoint };
+  interface TimelineEntry { time: string; type: "log" | "checkpoint"; data: LogEntry | Checkpoint }
   const timeline: TimelineEntry[] = [
     ...logs.map((l) => ({ time: l.time, type: "log" as const, data: l })),
     ...checkpoints.map((c) => ({ time: c.time, type: "checkpoint" as const, data: c })),

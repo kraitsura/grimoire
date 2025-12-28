@@ -230,7 +230,7 @@ export const ViewerScreen: React.FC<ViewerScreenProps> = ({ promptId }) => {
           if (input === "w" || input === "e") {
             // Jump to next word
             const rest = editedName.slice(cursorPos);
-            const match = rest.match(/^\s*\S+\s*/);
+            const match = /^\s*\S+\s*/.exec(rest);
             if (match) {
               setCursorPos(Math.min(editedName.length, cursorPos + match[0].length));
             }
@@ -239,7 +239,7 @@ export const ViewerScreen: React.FC<ViewerScreenProps> = ({ promptId }) => {
           if (input === "b") {
             // Jump to previous word
             const before = editedName.slice(0, cursorPos);
-            const match = before.match(/\s*\S+\s*$/);
+            const match = /\s*\S+\s*$/.exec(before);
             if (match) {
               setCursorPos(cursorPos - match[0].length);
             }

@@ -41,7 +41,7 @@ function formatDate(isoString: string): string {
  * Detect current worktree from cwd
  */
 function detectCurrentWorktree(cwd: string): string | null {
-  const match = cwd.match(/\.worktrees\/([^/]+)/);
+  const match = /\.worktrees\/([^/]+)/.exec(cwd);
   return match ? match[1] : null;
 }
 
@@ -58,7 +58,7 @@ export const worktreeLog = (args: ParsedArgs) =>
     if (subcommand === "logs") {
       // View logs: grimoire wt logs [name] [--json]
       const name = args.positional[1] || detectCurrentWorktree(cwd);
-      const json = args.flags["json"] === true;
+      const json = args.flags.json === true;
 
       if (!name) {
         console.error("Error: Specify worktree name or run from within a worktree");
@@ -166,7 +166,7 @@ export const worktreeLog = (args: ParsedArgs) =>
     const newLog: WorktreeLog = {
       time: new Date().toISOString(),
       message,
-      author: (args.flags["author"] as string) || "human",
+      author: (args.flags.author as string) || "human",
       type: "log",
     };
 

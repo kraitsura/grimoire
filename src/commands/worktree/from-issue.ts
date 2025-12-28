@@ -29,9 +29,9 @@ function sanitize(str: string): string {
  */
 function detectProvider(issueId: string): IssueProvider {
   if (issueId.startsWith("github:") || issueId.includes("#")) return "github";
-  if (issueId.startsWith("linear:") || issueId.match(/^[A-Z]+-\d+$/)) return "linear";
+  if (issueId.startsWith("linear:") || (/^[A-Z]+-\d+$/.exec(issueId))) return "linear";
   if (issueId.startsWith("jira:")) return "jira";
-  if (issueId.match(/^[a-z]+-[a-z0-9]+$/i)) return "beads"; // bd-xxx, grimoire-xxx
+  if (/^[a-z]+-[a-z0-9]+$/i.exec(issueId)) return "beads"; // bd-xxx, grimoire-xxx
   return "none";
 }
 
@@ -61,7 +61,7 @@ function fetchBeadsIssue(issueId: string): { title?: string; priority?: number; 
 export const worktreeFromIssue = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const issueId = args.positional[1];
-    const customName = args.flags["name"] as string | undefined;
+    const customName = args.flags.name as string | undefined;
     const noClaim = args.flags["no-claim"] === true;
 
     if (!issueId) {
@@ -126,7 +126,8 @@ export const worktreeFromIssue = (args: ParsedArgs) =>
     }
 
     // Create the worktree
-    const author = (args.flags["author"] as string) || "human";
+    const authorFlag = args.flags.author as string | undefined;
+    const createdBy = authorFlag === "agent" ? "agent" as const : "user" as const;
 
     const createResult = yield* Effect.either(
       service.create(cwd, {
@@ -134,7 +135,7 @@ export const worktreeFromIssue = (args: ParsedArgs) =>
         name: worktreeName,
         linkedIssue: issueId,
         createBranch: true,
-        createdBy: author,
+        createdBy,
       })
     );
 
@@ -156,18 +157,18 @@ export const worktreeFromIssue = (args: ParsedArgs) =>
       {
         time: now,
         message: `Created from issue ${issueId}`,
-        author,
+        author: createdBy,
         type: "log",
       },
     ];
 
     if (!noClaim) {
-      updates.claimedBy = author;
+      updates.claimedBy = createdBy;
       updates.claimedAt = now;
       logs.push({
         time: now,
-        message: `Claimed by ${author}`,
-        author,
+        message: `Claimed by ${createdBy}`,
+        author: createdBy,
         type: "log",
       });
     }

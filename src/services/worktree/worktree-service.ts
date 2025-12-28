@@ -584,7 +584,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
 
         // Parse git worktree list output - collect all matches first
         const basePath = join(repoRoot, config.basePath);
-        const gitWorktrees: Array<{ path: string; branch: string }> = [];
+        const gitWorktrees: { path: string; branch: string }[] = [];
         const lines = result.stdout.split("\n");
         let current: Partial<{ path: string; branch: string }> = {};
 

@@ -381,7 +381,7 @@ const main = Effect.scoped(
 );
 
 // Run the program
-Effect.runPromise(main as Effect.Effect<void, never, never>).catch((error) => {
+Effect.runPromise(main).catch((error) => {
   console.error("Fatal error:", error);
   process.exit(1);
 });

@@ -37,7 +37,7 @@ const normalizeGitHubUrl = (url: string): string => {
   if (normalized.startsWith("https://github.com/")) {
     normalized = normalized.replace("https://github.com/", "github:");
     // Handle tree/branch/path
-    const treeBranchMatch = normalized.match(/^(github:[^/]+\/[^/]+)\/tree\/([^/]+)(\/(.+))?$/);
+    const treeBranchMatch = /^(github:[^/]+\/[^/]+)\/tree\/([^/]+)(\/(.+))?$/.exec(normalized);
     if (treeBranchMatch) {
       const [, repo, branch, , subdir] = treeBranchMatch;
       return `${repo}@${branch}${subdir ? `#${subdir}` : ""}`;

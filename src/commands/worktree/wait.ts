@@ -35,9 +35,10 @@ function isSessionCompleted(status: string | null): boolean {
 
 export const worktreeWait = (args: ParsedArgs) =>
   Effect.gen(function* () {
-    const waitAny = args.flags["any"] === true;
-    const json = args.flags["json"] === true;
-    const timeoutSecs = args.flags["timeout"] as number | undefined;
+    const waitAny = args.flags.any === true;
+    const json = args.flags.json === true;
+    const timeoutFlag = args.flags.timeout;
+    const timeoutSecs = typeof timeoutFlag === "number" ? timeoutFlag : undefined;
     const specifiedWorktrees = args.positional.slice(1); // Skip "wait" subcommand
 
     const worktreeService = yield* WorktreeService;
@@ -57,7 +58,7 @@ export const worktreeWait = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const worktrees = worktreesResult.right as WorktreeListItem[];
+    const worktrees = worktreesResult.right;
     const state = yield* stateService.getState(cwd);
 
     // Determine which worktrees to wait for
@@ -105,7 +106,7 @@ export const worktreeWait = (args: ParsedArgs) =>
     const timeoutMs = timeoutSecs ? timeoutSecs * 1000 : Infinity;
     const pollIntervalMs = 2000; // Poll every 2 seconds
 
-    const results: Map<string, WaitResult> = new Map();
+    const results = new Map<string, WaitResult>();
 
     // Initialize all as running
     for (const wt of targets) {

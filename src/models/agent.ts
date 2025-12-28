@@ -251,6 +251,20 @@ export type AgentProjectState = Schema.Schema.Type<typeof AgentProjectStateSchem
  */
 export type AgentState = Schema.Schema.Type<typeof AgentStateSchema>;
 
+/** Mutable version of AgentProjectState for internal updates */
+export interface MutableAgentProjectState {
+  platforms: AgentPlatform[];
+  enabled: string[];
+  initializedAt: string;
+  lastSync?: string;
+}
+
+/** Mutable version of AgentState for internal updates */
+export interface MutableAgentState {
+  version: number;
+  projects: Record<string, MutableAgentProjectState>;
+}
+
 /**
  * Agent type enum
  */

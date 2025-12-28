@@ -172,8 +172,21 @@ export const makeAnthropicProvider = Effect.gen(function* () {
     // Track usage data across chunks
     let usageData: { promptTokens?: number; completionTokens?: number } | undefined;
 
+    // Build model options - include max_tokens inside modelOptions when thinking is enabled
+    // as TanStack AI requires max_tokens > budget_tokens for extended thinking
+    const thinkingBudget = request.thinking?.budgetTokens ?? 4096;
+    const modelOptions = request.thinking?.enabled
+      ? {
+          max_tokens: Math.max(request.maxTokens ?? 8192, thinkingBudget + 1024),
+          thinking: {
+            type: "enabled" as const,
+            budget_tokens: thinkingBudget,
+          },
+        }
+      : undefined;
+
     return streamFromAsyncIterator<
-      { type: string; delta?: string; usage?: { promptTokens?: number; completionTokens?: number } },
+      { type: string; delta?: string; content?: string; usage?: { promptTokens?: number; completionTokens?: number } },
       LLMErrors
     >(
       // Get iterator
@@ -185,14 +198,27 @@ export const makeAnthropicProvider = Effect.gen(function* () {
           messages,
           systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
           temperature: request.temperature,
-          maxTokens: request.maxTokens,
+          // Only pass maxTokens separately when thinking is disabled
+          // When thinking is enabled, max_tokens is inside modelOptions
+          maxTokens: request.thinking?.enabled ? undefined : request.maxTokens,
+          modelOptions,
         });
       },
       // Transform chunks
       (chunk) => {
-        // TanStack AI uses `delta` for incremental content, not `content`
+        // Handle thinking chunks
+        if (chunk.type === "thinking" && chunk.delta) {
+          return {
+            type: "thinking" as const,
+            content: "",
+            thinkingDelta: chunk.delta,
+            thinkingContent: chunk.content,
+            done: false,
+          };
+        }
+        // Handle content chunks
         if (chunk.type === "content" && chunk.delta) {
-          return { content: chunk.delta, done: false };
+          return { type: "content" as const, content: chunk.delta, done: false };
         }
         if (chunk.type === "done") {
           usageData = chunk.usage;
@@ -201,6 +227,7 @@ export const makeAnthropicProvider = Effect.gen(function* () {
       },
       // On done - emit final chunk with usage
       () => ({
+        type: "done" as const,
         content: "",
         done: true,
         usage: usageData ? parseUsage(usageData) : undefined,

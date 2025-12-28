@@ -7,6 +7,7 @@ import { Effect, Layer } from "effect";
 import { skillsList } from "../../../src/commands/skills/list";
 import { SkillCacheService, type CachedSkill } from "../../../src/services/skills/skill-cache-service";
 import { SkillStateService } from "../../../src/services/skills/skill-state-service";
+import { AgentAdapterService, AgentAdapterServiceLive } from "../../../src/services/skills/agent-adapter";
 import type { ParsedArgs } from "../../../src/cli/parser";
 import type { SkillManifest, AgentType, RepoType } from "../../../src/models/skill";
 
@@ -89,6 +90,9 @@ const createMockStateService = (
     }),
   recordDisable: () => Effect.void,
   updateLastSync: () => Effect.void,
+  getGlobalEnabled: () => Effect.succeed([] as string[]),
+  addGlobalEnabled: () => Effect.void,
+  removeGlobalEnabled: () => Effect.void,
 });
 
 describe("skills list command", () => {
@@ -106,7 +110,8 @@ describe("skills list command", () => {
     const mockState = createMockStateService(projects);
     const TestLayer = Layer.mergeAll(
       Layer.succeed(SkillCacheService, mockCache),
-      Layer.succeed(SkillStateService, mockState)
+      Layer.succeed(SkillStateService, mockState),
+      AgentAdapterServiceLive
     );
 
     const args = createParsedArgs();
@@ -130,7 +135,8 @@ describe("skills list command", () => {
     const mockState = createMockStateService(projects);
     const TestLayer = Layer.mergeAll(
       Layer.succeed(SkillCacheService, mockCache),
-      Layer.succeed(SkillStateService, mockState)
+      Layer.succeed(SkillStateService, mockState),
+      AgentAdapterServiceLive
     );
 
     const args = createParsedArgs();
@@ -150,7 +156,8 @@ describe("skills list command", () => {
     const mockState = createMockStateService(projects);
     const TestLayer = Layer.mergeAll(
       Layer.succeed(SkillCacheService, mockCache),
-      Layer.succeed(SkillStateService, mockState)
+      Layer.succeed(SkillStateService, mockState),
+      AgentAdapterServiceLive
     );
 
     const args = createParsedArgs();
@@ -173,7 +180,8 @@ describe("skills list command", () => {
     const mockState = createMockStateService(projects);
     const TestLayer = Layer.mergeAll(
       Layer.succeed(SkillCacheService, mockCache),
-      Layer.succeed(SkillStateService, mockState)
+      Layer.succeed(SkillStateService, mockState),
+      AgentAdapterServiceLive
     );
 
     const args = createParsedArgs({
@@ -198,7 +206,8 @@ describe("skills list command", () => {
     const mockState = createMockStateService(projects);
     const TestLayer = Layer.mergeAll(
       Layer.succeed(SkillCacheService, mockCache),
-      Layer.succeed(SkillStateService, mockState)
+      Layer.succeed(SkillStateService, mockState),
+      AgentAdapterServiceLive
     );
 
     const args = createParsedArgs({

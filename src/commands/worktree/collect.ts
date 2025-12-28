@@ -108,9 +108,9 @@ function getTopologicalOrder(entries: WorktreeEntry[]): WorktreeEntry[] {
 export const worktreeCollect = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const dryRun = args.flags["dry-run"] === true;
-    const json = args.flags["json"] === true;
-    const deleteAfter = args.flags["delete"] === true;
-    const strategy = (args.flags["strategy"] as MergeStrategy) || "merge";
+    const json = args.flags.json === true;
+    const deleteAfter = args.flags.delete === true;
+    const strategy = (args.flags.strategy as MergeStrategy) || "merge";
 
     const worktreeService = yield* WorktreeService;
     const stateService = yield* WorktreeStateService;
@@ -130,7 +130,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const worktrees = worktreesResult.right as WorktreeListItem[];
+    const worktrees = worktreesResult.right;
     const state = yield* stateService.getState(cwd);
 
     // Find worktrees to collect - either explicit args, or children of current session
@@ -185,11 +185,11 @@ export const worktreeCollect = (args: ParsedArgs) =>
     }
 
     // Get session status for each child
-    const childrenWithStatus: Array<{
+    const childrenWithStatus: {
       entry: WorktreeEntry;
       worktree: WorktreeListItem | undefined;
       sessionStatus: { status: string; pid: number } | null;
-    }> = [];
+    }[] = [];
 
     for (const entry of childEntries) {
       const wt = worktrees.find((w) => w.name === entry.name);

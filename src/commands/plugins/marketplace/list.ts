@@ -55,7 +55,7 @@ export const pluginsMarketplaceList = (args: ParsedArgs) =>
     );
 
     // Optionally get Claude CLI marketplaces too
-    let claudeMarketplaces: Array<{ name: string; url?: string; scope: "user" | "project" }> = [];
+    let claudeMarketplaces: { name: string; url?: string; scope: "user" | "project" }[] = [];
     if (allFlag) {
       claudeMarketplaces = yield* claudeCliService.marketplaceList().pipe(
         Effect.catchAll(() => Effect.succeed([]))

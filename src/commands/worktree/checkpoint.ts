@@ -17,7 +17,7 @@ import type { WorktreeCheckpoint, WorktreeLog } from "../../models/worktree";
  * Detect current worktree from cwd
  */
 function detectCurrentWorktree(cwd: string): string | null {
-  const match = cwd.match(/\.worktrees\/([^/]+)/);
+  const match = /\.worktrees\/([^/]+)/.exec(cwd);
   return match ? match[1] : null;
 }
 
@@ -32,7 +32,7 @@ export const worktreeCheckpoint = (args: ParsedArgs) =>
     // View checkpoints: grimoire wt checkpoints [name]
     if (subcommand === "checkpoints") {
       const name = args.positional[2] || detectCurrentWorktree(cwd);
-      const json = args.flags["json"] === true;
+      const json = args.flags.json === true;
 
       if (!name) {
         console.error("Error: Specify worktree name or run from within a worktree");
@@ -158,7 +158,7 @@ export const worktreeCheckpoint = (args: ParsedArgs) =>
       console.log(`No changes to commit, recording HEAD: ${commitHash.slice(0, 7)}`);
     }
 
-    const author = (args.flags["author"] as string) || "human";
+    const author = (args.flags.author as string) || "human";
     const now = new Date().toISOString();
 
     // Get current state

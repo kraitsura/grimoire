@@ -112,8 +112,8 @@ export const listTemplates = (): Effect.Effect<AgentTemplate[], Error> =>
         templates.push({
           name: definition.name,
           description: definition.description,
-          cli: definition.wraps_cli || "",
-          tags: definition.tags || [],
+          cli: definition.wraps_cli ?? "",
+          tags: definition.tags ? [...definition.tags] : [],
         });
       }
     }

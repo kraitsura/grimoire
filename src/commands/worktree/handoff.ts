@@ -16,11 +16,11 @@ import type { WorktreeLog, WorktreeLogType } from "../../models/worktree";
 export const worktreeHandoff = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const name = args.positional[1];
-    const toAgent = args.flags["to"] as string | undefined;
-    const message = (args.flags["message"] || args.flags["m"]) as string | undefined;
-    const nextStage = args.flags["next"] as string | undefined;
-    const urgent = args.flags["urgent"] === true;
-    const provider = (args.flags["provider"] as string) || "beads";
+    const toAgent = args.flags.to as string | undefined;
+    const message = (args.flags.message || args.flags.m) as string | undefined;
+    const nextStage = args.flags.next as string | undefined;
+    const urgent = args.flags.urgent === true;
+    const provider = (args.flags.provider as string) || "beads";
 
     if (!name) {
       console.log("Usage: grimoire wt handoff <name> --to <agent>");
@@ -66,7 +66,7 @@ export const worktreeHandoff = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const author = (args.flags["author"] as string) || "human";
+    const author = (args.flags.author as string) || "human";
     const now = new Date().toISOString();
 
     // Build handoff message

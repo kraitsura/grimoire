@@ -15,7 +15,7 @@ import {
 } from "../../models/worktree-errors";
 
 // Mutable internal types for state manipulation (v2 schema)
-type MutableWorktreeLog = {
+interface MutableWorktreeLog {
   time: string;
   message: string;
   author?: string;
@@ -24,23 +24,23 @@ type MutableWorktreeLog = {
     nextStage?: string;
     reason?: string;
   };
-};
+}
 
-type MutableWorktreeCheckpoint = {
+interface MutableWorktreeCheckpoint {
   hash: string;
   message: string;
   time: string;
   author?: string;
-};
+}
 
-type MutableStageTransition = {
+interface MutableStageTransition {
   from: string;
   to: string;
   time: string;
   agent?: string;
-};
+}
 
-type MutableWorktreeEntry = {
+interface MutableWorktreeEntry {
   // Core fields
   name: string;
   branch: string;
@@ -71,12 +71,12 @@ type MutableWorktreeEntry = {
   spawnedAt?: string;
   completedAt?: string;
   mergeStatus?: "pending" | "ready" | "merged" | "conflict" | "abandoned";
-};
+}
 
-type MutableWorktreeState = {
+interface MutableWorktreeState {
   version: 2;
   worktrees: MutableWorktreeEntry[];
-};
+}
 
 /**
  * Get the state file path for a repository

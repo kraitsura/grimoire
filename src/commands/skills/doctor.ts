@@ -286,7 +286,7 @@ function parseSimpleFrontmatter(content: string): Record<string, string> | null 
   const result: Record<string, string> = {};
 
   for (const line of yamlBlock.split("\n")) {
-    const match = line.match(/^(\w[\w-]*?):\s*(.*)$/);
+    const match = /^(\w[\w-]*?):\s*(.*)$/.exec(line);
     if (match) {
       result[match[1]] = match[2];
     }
@@ -363,7 +363,7 @@ const checkSkillMdFrontmatter = (
       // Read the skill file
       const content = yield* Effect.tryPromise({
         try: async () => {
-          const file = Bun.file(skillFilePath!);
+          const file = Bun.file(skillFilePath);
           return await file.text();
         },
         catch: (error) =>
@@ -389,7 +389,7 @@ const checkSkillMdFrontmatter = (
                   try: async () => {
                     const frontmatter = generateSkillFrontmatter(cachedSkill.manifest);
                     const newContent = frontmatter + content;
-                    await Bun.write(skillFilePath!, newContent);
+                    await Bun.write(skillFilePath, newContent);
                   },
                   catch: (error) =>
                     new DoctorError({

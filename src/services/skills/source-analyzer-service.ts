@@ -112,13 +112,12 @@ const downloadAndExtractTarball = (
       try {
         const response = yield* Effect.tryPromise({
           try: () => fetch(tarballUrl, { redirect: "follow" }),
-          catch: (error) => error as Error,
+          catch: (error) => new SourceAnalyzerError({
+            source: `github:${owner}/${repo}`,
+            message: `Fetch failed: ${error instanceof Error ? error.message : String(error)}`,
+            cause: error,
+          }),
         });
-
-        if (response instanceof Error) {
-          downloadError = response;
-          continue;
-        }
 
         if (!response.ok) {
           continue;
@@ -128,13 +127,12 @@ const downloadAndExtractTarball = (
         tarballPath = path.join(tempDir, "repo.tar.gz");
         const buffer = yield* Effect.tryPromise({
           try: () => response.arrayBuffer(),
-          catch: (error) => error as Error,
+          catch: (error) => new SourceAnalyzerError({
+            source: `github:${owner}/${repo}`,
+            message: `Buffer read failed: ${error instanceof Error ? error.message : String(error)}`,
+            cause: error,
+          }),
         });
-
-        if (buffer instanceof Error) {
-          downloadError = buffer;
-          continue;
-        }
 
         fs.writeFileSync(tarballPath, Buffer.from(buffer));
         break;
@@ -429,9 +427,7 @@ const parseGitHubSource = (source: string): GitHubSource | null => {
   if (normalized.startsWith("https://github.com/")) {
     normalized = normalized.replace("https://github.com/", "github:");
     // Handle tree/branch/path
-    const treeBranchMatch = normalized.match(
-      /^(github:[^/]+\/[^/]+)\/tree\/([^/]+)(\/(.+))?$/
-    );
+    const treeBranchMatch = /^(github:[^/]+\/[^/]+)\/tree\/([^/]+)(\/(.+))?$/.exec(normalized);
     if (treeBranchMatch) {
       const [, repoStr, branch, , subPath] = treeBranchMatch;
       normalized = `${repoStr}@${branch}${subPath ? `#${subPath}` : ""}`;

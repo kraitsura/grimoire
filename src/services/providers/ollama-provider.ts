@@ -159,12 +159,13 @@ export const makeOllamaProvider = (): LLMProvider => {
                 // Use delta for incremental content (consistent with other providers)
                 if (chunk.type === "content" && chunk.delta) {
                   await emit.single({
+                    type: "content" as const,
                     content: chunk.delta,
                     done: false,
                   });
                 }
                 if (chunk.type === "done") {
-                  await emit.single({ content: "", done: true });
+                  await emit.single({ type: "content" as const, content: "", done: true });
                 }
               }
             },

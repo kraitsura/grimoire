@@ -71,9 +71,19 @@ const spawnHeadless = (params: SpawnHeadlessParams) =>
       claudeArgs.push("--dangerously-skip-permissions");
     }
 
-    // Add prompt if provided
+    // Build the full prompt with background agent context
+    const bgContext = `You are a background agent working in worktree "${worktree.name}" (branch: ${worktree.branch}).
+
+Log your progress with: grim wt log "message"
+Create checkpoints with: grim wt checkpoint "message"
+
+Your task: `;
+
+    // Add prompt with context prefix
     if (prompt) {
-      claudeArgs.push(prompt);
+      claudeArgs.push(bgContext + prompt);
+    } else {
+      claudeArgs.push(bgContext.trim());
     }
 
     // Escape function for shell arguments
@@ -189,20 +199,20 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     }
 
     // Check for --background / -bg flag (combines -H --srt --prompt)
-    const isBackground = args.flags["background"] === true || args.flags["bg"] === true;
+    const isBackground = args.flags.background === true || args.flags.bg === true;
 
     // Parse options
     const branchName =
-      (args.flags["branch"] as string) || (args.flags["b"] as string) || name;
+      (args.flags.branch as string) || (args.flags.b as string) || name;
 
     // For -bg mode, the prompt can be positional (args.positional[2]) or via --prompt/-p
-    let prompt = (args.flags["prompt"] as string) || (args.flags["p"] as string);
+    let prompt = (args.flags.prompt as string) || (args.flags.p as string);
     if (isBackground && !prompt && args.positional[2]) {
       prompt = args.positional[2];
     }
 
     const linkedIssue =
-      (args.flags["issue"] as string) || (args.flags["i"] as string);
+      (args.flags.issue as string) || (args.flags.i as string);
     const noSandbox = args.flags["no-sandbox"] === true;
     const skipCopy = args.flags["no-copy"] === true;
     const skipHooks = args.flags["no-hooks"] === true;
@@ -213,8 +223,8 @@ export const worktreeSpawn = (args: ParsedArgs) =>
 
     // Headless mode options
     // --background implies both --headless and --srt
-    const headless = args.flags["headless"] === true || args.flags["H"] === true || isBackground;
-    const useSrt = args.flags["srt"] === true || isBackground;
+    const headless = args.flags.headless === true || args.flags.H === true || isBackground;
+    const useSrt = args.flags.srt === true || isBackground;
     // SRT implies skip-permissions - the sandbox IS the safety mechanism
     const dangerouslySkipPermissions =
       args.flags["dangerously-skip-permissions"] === true || useSrt;
@@ -257,7 +267,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
 
     if (existingResult._tag === "Right") {
       // Worktree already exists - deploy agent to it
-      worktree = existingResult.right as WorktreeInfo;
+      worktree = existingResult.right;
       isExisting = true;
       console.log(`Using existing worktree '${name}'...`);
     } else {
@@ -289,7 +299,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
         }
       }
 
-      worktree = createResult.right as WorktreeInfo;
+      worktree = createResult.right;
     }
     console.log(`  Branch: ${worktree.branch}`);
     console.log(`  Path: ${worktree.path}`);
@@ -453,7 +463,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
             ];
             if (configPath) {
               cleanupPromises.push(
-                import("fs/promises").then((fs) => fs.unlink(configPath!).catch(() => {}))
+                import("fs/promises").then((fs) => fs.unlink(configPath).catch(() => {}))
               );
             }
             Promise.all(cleanupPromises).finally(() => {

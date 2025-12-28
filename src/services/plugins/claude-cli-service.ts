@@ -169,7 +169,7 @@ const parseJsonOutput = <T>(
       }
 
       // Otherwise, try to find JSON in the output
-      const jsonMatch = trimmed.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+      const jsonMatch = /(\[[\s\S]*\]|\{[\s\S]*\})/.exec(trimmed);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[1]) as T;
       }
@@ -211,13 +211,13 @@ const makeClaudeCliService = (): ClaudeCliServiceImpl => ({
 
       // Parse JSON output
       const data = yield* parseJsonOutput<
-        Array<{ name: string; url?: string; scope?: string }>
+        { name: string; url?: string; scope?: string }[]
       >(output, "marketplace list");
 
       return data.map((m) => ({
         name: m.name,
         url: m.url,
-        scope: (m.scope === "user" ? "user" : "project") as Scope,
+        scope: (m.scope === "user" ? "user" : "project"),
       }));
     }),
 
@@ -244,20 +244,20 @@ const makeClaudeCliService = (): ClaudeCliServiceImpl => ({
 
       // Parse JSON output
       const data = yield* parseJsonOutput<
-        Array<{
+        {
           name: string;
           marketplace: string;
           version?: string;
           scope?: string;
           enabled?: boolean;
-        }>
+        }[]
       >(output, "plugin list");
 
       return data.map((p) => ({
         name: p.name,
         marketplace: p.marketplace,
         version: p.version,
-        scope: (p.scope === "user" ? "user" : "project") as Scope,
+        scope: (p.scope === "user" ? "user" : "project"),
         enabled: p.enabled ?? true,
       }));
     }),

@@ -7,7 +7,7 @@
 
 import { Context, Effect, Layer } from "effect";
 import { join } from "path";
-import type { AgentSession, AgentSessionMode, AgentSessionStatus } from "../../models/agent-session";
+import type { AgentSession, AgentSessionMode, AgentSessionStatus, MutableAgentSession } from "../../models/agent-session";
 import { SESSION_FILE_NAME } from "../../models/agent-session";
 
 /**
@@ -178,23 +178,26 @@ const makeAgentSessionService = (): AgentSessionServiceImpl => ({
           new Error(`Failed to read session file: ${error instanceof Error ? error.message : String(error)}`),
       });
 
-      let session: AgentSession;
+      let parsed: AgentSession;
       try {
-        session = JSON.parse(content) as AgentSession;
+        parsed = JSON.parse(content) as AgentSession;
       } catch {
         return null;
       }
 
-      // Apply updates
-      if (updates.status !== undefined) {
-        session.status = updates.status;
-      }
-      if (updates.endedAt !== undefined) {
-        session.endedAt = updates.endedAt;
-      }
-      if (updates.exitCode !== undefined) {
-        session.exitCode = updates.exitCode;
-      }
+      // Create mutable copy with updates
+      const session: MutableAgentSession = {
+        sessionId: parsed.sessionId,
+        pid: parsed.pid,
+        mode: parsed.mode,
+        startedAt: parsed.startedAt,
+        status: updates.status ?? parsed.status,
+        prompt: parsed.prompt,
+        logFile: parsed.logFile,
+        tmuxWindow: parsed.tmuxWindow,
+        endedAt: updates.endedAt ?? parsed.endedAt,
+        exitCode: updates.exitCode ?? parsed.exitCode,
+      };
 
       yield* Effect.tryPromise({
         try: () => Bun.write(sessionPath, JSON.stringify(session, null, 2)),
@@ -265,33 +268,45 @@ const makeAgentSessionService = (): AgentSessionServiceImpl => ({
           new Error(`Failed to read session file: ${error instanceof Error ? error.message : String(error)}`),
       });
 
-      let session: AgentSession;
+      let parsed: AgentSession;
       try {
-        session = JSON.parse(content) as AgentSession;
+        parsed = JSON.parse(content) as AgentSession;
       } catch {
         return null;
       }
 
       // If already terminal status, no need to check
-      if (session.status === "stopped" || session.status === "crashed") {
-        return session;
+      if (parsed.status === "stopped" || parsed.status === "crashed") {
+        return parsed;
       }
 
       // Check if process is still alive
-      const alive = isProcessAlive(session.pid);
-      if (!alive && session.status === "running") {
+      const alive = isProcessAlive(parsed.pid);
+      if (!alive && parsed.status === "running") {
         // Process died - mark as crashed (we don't know the exit code)
-        session.status = "crashed";
-        session.endedAt = new Date().toISOString();
+        const updated: MutableAgentSession = {
+          sessionId: parsed.sessionId,
+          pid: parsed.pid,
+          mode: parsed.mode,
+          startedAt: parsed.startedAt,
+          status: "crashed",
+          prompt: parsed.prompt,
+          logFile: parsed.logFile,
+          tmuxWindow: parsed.tmuxWindow,
+          endedAt: new Date().toISOString(),
+          exitCode: parsed.exitCode,
+        };
 
         yield* Effect.tryPromise({
-          try: () => Bun.write(sessionPath, JSON.stringify(session, null, 2)),
+          try: () => Bun.write(sessionPath, JSON.stringify(updated, null, 2)),
           catch: (error) =>
             new Error(`Failed to write session file: ${error instanceof Error ? error.message : String(error)}`),
         });
+
+        return updated;
       }
 
-      return session;
+      return parsed;
     }),
 
   isPidAlive: isProcessAlive,

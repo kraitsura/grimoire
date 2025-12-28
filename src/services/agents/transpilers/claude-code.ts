@@ -54,7 +54,7 @@ export const claudeCodeTranspiler: AgentTranspiler = {
 
     // Only include optional fields if they have values
     if (agent.tools && agent.tools.length > 0) {
-      frontmatter.tools = agent.tools;
+      frontmatter.tools = [...agent.tools];
     }
     if (agent.model) {
       frontmatter.model = agent.model;

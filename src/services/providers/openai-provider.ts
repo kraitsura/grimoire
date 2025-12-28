@@ -195,7 +195,7 @@ export const makeOpenAIProvider = Effect.gen(function* () {
       (chunk) => {
         // TanStack AI uses `delta` for incremental content
         if (chunk.type === "content" && chunk.delta) {
-          return { content: chunk.delta, done: false };
+          return { type: "content" as const, content: chunk.delta, done: false };
         }
         if (chunk.type === "done") {
           usageData = chunk.usage;
@@ -203,6 +203,7 @@ export const makeOpenAIProvider = Effect.gen(function* () {
         return null;
       },
       () => ({
+        type: "content" as const,
         content: "",
         done: true,
         usage: usageData ? parseUsage(usageData) : undefined,

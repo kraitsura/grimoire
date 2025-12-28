@@ -164,7 +164,7 @@ export const pluginsAdd = (args: ParsedArgs) =>
     }
 
     // Step 4: Select items
-    let selectedItems = allItems;
+    const selectedItems = allItems;
 
     if (!yesFlag && allItems.length > 1) {
       // Non-interactive fallback - show items and install all

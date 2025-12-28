@@ -4,13 +4,13 @@ import { homedir } from "os";
 import type { AgentType, ProjectState, SkillsState, InstallScope } from "../../models/skill";
 
 // Mutable internal types for state manipulation
-type MutableProjectState = {
+interface MutableProjectState {
   agent: AgentType;
   enabled: string[];
   disabled_at: Record<string, string>;
   initialized_at: string;
   last_sync?: string;
-};
+}
 
 /**
  * Global skills state per agent type
@@ -18,13 +18,13 @@ type MutableProjectState = {
  */
 type MutableGlobalState = Record<AgentType, string[]>;
 
-type MutableSkillsState = {
+interface MutableSkillsState {
   version: number;
   /** Global (user-wide) skill installations per agent */
   global?: MutableGlobalState;
   /** Per-project skill installations */
   projects: Record<string, MutableProjectState>;
-};
+}
 
 // Error types
 export class StateFileReadError extends Data.TaggedError("StateFileReadError")<{
@@ -315,7 +315,7 @@ const makeSkillStateService = (): SkillStateServiceImpl => ({
       const state = yield* readStateFile();
 
       // Check if global state exists
-      if (!state.global || !state.global[agent]) {
+      if (!state.global?.[agent]) {
         return;
       }
 

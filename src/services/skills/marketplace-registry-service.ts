@@ -14,6 +14,8 @@ import type {
   Marketplace,
   MarketplaceRegistry,
   MarketplaceType,
+  MutableMarketplace,
+  MutableMarketplaceRegistry,
 } from "../../models/marketplace";
 import type { GitHubSource } from "./skill-cache-service";
 
@@ -46,7 +48,7 @@ const getGrimoireDir = (): string => {
 // Default Registry
 // ============================================================================
 
-const getDefaultRegistry = (): MarketplaceRegistry => ({
+const getDefaultRegistry = (): MutableMarketplaceRegistry => ({
   version: 1,
   marketplaces: [],
 });
@@ -55,7 +57,7 @@ const getDefaultRegistry = (): MarketplaceRegistry => ({
 // File Operations
 // ============================================================================
 
-const readRegistry = (): Effect.Effect<MarketplaceRegistry, MarketplaceRegistryError> =>
+const readRegistry = (): Effect.Effect<MutableMarketplaceRegistry, MarketplaceRegistryError> =>
   Effect.gen(function* () {
     const registryPath = getRegistryPath();
 
@@ -65,22 +67,22 @@ const readRegistry = (): Effect.Effect<MarketplaceRegistry, MarketplaceRegistryE
 
     try {
       const content = yield* Effect.promise(() => readFile(registryPath, "utf-8"));
-      const parsed = JSON.parse(content) as MarketplaceRegistry;
+      const parsed = JSON.parse(content) as MutableMarketplaceRegistry;
 
-      // Ensure valid structure
+      // Ensure valid structure - copy to make mutable
       return {
         version: parsed.version || 1,
         lastSync: parsed.lastSync,
-        marketplaces: parsed.marketplaces || [],
+        marketplaces: (parsed.marketplaces || []).map(m => ({ ...m })),
       };
-    } catch (error) {
+    } catch {
       // Return default on parse error
       return getDefaultRegistry();
     }
   });
 
 const writeRegistry = (
-  registry: MarketplaceRegistry
+  registry: MutableMarketplaceRegistry
 ): Effect.Effect<void, MarketplaceRegistryError> =>
   Effect.gen(function* () {
     const registryPath = getRegistryPath();
@@ -146,11 +148,11 @@ const getClaudeCodeMarketplaces = (): Effect.Effect<Marketplace[]> =>
       try {
         const content = yield* Effect.promise(() => readFile(settingsPath, "utf-8"));
         const settings = JSON.parse(content) as {
-          pluginMarketplaces?: Array<{
+          pluginMarketplaces?: {
             name?: string;
             repo?: string;
             url?: string;
-          }>;
+          }[];
         };
 
         if (!settings.pluginMarketplaces || !Array.isArray(settings.pluginMarketplaces)) {
@@ -227,7 +229,7 @@ const detectMarketplaceFromGitHub = (
       const marketplaceJson = JSON.parse(content) as {
         name?: string;
         description?: string;
-        plugins?: Array<{ name: string; path?: string }>;
+        plugins?: { name: string; path?: string }[];
       };
 
       // It's a marketplace!

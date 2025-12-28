@@ -25,8 +25,8 @@ type Modal = "none" | "help" | "log" | "newWorktree" | "deleteWarning" | "confir
 interface RichWorktree extends WorktreeListItem {
   claimedBy?: string;
   claimedAt?: string;
-  logs: Array<{ time: string; message: string; author?: string; type?: string }>;
-  checkpoints: Array<{ hash: string; message: string; time: string }>;
+  logs: { time: string; message: string; author?: string; type?: string }[];
+  checkpoints: { hash: string; message: string; time: string }[];
   currentStage?: string;
 }
 

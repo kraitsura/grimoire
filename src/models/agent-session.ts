@@ -81,6 +81,20 @@ export type AgentSessionStatus = Schema.Schema.Type<typeof AgentSessionStatusSch
  */
 export type AgentSession = Schema.Schema.Type<typeof AgentSessionSchema>;
 
+/** Mutable version of AgentSession for internal updates */
+export interface MutableAgentSession {
+  sessionId: string;
+  pid: number;
+  mode: AgentSessionMode;
+  startedAt: string;
+  status: AgentSessionStatus;
+  prompt?: string;
+  logFile?: string;
+  tmuxWindow?: string;
+  endedAt?: string;
+  exitCode?: number;
+}
+
 /**
  * Session file name
  */

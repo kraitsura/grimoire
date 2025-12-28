@@ -77,8 +77,8 @@ async function getDiffStats(
     if (exitCode !== 0 || !output) return null;
 
     // Parse: "X files changed, Y insertions(+), Z deletions(-)"
-    const insMatch = output.match(/(\d+) insertion/);
-    const delMatch = output.match(/(\d+) deletion/);
+    const insMatch = /(\d+) insertion/.exec(output);
+    const delMatch = /(\d+) deletion/.exec(output);
 
     return {
       ins: insMatch ? parseInt(insMatch[1], 10) : 0,
@@ -101,8 +101,8 @@ const COL = {
 
 export const worktreeList = (args: ParsedArgs) =>
   Effect.gen(function* () {
-    const staleOnly = args.flags["stale"] === true;
-    const json = args.flags["json"] === true;
+    const staleOnly = args.flags.stale === true;
+    const json = args.flags.json === true;
 
     const service = yield* WorktreeService;
     const cwd = process.cwd();
@@ -115,7 +115,7 @@ export const worktreeList = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const worktrees = worktreesResult.right as WorktreeListItem[];
+    const worktrees = worktreesResult.right;
 
     // Filter if needed
     const filtered = staleOnly

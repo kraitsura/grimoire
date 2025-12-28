@@ -70,6 +70,7 @@ interface AddOptions {
 }
 
 interface InstallContext {
+  source: string;
   sourceType: SourceType;
   agentType: AgentType;
   claudeCliAvailable: boolean;
@@ -123,7 +124,7 @@ ${colors.bold}AGENT SUPPORT${colors.reset}
  * Install items based on context
  */
 const installItems = async (context: InstallContext): Promise<void> => {
-  const { sourceType, agentType, selectedItems, method } = context;
+  const { source, sourceType, agentType, selectedItems, method } = context;
   const projectPath = process.cwd();
 
   console.log(`\n${colors.bold}Installing ${selectedItems.length} item(s)...${colors.reset}\n`);
@@ -203,9 +204,9 @@ const installItems = async (context: InstallContext): Promise<void> => {
         Effect.gen(function* () {
           const engineService = yield* SkillEngineService;
           yield* engineService.enable(projectPath, item.name, {
-            runInit: false,
-            installDeps: false,
-            skipConfirm: true,
+            noInit: true,
+            noDeps: true,
+            yes: true,
           });
         }).pipe(Effect.provide(engineLayer))
       );
@@ -372,6 +373,7 @@ export const addCommand = async (args: ParsedArgs): Promise<void> => {
       console.log(`${colors.bold}Method:${colors.reset} ${method}\n`);
 
       await installItems({
+        source,
         sourceType,
         agentType: effectiveAgentType,
         claudeCliAvailable,
@@ -423,6 +425,7 @@ export const addCommand = async (args: ParsedArgs): Promise<void> => {
 
     // Install selected items
     await installItems({
+      source,
       sourceType,
       agentType: effectiveAgentType,
       claudeCliAvailable,

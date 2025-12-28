@@ -35,6 +35,9 @@ const createMockStateService = (
   removeEnabled: () => Effect.void,
   recordDisable: () => Effect.void,
   updateLastSync: () => Effect.void,
+  getGlobalEnabled: () => Effect.succeed([] as string[]),
+  addGlobalEnabled: () => Effect.void,
+  removeGlobalEnabled: () => Effect.void,
 });
 
 const createMockEngineService = (

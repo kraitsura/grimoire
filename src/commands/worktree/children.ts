@@ -51,8 +51,8 @@ interface ChildWorktreeInfo {
 
 export const worktreeChildren = (args: ParsedArgs) =>
   Effect.gen(function* () {
-    const json = args.flags["json"] === true;
-    const all = args.flags["all"] === true;
+    const json = args.flags.json === true;
+    const all = args.flags.all === true;
     const explicitParent = args.positional[1]; // Optional: grim wt children <parent-name>
 
     const worktreeService = yield* WorktreeService;
@@ -86,7 +86,7 @@ export const worktreeChildren = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const worktrees = worktreesResult.right as WorktreeListItem[];
+    const worktrees = worktreesResult.right;
 
     // Get state entries for each worktree
     const state = yield* stateService.getState(cwd);

@@ -69,7 +69,7 @@ export const openCodeTranspiler: AgentTranspiler = {
     }
 
     if (agent.tools && agent.tools.length > 0) {
-      frontmatter.tools = agent.tools;
+      frontmatter.tools = [...agent.tools];
     }
 
     // Default to subagent mode for CLI wrappers

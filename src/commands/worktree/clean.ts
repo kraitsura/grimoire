@@ -30,8 +30,8 @@ const prompt = (question: string): Effect.Effect<string, never> =>
 export const worktreeClean = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const dryRun = args.flags["dry-run"] === true;
-    const skipConfirm = args.flags["y"] === true;
-    const includeBranch = args.flags["include-branch"] === true || args.flags["b"] === true;
+    const skipConfirm = args.flags.y === true;
+    const includeBranch = args.flags["include-branch"] === true || args.flags.b === true;
 
     const service = yield* WorktreeService;
     const cwd = process.cwd();
@@ -118,7 +118,7 @@ export const worktreeClean = (args: ParsedArgs) =>
 
     for (const { item } of staleWorktrees) {
       // Skip if has uncommitted changes and not forcing
-      if (item.uncommittedChanges && !args.flags["force"]) {
+      if (item.uncommittedChanges && !args.flags.force) {
         console.log(`  Skipped ${item.name} (uncommitted changes)`);
         skipped++;
         continue;
@@ -127,7 +127,7 @@ export const worktreeClean = (args: ParsedArgs) =>
       const removeResult = yield* Effect.either(
         service.remove(cwd, item.name, {
           deleteBranch: includeBranch,
-          force: args.flags["force"] === true,
+          force: args.flags.force === true,
         })
       );
 

@@ -44,7 +44,7 @@ const VALID_MODELS = new Set([
 const validateAgent = (
   name: string,
   description: string,
-  tools?: string[],
+  tools?: readonly string[],
   model?: string,
   content?: string
 ): AgentValidationResult => {
@@ -156,7 +156,7 @@ const validateAgent = (
 export const agentsValidate = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const nameOrPath = args.positional[1];
-    const jsonOutput = args.flags["json"] === true;
+    const jsonOutput = args.flags.json === true;
 
     if (!nameOrPath) {
       console.log("Usage: grimoire agents validate <name|path>");
@@ -223,9 +223,15 @@ export const agentsValidate = (args: ParsedArgs) =>
       process.exit(1);
     }
   }).pipe(
-    Effect.catchAll((error) =>
+    Effect.catchAll((error: unknown) =>
       Effect.sync(() => {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+        let message = "Unknown error";
+        if (error && typeof error === "object" && "message" in error) {
+          message = String((error as { message: unknown }).message);
+        } else if (typeof error === "string") {
+          message = error;
+        }
+        console.error(`Error: ${message}`);
         process.exit(1);
       })
     )

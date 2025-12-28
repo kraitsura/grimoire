@@ -85,7 +85,7 @@ export const hasSkillInjection = (content: string, skillName: string): boolean =
  * @returns The managed section content or null if not found
  */
 function extractManagedSection(content: string): { section: string; match: RegExpMatchArray } | null {
-  const match = content.match(MANAGED_SECTION_REGEX);
+  const match = MANAGED_SECTION_REGEX.exec(content);
   if (!match) {
     return null;
   }

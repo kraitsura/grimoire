@@ -33,8 +33,8 @@ function getIssueStatus(issueId: string): string {
 
 export const worktreeStatus = (args: ParsedArgs) =>
   Effect.gen(function* () {
-    const json = args.flags["json"] === true;
-    const brief = args.flags["brief"] === true;
+    const json = args.flags.json === true;
+    const brief = args.flags.brief === true;
 
     const service = yield* WorktreeService;
     const stateService = yield* WorktreeStateService;
@@ -48,7 +48,7 @@ export const worktreeStatus = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const worktrees = worktreesResult.right as WorktreeListItem[];
+    const worktrees = worktreesResult.right;
 
     if (worktrees.length === 0) {
       if (json) {

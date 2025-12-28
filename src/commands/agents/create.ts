@@ -89,10 +89,10 @@ ${description}
 export const agentsCreate = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const name = args.positional[1];
-    const cliFlag = args.flags["cli"] as string | undefined;
-    const templateFlag = args.flags["template"] as string | undefined;
-    const descriptionFlag = args.flags["description"] as string | undefined;
-    const toolsFlag = args.flags["tools"] as string | undefined;
+    const cliFlag = args.flags.cli as string | undefined;
+    const templateFlag = args.flags.template as string | undefined;
+    const descriptionFlag = args.flags.description as string | undefined;
+    const toolsFlag = args.flags.tools as string | undefined;
 
     if (!name) {
       console.log("Usage: grimoire agents create <name> [options]");
@@ -143,7 +143,7 @@ export const agentsCreate = (args: ParsedArgs) =>
         process.exit(1);
       }
 
-      agent = yield* getTemplate(templateFlag as Parameters<typeof getTemplate>[0]).pipe(
+      agent = yield* getTemplate(templateFlag).pipe(
         Effect.catchAll((e) =>
           Effect.fail(new Error(`Failed to load template: ${e.message}`))
         )

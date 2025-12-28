@@ -74,12 +74,18 @@ export interface Message {
   content: string;
 }
 
+export interface ThinkingConfig {
+  enabled: boolean;
+  budgetTokens?: number; // Min 1024, must be < maxTokens
+}
+
 export interface LLMRequest {
   model: string;
   messages: Message[];
   temperature?: number;
   maxTokens?: number;
   stopSequences?: string[];
+  thinking?: ThinkingConfig;
 }
 
 export interface LLMResponse {
@@ -96,9 +102,15 @@ export interface TokenUsage {
 
 export type FinishReason = "stop" | "length" | "content_filter" | "error";
 
+export type ChunkType = "content" | "thinking" | "done";
+
 export interface StreamChunk {
+  type: ChunkType;
   content: string;
   done: boolean;
+  // Thinking fields (for type: "thinking")
+  thinkingContent?: string;
+  thinkingDelta?: string;
   // Fields included in the final chunk (when done: true)
   usage?: TokenUsage;
   model?: string; // The actual model used (for fallback tracking)
@@ -404,7 +416,7 @@ export const parseProviderError = (
 
   // Rate limit errors
   if (lowerMessage.includes("429") || lowerMessage.includes("rate limit")) {
-    const retryMatch = message.match(/retry.+?(\d+)/i);
+    const retryMatch = /retry.+?(\d+)/i.exec(message);
     return new LLMRateLimitError({
       message: `Rate limit exceeded: ${message}`,
       provider,
@@ -450,7 +462,7 @@ export const streamFromAsyncIterator = <T, E>(
   transform: (item: T) => StreamChunk | null,
   onDone: () => StreamChunk,
   onError: (error: unknown) => E,
-  timeoutMs: number = 180000 // 3 minutes default
+  timeoutMs = 180000 // 3 minutes default
 ): Stream.Stream<StreamChunk, E> =>
   Stream.asyncEffect<StreamChunk, E>((emit) =>
     Effect.gen(function* () {

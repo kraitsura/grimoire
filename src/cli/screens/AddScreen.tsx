@@ -53,7 +53,7 @@ const MethodSelector: React.FC<MethodSelectorProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const canUsePlugin = agentType === "claude_code" && claudeCliAvailable;
 
-  const options: Array<{ method: InstallMethod; label: string; description: string }> = [
+  const options: { method: InstallMethod; label: string; description: string }[] = [
     ...(canUsePlugin
       ? [
           {

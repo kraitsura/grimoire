@@ -74,11 +74,11 @@ function runInWorktree(
 export const worktreeEach = (args: ParsedArgs) =>
   Effect.gen(function* () {
     const command = args.positional.slice(1).join(" ");
-    const parallel = args.flags["parallel"] === true || args.flags["p"] === true;
+    const parallel = args.flags.parallel === true || args.flags.p === true;
     const failFast = args.flags["fail-fast"] === true;
-    const filter = args.flags["filter"] as string | undefined;
-    const claimedOnly = args.flags["claimed"] === true;
-    const unclaimedOnly = args.flags["unclaimed"] === true;
+    const filter = args.flags.filter as string | undefined;
+    const claimedOnly = args.flags.claimed === true;
+    const unclaimedOnly = args.flags.unclaimed === true;
 
     if (!command) {
       console.log("Usage: grimoire wt each <command>");
@@ -110,7 +110,7 @@ export const worktreeEach = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    let worktrees = worktreesResult.right as WorktreeListItem[];
+    let worktrees = worktreesResult.right;
 
     // Apply filters
     if (filter === "active") {

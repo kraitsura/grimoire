@@ -120,7 +120,7 @@ export const worktreeCommand = (args: ParsedArgs) =>
     const subcommand = args.positional[0];
 
     // Launch TUI dashboard with --interactive flag
-    if (args.flags["interactive"] || args.flags["i"]) {
+    if (args.flags.interactive || args.flags.i) {
       const { waitUntilExit } = render(React.createElement(WorktreeDashboard), {
         exitOnCtrlC: true,
       });
@@ -128,7 +128,7 @@ export const worktreeCommand = (args: ParsedArgs) =>
       return;
     }
 
-    if (!subcommand || args.flags["help"] || args.flags["h"]) {
+    if (!subcommand || args.flags.help || args.flags.h) {
       printWorktreeHelp();
       return;
     }

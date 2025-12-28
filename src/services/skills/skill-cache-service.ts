@@ -187,13 +187,12 @@ const downloadAndExtractTarball = (
       try {
         const response = yield* Effect.tryPromise({
           try: () => fetch(tarballUrl, { redirect: "follow" }),
-          catch: (error) => error as Error,
+          catch: (error) => new SkillSourceError({
+            source: sourceStr,
+            message: `Fetch failed: ${error instanceof Error ? error.message : String(error)}`,
+            cause: error,
+          }),
         });
-
-        if (response instanceof Error) {
-          downloadError = response;
-          continue;
-        }
 
         if (!response.ok) {
           continue;
@@ -203,13 +202,12 @@ const downloadAndExtractTarball = (
         tarballPath = path.join(tempDir, "repo.tar.gz");
         const buffer = yield* Effect.tryPromise({
           try: () => response.arrayBuffer(),
-          catch: (error) => error as Error,
+          catch: (error) => new SkillSourceError({
+            source: sourceStr,
+            message: `Buffer read failed: ${error instanceof Error ? error.message : String(error)}`,
+            cause: error,
+          }),
         });
-
-        if (buffer instanceof Error) {
-          downloadError = buffer;
-          continue;
-        }
 
         fs.writeFileSync(tarballPath, Buffer.from(buffer));
         break;
@@ -454,7 +452,7 @@ const detectRepoTypeFromGitHub = (
           message: `Failed to parse directory listing: ${error instanceof Error ? error.message : String(error)}`,
           cause: error,
         }),
-    })) as Array<{ name: string; type: string }>;
+    })) as { name: string; type: string }[];
 
     // Check for root-level markers
     // Skills are defined by SKILL.md only (no more skill.yaml)
@@ -502,7 +500,7 @@ const detectRepoTypeFromGitHub = (
           }),
       }).pipe(Effect.orElse(() => Effect.succeed(null)));
 
-      if (!subdirResponse || !subdirResponse.ok) continue;
+      if (!subdirResponse?.ok) continue;
 
       const subdirContents = (yield* Effect.tryPromise({
         try: () => subdirResponse.json(),
@@ -512,8 +510,8 @@ const detectRepoTypeFromGitHub = (
             message: `Failed to parse subdirectory: ${dir.name}`,
           }),
       }).pipe(
-        Effect.orElse(() => Effect.succeed([] as Array<{ name: string; type: string }>))
-      )) as Array<{ name: string; type: string }>;
+        Effect.orElse(() => Effect.succeed([] as { name: string; type: string }[]))
+      )) as { name: string; type: string }[];
 
       const subdirHasSkillMd = subdirContents.some((f) => f.name === "SKILL.md");
       const subdirHasPlugin = subdirContents.some(
@@ -562,14 +560,14 @@ const fetchSkillDescription = (
       catch: () => Effect.succeed(null),
     }).pipe(Effect.orElse(() => Effect.succeed(null)));
 
-    if (!response || !response.ok) return "";
+    if (!response?.ok) return "";
 
     const data = (yield* Effect.tryPromise({
       try: () => response.json(),
       catch: () => Effect.succeed(null),
     }).pipe(Effect.orElse(() => Effect.succeed(null)))) as { content: string } | null;
 
-    if (!data || !data.content) return "";
+    if (!data?.content) return "";
 
     try {
       const content = atob(data.content);

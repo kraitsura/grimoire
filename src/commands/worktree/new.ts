@@ -33,12 +33,12 @@ export const worktreeNew = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const name = (args.flags["name"] as string) || (args.flags["n"] as string);
-    const linkedIssue = (args.flags["issue"] as string) || (args.flags["i"] as string);
+    const name = (args.flags.name as string) || (args.flags.n as string);
+    const linkedIssue = (args.flags.issue as string) || (args.flags.i as string);
     const skipCopy = args.flags["no-copy"] === true;
     const skipHooks = args.flags["no-hooks"] === true;
     const noCreate = args.flags["no-create"] === true;
-    const outputPath = args.flags["output-path"] === true || args.flags["o"] === true;
+    const outputPath = args.flags["output-path"] === true || args.flags.o === true;
     // Default: create branch if it doesn't exist (unless --no-create)
     const createBranch = !noCreate;
 
@@ -48,7 +48,7 @@ export const worktreeNew = (args: ParsedArgs) =>
     // First check if worktree already exists
     const existingResult = yield* Effect.either(service.get(cwd, name || branch));
     if (existingResult._tag === "Right") {
-      const existing = existingResult.right as WorktreeInfo;
+      const existing = existingResult.right;
       if (outputPath) {
         // -o flag: output only the path for shell integration
         console.log(existing.path);
@@ -86,7 +86,7 @@ export const worktreeNew = (args: ParsedArgs) =>
       process.exit(1);
     }
 
-    const result = createResult.right as WorktreeInfo;
+    const result = createResult.right;
 
     if (outputPath) {
       // -o flag: output only the path for shell integration
