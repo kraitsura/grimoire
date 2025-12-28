@@ -159,20 +159,18 @@ const printUsage = () => {
   console.log("  --no-hooks             Skip running post-create hooks");
   console.log("  --create-branch        Create new branch if doesn't exist");
   console.log();
-  console.log("Sandbox Mode:");
-  console.log("  --srt                  Enable SRT sandbox (opt-in, breaks TTY)");
-  console.log("  --no-sandbox           Disable sandbox even if --srt specified");
-  console.log();
-  console.log("Headless Mode:");
+  console.log("Headless Mode (background agents):");
   console.log("  -H, --headless         Run Claude in background (--print mode)");
+  console.log("  --srt                  Sandboxed autonomous execution (recommended)");
+  console.log("                         Agent runs freely within sandbox constraints");
   console.log("  --dangerously-skip-permissions");
-  console.log("                         Skip permission checks (headless without --srt)");
+  console.log("                         Autonomous without sandbox (use with caution)");
+  console.log("  --no-sandbox           Disable sandbox (for debugging)");
   console.log();
   console.log("Examples:");
   console.log('  grimoire wt spawn auth-feature --prompt "Implement OAuth2"');
-  console.log("  grimoire wt spawn --issue BD-15");
-  console.log("  grimoire wt spawn fix-bug --no-sandbox");
-  console.log('  grimoire wt spawn task-1 -H --srt --prompt "Fix bug"');
+  console.log("  grimoire wt spawn --issue grimoire-123");
+  console.log('  grimoire wt spawn task-1 -H --srt --prompt "Fix the login bug"');
   process.exit(1);
 };
 
@@ -199,12 +197,14 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     // Headless mode options
     const headless = args.flags["headless"] === true || args.flags["H"] === true;
     const useSrt = args.flags["srt"] === true;
-    const dangerouslySkipPermissions = args.flags["dangerously-skip-permissions"] === true;
+    // SRT implies skip-permissions - the sandbox IS the safety mechanism
+    const dangerouslySkipPermissions =
+      args.flags["dangerously-skip-permissions"] === true || useSrt;
 
     // Validate headless mode requirements
     if (headless && !useSrt && !dangerouslySkipPermissions) {
       console.log("Error: Headless mode requires --srt or --dangerously-skip-permissions");
-      console.log("Hint: Use --srt for sandboxed execution (recommended)");
+      console.log("Hint: Use --srt for sandboxed autonomous execution (recommended)");
       process.exit(1);
     }
 
