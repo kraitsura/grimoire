@@ -11,6 +11,7 @@ import { Effect } from "effect";
 import { spawn } from "child_process";
 import { join } from "path";
 import { randomUUID } from "crypto";
+import { appendFileSync } from "fs";
 import type { ParsedArgs } from "../../cli/parser";
 import {
   WorktreeService,
@@ -26,6 +27,109 @@ import {
 } from "../../services/srt";
 import type { WorktreeInfo } from "../../models/worktree";
 import type { AgentSessionMode } from "../../models/agent-session";
+
+/**
+ * Parameters for spawning a headless session
+ */
+interface SpawnHeadlessParams {
+  worktree: WorktreeInfo;
+  prompt: string | undefined;
+  useSrt: boolean;
+  dangerouslySkipPermissions: boolean;
+  cwd: string;
+}
+
+/**
+ * Spawn a headless (background) Claude session
+ */
+const spawnHeadless = (params: SpawnHeadlessParams) =>
+  Effect.gen(function* () {
+    const { worktree, prompt, useSrt, dangerouslySkipPermissions, cwd } = params;
+
+    const srtService = yield* SrtService;
+    const srtConfigService = yield* SrtConfigService;
+    const agentSessionService = yield* AgentSessionService;
+
+    const sessionId = `sess_${randomUUID().slice(0, 8)}`;
+    const mode: AgentSessionMode = "headless";
+    const logFile = join(worktree.path, ".claude-session.log");
+
+    console.log("Spawning headless Claude agent...");
+
+    // Build the claude command with --print for non-interactive mode
+    const claudeArgs: string[] = ["--print"];
+
+    // Add security flag
+    if (dangerouslySkipPermissions) {
+      claudeArgs.push("--dangerously-skip-permissions");
+    }
+
+    // Add prompt if provided
+    if (prompt) {
+      claudeArgs.push(prompt);
+    }
+
+    // Escape function for shell arguments
+    const shellEscape = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+    const argsStr = claudeArgs.map(shellEscape).join(" ");
+
+    let fullCommand: string;
+
+    if (useSrt) {
+      // Generate SRT config
+      const resolved = yield* srtConfigService.resolveConfig(worktree.path, cwd);
+      const configPath = yield* srtService.writeConfigFile(resolved.config);
+
+      // Build wrapped command with shell redirection
+      const claudeCommand = `claude ${argsStr}`;
+      const srtCommand = srtService.wrapCommand(claudeCommand, configPath);
+      fullCommand = `${srtCommand} >> ${shellEscape(logFile)} 2>&1`;
+    } else {
+      // No SRT - direct claude with shell redirection
+      fullCommand = `claude ${argsStr} >> ${shellEscape(logFile)} 2>&1`;
+    }
+
+    // Write header to log file
+    appendFileSync(
+      logFile,
+      `\n=== Session ${sessionId} started at ${new Date().toISOString()} ===\n` +
+      `Command: ${fullCommand}\n\n`
+    );
+
+    // Spawn detached process with shell redirection
+    const child = spawn("sh", ["-c", fullCommand], {
+      cwd: worktree.path,
+      env: {
+        ...process.env,
+        GRIMOIRE_WORKTREE: worktree.name,
+        GRIMOIRE_WORKTREE_PATH: worktree.path,
+        GRIMOIRE_SESSION_ID: sessionId,
+      },
+      detached: true,
+      stdio: "ignore",
+    });
+
+    // Unref so parent can exit
+    child.unref();
+
+    // Create session state
+    yield* agentSessionService.createSession(worktree.path, {
+      sessionId,
+      pid: child.pid!,
+      mode,
+      prompt,
+      logFile,
+    });
+
+    // Output info
+    console.log(`Spawned headless agent in worktree "${worktree.name}"`);
+    console.log(`  Session ID: ${sessionId}`);
+    console.log(`  PID: ${child.pid}`);
+    console.log(`  Log: ${logFile}`);
+    console.log();
+    console.log(`Monitor: grimoire wt logs ${worktree.name}`);
+    console.log(`Status:  grimoire wt ps`);
+  });
 
 /**
  * Print usage and exit
@@ -47,10 +151,17 @@ const printUsage = () => {
   console.log("  --no-hooks             Skip running post-create hooks");
   console.log("  --create-branch        Create new branch if doesn't exist");
   console.log();
+  console.log("Headless Mode:");
+  console.log("  -H, --headless         Run Claude in background (--print mode)");
+  console.log("  --srt                  Use SRT sandbox (required for headless)");
+  console.log("  --dangerously-skip-permissions");
+  console.log("                         Skip permission checks (required if no --srt)");
+  console.log();
   console.log("Examples:");
   console.log('  grimoire wt spawn auth-feature --prompt "Implement OAuth2"');
   console.log("  grimoire wt spawn --issue BD-15");
   console.log("  grimoire wt spawn fix-bug --no-sandbox");
+  console.log('  grimoire wt spawn task-1 -H --srt --prompt "Fix bug"');
   process.exit(1);
 };
 
@@ -72,6 +183,18 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     const skipCopy = args.flags["no-copy"] === true;
     const skipHooks = args.flags["no-hooks"] === true;
     const createBranch = args.flags["create-branch"] === true;
+
+    // Headless mode options
+    const headless = args.flags["headless"] === true || args.flags["H"] === true;
+    const useSrt = args.flags["srt"] === true;
+    const dangerouslySkipPermissions = args.flags["dangerously-skip-permissions"] === true;
+
+    // Validate headless mode requirements
+    if (headless && !useSrt && !dangerouslySkipPermissions) {
+      console.log("Error: Headless mode requires --srt or --dangerously-skip-permissions");
+      console.log("Hint: Use --srt for sandboxed execution (recommended)");
+      process.exit(1);
+    }
 
     const worktreeService = yield* WorktreeService;
     const srtService = yield* SrtService;
@@ -140,6 +263,18 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       console.log(`  Issue: ${linkedIssue}`);
     }
     console.log();
+
+    // Headless mode - spawn background agent
+    if (headless) {
+      yield* spawnHeadless({
+        worktree,
+        prompt,
+        useSrt,
+        dangerouslySkipPermissions,
+        cwd,
+      });
+      return;
+    }
 
     // Step 3: Generate SRT config
     const useSandbox = !noSandbox && (yield* srtService.isAvailable());
