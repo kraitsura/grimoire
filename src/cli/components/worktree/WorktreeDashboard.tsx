@@ -262,6 +262,97 @@ export function WorktreeDashboard() {
     );
   }
 
+  // Render modal screens - these completely replace the main view
+  if (modal === "help") {
+    return (
+      <Box flexDirection="column" height="100%" justifyContent="center" alignItems="center">
+        <Box
+          flexDirection="column"
+          borderStyle={safeBorderStyle}
+          borderColor="cyan"
+          paddingX={2}
+          paddingY={1}
+        >
+          <Text bold>Keyboard Shortcuts</Text>
+          <Text> </Text>
+          <Text><Text bold>Navigation</Text></Text>
+          <Text>  j/k or arrows  Move up/down</Text>
+          <Text>  Tab            Switch panels</Text>
+          <Text>  Enter          Select worktree</Text>
+          <Text> </Text>
+          <Text><Text bold>Actions</Text></Text>
+          <Text>  c              Claim worktree</Text>
+          <Text>  r              Release claim</Text>
+          <Text>  d/x            <Text color="red">Delete worktree</Text></Text>
+          <Text>  R              Refresh list</Text>
+          <Text> </Text>
+          <Text><Text bold>General</Text></Text>
+          <Text>  ?              Show this help</Text>
+          <Text>  q              Quit</Text>
+          <Text> </Text>
+          <Text dimColor>Press Esc or q to close</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (modal === "confirmDelete" && selectedWorktree) {
+    return (
+      <Box flexDirection="column" height="100%" justifyContent="center" alignItems="center">
+        <Box
+          flexDirection="column"
+          borderStyle={safeBorderStyle}
+          borderColor="red"
+          paddingX={2}
+          paddingY={1}
+        >
+          <Text bold color="red">Delete Worktree</Text>
+          <Text> </Text>
+          <Text>Are you sure you want to delete worktree:</Text>
+          <Text bold>  {selectedWorktree.name}</Text>
+          <Text dimColor>  Branch: {selectedWorktree.branch}</Text>
+          {selectedWorktree.uncommittedChanges && selectedWorktree.uncommittedChanges > 0 && (
+            <Text color="yellow">  Warning: {selectedWorktree.uncommittedChanges} uncommitted changes!</Text>
+          )}
+          <Text> </Text>
+          <Box gap={2}>
+            <Text color="green">[y] Yes, continue</Text>
+            <Text color="red">[n] Cancel</Text>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (modal === "confirmDeleteWithBranch" && selectedWorktree) {
+    return (
+      <Box flexDirection="column" height="100%" justifyContent="center" alignItems="center">
+        <Box
+          flexDirection="column"
+          borderStyle={safeBorderStyle}
+          borderColor="yellow"
+          paddingX={2}
+          paddingY={1}
+        >
+          <Text bold color="yellow">Delete Branch?</Text>
+          <Text> </Text>
+          <Text>Also delete the branch?</Text>
+          <Text bold>  {selectedWorktree.branch}</Text>
+          <Text> </Text>
+          {isDeleting ? (
+            <Text dimColor>Deleting...</Text>
+          ) : (
+            <Box gap={2}>
+              <Text color="red">[y] Yes, delete branch</Text>
+              <Text color="green">[n] No, keep branch</Text>
+              <Text dimColor>[c] Cancel</Text>
+            </Box>
+          )}
+        </Box>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column" height="100%">
       {/* Main panels */}
@@ -327,95 +418,6 @@ export function WorktreeDashboard() {
         </Box>
       )}
 
-      {/* Help modal */}
-      {modal === "help" && (
-        <Box
-          position="absolute"
-          marginLeft={10}
-          marginTop={5}
-          flexDirection="column"
-          borderStyle={safeBorderStyle}
-          borderColor="cyan"
-          paddingX={2}
-          paddingY={1}
-        >
-          <Text bold>Keyboard Shortcuts</Text>
-          <Text> </Text>
-          <Text><Text bold>Navigation</Text></Text>
-          <Text>  j/k or arrows  Move up/down</Text>
-          <Text>  Tab            Switch panels</Text>
-          <Text>  Enter          Select worktree</Text>
-          <Text> </Text>
-          <Text><Text bold>Actions</Text></Text>
-          <Text>  c              Claim worktree</Text>
-          <Text>  r              Release claim</Text>
-          <Text>  d/x            <Text color="red">Delete worktree</Text></Text>
-          <Text>  R              Refresh list</Text>
-          <Text> </Text>
-          <Text><Text bold>General</Text></Text>
-          <Text>  ?              Show this help</Text>
-          <Text>  q              Quit</Text>
-          <Text> </Text>
-          <Text dimColor>Press any key to close</Text>
-        </Box>
-      )}
-
-      {/* Delete confirmation modal - Step 1 */}
-      {modal === "confirmDelete" && selectedWorktree && (
-        <Box
-          position="absolute"
-          marginLeft={10}
-          marginTop={5}
-          flexDirection="column"
-          borderStyle={safeBorderStyle}
-          borderColor="red"
-          paddingX={2}
-          paddingY={1}
-        >
-          <Text bold color="red">Delete Worktree</Text>
-          <Text> </Text>
-          <Text>Are you sure you want to delete worktree:</Text>
-          <Text bold>  {selectedWorktree.name}</Text>
-          <Text dimColor>  Branch: {selectedWorktree.branch}</Text>
-          {selectedWorktree.uncommittedChanges && selectedWorktree.uncommittedChanges > 0 && (
-            <Text color="yellow">  Warning: {selectedWorktree.uncommittedChanges} uncommitted changes!</Text>
-          )}
-          <Text> </Text>
-          <Box gap={2}>
-            <Text color="green">[y] Yes</Text>
-            <Text color="red">[n] No</Text>
-          </Box>
-        </Box>
-      )}
-
-      {/* Delete confirmation modal - Step 2: Branch deletion */}
-      {modal === "confirmDeleteWithBranch" && selectedWorktree && (
-        <Box
-          position="absolute"
-          marginLeft={10}
-          marginTop={5}
-          flexDirection="column"
-          borderStyle={safeBorderStyle}
-          borderColor="yellow"
-          paddingX={2}
-          paddingY={1}
-        >
-          <Text bold color="yellow">Delete Branch?</Text>
-          <Text> </Text>
-          <Text>Also delete the branch?</Text>
-          <Text bold>  {selectedWorktree.branch}</Text>
-          <Text> </Text>
-          {isDeleting ? (
-            <Text dimColor>Deleting...</Text>
-          ) : (
-            <Box gap={2}>
-              <Text color="red">[y] Yes, delete branch</Text>
-              <Text color="green">[n] No, keep branch</Text>
-              <Text dimColor>[c] Cancel</Text>
-            </Box>
-          )}
-        </Box>
-      )}
     </Box>
   );
 }
