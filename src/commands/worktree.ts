@@ -25,6 +25,7 @@ import {
   worktreeHandoff,
   worktreeAvailable,
   worktreeSpawn,
+  worktreePs,
 } from "./worktree/index";
 import { WorktreeDashboard } from "../cli/components/worktree";
 
@@ -37,6 +38,7 @@ Manage isolated workspaces for parallel development and agentic coding sessions.
 COMMANDS:
   new <branch>       Create a new worktree from branch
   spawn <name>       Create worktree + launch sandboxed Claude session
+  ps                 List running/spawned agents
   from-issue <id>    Create worktree from issue ID
   list               List active worktrees
   status             Rich status with claims, logs, stages
@@ -82,6 +84,8 @@ EXAMPLES:
   grimoire wt spawn auth-feature         # Create + launch Claude
   grimoire wt spawn auth -p "Add OAuth"  # With initial prompt
   grimoire wt spawn fix --no-sandbox     # Skip sandboxing
+  grimoire wt ps                         # List running agents
+  grimoire wt ps --running               # Only show running
   grimoire wt from-issue grimoire-123    # Create from issue
   grimoire wt status                     # Rich status view
   grimoire wt available                  # Find unclaimed work
@@ -164,6 +168,8 @@ export const worktreeCommand = (args: ParsedArgs) =>
         return yield* worktreeAvailable(args);
       case "spawn":
         return yield* worktreeSpawn(args);
+      case "ps":
+        return yield* worktreePs(args);
       default:
         console.log(`Unknown worktree command: ${subcommand}`);
         printWorktreeHelp();
