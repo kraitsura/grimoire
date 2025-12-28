@@ -6,7 +6,7 @@
 
 import { Effect, Stream, Either, Duration } from "effect";
 import { chat } from "@tanstack/ai";
-import { createOpenAI } from "@tanstack/ai-openai";
+import { createOpenaiChat } from "@tanstack/ai-openai";
 import type { LLMProvider, LLMRequest, LLMResponse, StreamChunk, LLMErrors, TokenUsage } from "../llm-service";
 import {
   LLMError,
@@ -119,12 +119,13 @@ export const makeOpenAIProvider = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: async () => {
-          const adapter = createOpenAI(apiKey);
+          const adapter = createOpenaiChat(modelToUse, apiKey);
           const chatStream = chat({
             adapter,
-            model: modelToUse,
             messages,
             systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+            temperature: request.temperature,
+            maxTokens: request.maxTokens,
           });
 
           let content = "";
@@ -182,12 +183,13 @@ export const makeOpenAIProvider = Effect.gen(function* () {
     >(
       async () => {
         const apiKey = await Effect.runPromise(getApiKey());
-        const adapter = createOpenAI(apiKey);
+        const adapter = createOpenaiChat(modelToUse, apiKey);
         return chat({
           adapter,
-          model: modelToUse,
           messages,
           systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+          temperature: request.temperature,
+          maxTokens: request.maxTokens,
         });
       },
       (chunk) => {
@@ -230,10 +232,9 @@ export const makeOpenAIProvider = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: async () => {
-          const adapter = createOpenAI(apiKey);
+          const adapter = createOpenaiChat("gpt-4o-mini", apiKey);
           const chatStream = chat({
             adapter,
-            model: "gpt-4o-mini",
             messages: [{ role: "user", content: "hi" }],
           });
 

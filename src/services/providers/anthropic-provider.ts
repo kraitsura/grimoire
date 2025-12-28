@@ -6,7 +6,7 @@
 
 import { Effect, Stream, Either, Duration } from "effect";
 import { chat } from "@tanstack/ai";
-import { createAnthropic } from "@tanstack/ai-anthropic";
+import { createAnthropicChat } from "@tanstack/ai-anthropic";
 import type { LLMProvider, LLMRequest, LLMResponse, StreamChunk, LLMErrors, TokenUsage } from "../llm-service";
 import {
   LLMError,
@@ -113,12 +113,13 @@ export const makeAnthropicProvider = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: async () => {
-          const adapter = createAnthropic(apiKey);
+          const adapter = createAnthropicChat(modelToUse, apiKey);
           const chatStream = chat({
             adapter,
-            model: modelToUse,
             messages,
             systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+            temperature: request.temperature,
+            maxTokens: request.maxTokens,
           });
 
           let content = "";
@@ -178,12 +179,13 @@ export const makeAnthropicProvider = Effect.gen(function* () {
       // Get iterator
       async () => {
         const apiKey = await Effect.runPromise(getApiKey());
-        const adapter = createAnthropic(apiKey);
+        const adapter = createAnthropicChat(modelToUse, apiKey);
         return chat({
           adapter,
-          model: modelToUse,
           messages,
           systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+          temperature: request.temperature,
+          maxTokens: request.maxTokens,
         });
       },
       // Transform chunks
@@ -229,10 +231,9 @@ export const makeAnthropicProvider = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: async () => {
-          const adapter = createAnthropic(apiKey);
+          const adapter = createAnthropicChat("claude-sonnet-4", apiKey);
           const chatStream = chat({
             adapter,
-            model: "claude-sonnet-4",
             messages: [{ role: "user", content: "hi" }],
           });
 

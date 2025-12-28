@@ -6,7 +6,7 @@
 
 import { Effect, Stream, Either, Duration } from "effect";
 import { chat } from "@tanstack/ai";
-import { createGemini } from "@tanstack/ai-gemini";
+import { createGeminiChat } from "@tanstack/ai-gemini";
 import type { LLMProvider, LLMRequest, LLMResponse, StreamChunk, LLMErrors, TokenUsage } from "../llm-service";
 import {
   LLMError,
@@ -43,37 +43,20 @@ type GeminiModel = (typeof SUPPORTED_MODELS)[number];
 // Helpers
 // ============================================================================
 
-/**
- * Convert messages to TanStack AI format.
- * Gemini doesn't support system messages directly - we prepend to first user message.
- */
+/** Extract system prompts from messages (TanStack AI v0.2.0 now supports systemPrompts for Gemini) */
+const extractSystemPrompts = (messages: { role: string; content: string }[]): string[] =>
+  messages.filter((msg) => msg.role === "system").map((msg) => msg.content);
+
+/** Convert messages to TanStack AI format (excluding system messages) */
 const convertMessages = (
   messages: { role: string; content: string }[]
-): { role: "user" | "assistant"; content: string }[] => {
-  const result: { role: "user" | "assistant"; content: string }[] = [];
-  let systemContent = "";
-
-  for (const msg of messages) {
-    if (msg.role === "system") {
-      systemContent += (systemContent ? "\n\n" : "") + msg.content;
-    } else if (msg.role === "user" || msg.role === "assistant") {
-      result.push({
-        role: msg.role,
-        content: msg.content,
-      });
-    }
-  }
-
-  // Prepend system content to first user message if present
-  if (systemContent && result.length > 0 && result[0].role === "user") {
-    result[0].content = systemContent + "\n\n" + result[0].content;
-  } else if (systemContent) {
-    // If no user message yet, create one with system content
-    result.unshift({ role: "user", content: systemContent });
-  }
-
-  return result;
-};
+): { role: "user" | "assistant"; content: string }[] =>
+  messages
+    .filter((msg) => msg.role === "user" || msg.role === "assistant")
+    .map((msg) => ({
+      role: msg.role as "user" | "assistant",
+      content: msg.content,
+    }));
 
 /** Check if model is valid */
 const isValidModel = (model: string): model is GeminiModel =>
@@ -124,15 +107,18 @@ export const makeGeminiProvider = Effect.gen(function* () {
     Effect.gen(function* () {
       const apiKey = yield* getApiKey();
       const modelToUse = resolveModel(request.model);
+      const systemPrompts = extractSystemPrompts(request.messages);
       const messages = convertMessages(request.messages);
 
       const result = yield* Effect.tryPromise({
         try: async () => {
-          const adapter = createGemini(apiKey);
+          const adapter = createGeminiChat(modelToUse, apiKey);
           const chatStream = chat({
             adapter,
-            model: modelToUse,
             messages,
+            systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+            temperature: request.temperature,
+            maxTokens: request.maxTokens,
           });
 
           let content = "";
@@ -179,6 +165,7 @@ export const makeGeminiProvider = Effect.gen(function* () {
   // Streaming completion
   const stream = (request: LLMRequest): Stream.Stream<StreamChunk, LLMErrors> => {
     const modelToUse = resolveModel(request.model);
+    const systemPrompts = extractSystemPrompts(request.messages);
     const messages = convertMessages(request.messages);
 
     let usageData: { promptTokens?: number; completionTokens?: number } | undefined;
@@ -189,11 +176,13 @@ export const makeGeminiProvider = Effect.gen(function* () {
     >(
       async () => {
         const apiKey = await Effect.runPromise(getApiKey());
-        const adapter = createGemini(apiKey);
+        const adapter = createGeminiChat(modelToUse, apiKey);
         return chat({
           adapter,
-          model: modelToUse,
           messages,
+          systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+          temperature: request.temperature,
+          maxTokens: request.maxTokens,
         });
       },
       (chunk) => {
@@ -236,10 +225,9 @@ export const makeGeminiProvider = Effect.gen(function* () {
 
       const result = yield* Effect.tryPromise({
         try: async () => {
-          const adapter = createGemini(apiKey);
+          const adapter = createGeminiChat("gemini-2.0-flash", apiKey);
           const chatStream = chat({
             adapter,
-            model: "gemini-2.0-flash",
             messages: [{ role: "user", content: "hi" }],
           });
 

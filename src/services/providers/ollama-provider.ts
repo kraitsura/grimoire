@@ -1,6 +1,6 @@
 import { Effect, Stream } from "effect";
 import { chat } from "@tanstack/ai";
-import { ollama } from "@tanstack/ai-ollama";
+import { createOllamaChat } from "@tanstack/ai-ollama";
 import type { LLMProvider, LLMRequest, LLMResponse, StreamChunk } from "../llm-service";
 import { LLMError } from "../llm-service";
 
@@ -79,16 +79,14 @@ export const makeOllamaProvider = (): LLMProvider => {
 
       const result = yield* Effect.tryPromise({
         try: async () => {
-          const adapter = ollama({
-            baseURL: OLLAMA_BASE_URL,
-          });
-
-          // Cast model name - Ollama supports arbitrary model names that may not be in TanStack AI's type list
+          // Ollama supports arbitrary model names
+          const adapter = createOllamaChat(request.model, OLLAMA_BASE_URL);
           const chatStream = chat({
             adapter,
-            model: request.model as "llama3",
             messages,
             systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+            temperature: request.temperature,
+            maxTokens: request.maxTokens,
           });
 
           // Collect all chunks for non-streaming response
@@ -97,8 +95,9 @@ export const makeOllamaProvider = (): LLMProvider => {
           let outputTokens = 0;
 
           for await (const chunk of chatStream) {
-            if (chunk.type === "content" && chunk.content) {
-              content += chunk.content;
+            // Use delta for incremental content (consistent with other providers)
+            if (chunk.type === "content" && chunk.delta) {
+              content += chunk.delta;
             }
             if (chunk.type === "done" && chunk.usage) {
               // TanStack AI uses promptTokens/completionTokens
@@ -146,22 +145,21 @@ export const makeOllamaProvider = (): LLMProvider => {
 
           yield* Effect.tryPromise({
             try: async () => {
-              const adapter = ollama({
-                baseURL: OLLAMA_BASE_URL,
-              });
-
-              // Cast model name - Ollama supports arbitrary model names that may not be in TanStack AI's type list
+              // Ollama supports arbitrary model names
+              const adapter = createOllamaChat(request.model, OLLAMA_BASE_URL);
               const chatStream = chat({
                 adapter,
-                model: request.model as "llama3",
                 messages,
                 systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
+                temperature: request.temperature,
+                maxTokens: request.maxTokens,
               });
 
               for await (const chunk of chatStream) {
-                if (chunk.type === "content" && chunk.content) {
+                // Use delta for incremental content (consistent with other providers)
+                if (chunk.type === "content" && chunk.delta) {
                   await emit.single({
-                    content: chunk.content,
+                    content: chunk.delta,
                     done: false,
                   });
                 }
