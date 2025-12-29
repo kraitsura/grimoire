@@ -111,6 +111,9 @@ export const worktreeCollect = (args: ParsedArgs) =>
     const json = args.flags.json === true;
     const deleteAfter = args.flags.delete === true;
     const strategy = (args.flags.strategy as MergeStrategy) || "merge";
+    // Auto-rebase is ON by default - rebase each branch onto current HEAD before merging
+    // This prevents conflicts when multiple branches modify the same files in non-overlapping ways
+    const autoRebase = args.flags["no-rebase"] !== true;
 
     const worktreeService = yield* WorktreeService;
     const stateService = yield* WorktreeStateService;
@@ -171,7 +174,13 @@ export const worktreeCollect = (args: ParsedArgs) =>
       console.log("  --dry-run              Preview what would be merged");
       console.log("  --strategy <type>      merge (default), rebase, or squash");
       console.log("  --delete               Delete worktree after successful merge");
+      console.log("  --no-rebase            Skip auto-rebase (not recommended)");
       console.log("  --json                 Output structured JSON");
+      console.log();
+      console.log("Auto-rebase (default ON):");
+      console.log("  Before merging each branch, it's rebased onto current HEAD.");
+      console.log("  This allows multiple branches that modify the same files");
+      console.log("  (in different places) to merge cleanly.");
       process.exit(1);
     }
 
@@ -264,12 +273,86 @@ export const worktreeCollect = (args: ParsedArgs) =>
           message: "Would merge",
         });
         if (!json) {
-          console.log(`  [dry-run] Would merge ${entry.branch}`);
+          console.log(`  [dry-run] Would merge ${entry.branch}${autoRebase ? " (with rebase)" : ""}`);
         }
         continue;
       }
 
-      // Perform the merge
+      // Auto-rebase: Update the branch to include current HEAD before merging
+      // This prevents conflicts when multiple branches modify the same files
+      if (autoRebase) {
+        // Save current branch
+        const currentBranch = execGit("git rev-parse --abbrev-ref HEAD", cwd);
+        if (!currentBranch.success) {
+          results.push({
+            worktree: entry.name,
+            branch: entry.branch,
+            status: "skipped",
+            message: "Could not determine current branch",
+          });
+          continue;
+        }
+
+        // Checkout the child branch and rebase onto current HEAD
+        const checkout = execGit(`git checkout ${entry.branch}`, cwd);
+        if (!checkout.success) {
+          results.push({
+            worktree: entry.name,
+            branch: entry.branch,
+            status: "skipped",
+            message: `Checkout failed: ${checkout.output}`,
+          });
+          continue;
+        }
+
+        const rebase = execGit(`git rebase ${currentBranch.output}`, cwd);
+        if (!rebase.success) {
+          // Rebase failed - abort and report
+          execGit("git rebase --abort", cwd);
+          execGit(`git checkout ${currentBranch.output}`, cwd);
+
+          const isConflict = rebase.output.includes("CONFLICT") ||
+            rebase.output.includes("could not apply");
+
+          if (isConflict) {
+            yield* stateService.updateWorktree(cwd, entry.name, {
+              mergeStatus: "conflict",
+            });
+
+            results.push({
+              worktree: entry.name,
+              branch: entry.branch,
+              status: "conflict",
+              message: `Rebase conflict: ${rebase.output.split("\n")[0]}`,
+            });
+
+            if (!json) {
+              console.log(`  [conflict] ${entry.branch} (during rebase)`);
+              console.log(`    └─ ${rebase.output.split("\n")[0]}`);
+            }
+
+            hadConflict = true;
+            continue; // Try next branch instead of stopping
+          } else {
+            results.push({
+              worktree: entry.name,
+              branch: entry.branch,
+              status: "skipped",
+              message: `Rebase failed: ${rebase.output}`,
+            });
+            continue;
+          }
+        }
+
+        // Switch back to main branch for the merge
+        execGit(`git checkout ${currentBranch.output}`, cwd);
+
+        if (!json) {
+          console.log(`  [rebased] ${entry.branch}`);
+        }
+      }
+
+      // Perform the merge (should be fast-forward after rebase)
       let mergeCmd: string;
       switch (strategy) {
         case "squash":
@@ -345,12 +428,12 @@ export const worktreeCollect = (args: ParsedArgs) =>
           });
 
           if (!json) {
-            console.log(`  [conflict] ${entry.branch}`);
+            console.log(`  [conflict] ${entry.branch} (during merge)`);
             console.log(`    └─ ${result.output.split("\n")[0]}`);
           }
 
           hadConflict = true;
-          break; // Stop on first conflict
+          continue; // Continue with next branch instead of stopping
         } else {
           results.push({
             worktree: entry.name,
