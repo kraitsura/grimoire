@@ -70,15 +70,28 @@ export const OpenCodeConfigSchema = Schema.Struct({
 
 /**
  * Codex agent configuration (OpenAI Codex CLI)
- * Uses AGENTS.md for instructions
+ * Uses AGENTS.md for instructions and .codex/skills/ for skills
  */
 export const CodexConfigSchema = Schema.Struct({
   inject: Schema.optional(InjectConfigSchema),
+  /** Whether to use skill files (.codex/skills/) instead of injection */
+  skill_file: Schema.optional(Schema.Boolean),
+});
+
+/**
+ * Gemini CLI agent configuration (Google Gemini CLI)
+ * Uses GEMINI.md for instructions and .gemini/skills/ for skills
+ */
+export const GeminiConfigSchema = Schema.Struct({
+  inject: Schema.optional(InjectConfigSchema),
+  mcp: Schema.optional(McpConfigSchema),
+  /** Whether to use skill files (.gemini/skills/) */
+  skill_file: Schema.optional(Schema.Boolean),
 });
 
 /**
  * Cursor agent configuration (Cursor IDE)
- * Uses .cursor/rules/*.mdc for rules (MDC format)
+ * Uses .cursor/rules/<name>/RULE.md for rules (folder-based format)
  */
 export const CursorConfigSchema = Schema.Struct({
   inject: Schema.optional(InjectConfigSchema),
@@ -114,6 +127,7 @@ export const AgentConfigsSchema = Schema.Struct({
   cursor: Schema.optional(CursorConfigSchema),
   aider: Schema.optional(AiderConfigSchema),
   amp: Schema.optional(AmpConfigSchema),
+  gemini: Schema.optional(GeminiConfigSchema),
 });
 
 /**
@@ -166,6 +180,7 @@ export const AgentTypeSchema = Schema.Literal(
   "cursor",      // Cursor IDE
   "aider",       // Aider chat
   "amp",         // Sourcegraph Amp
+  "gemini",      // Google Gemini CLI
   "generic"      // Generic AGENTS.md fallback
 );
 
@@ -187,6 +202,7 @@ export const GLOBAL_SKILL_LOCATIONS: Record<string, string> = {
   codex: "~/.codex/skills",
   aider: "~/.config/aider/conventions",
   amp: "~/.config/amp/skills",
+  gemini: "~/.gemini/skills",
   generic: "~/.grimoire/skills", // Uses grimoire cache for generic agent
 };
 
@@ -223,7 +239,8 @@ export const AgentDetectionModeSchema = Schema.Literal(
   "codex",
   "cursor",
   "aider",
-  "amp"
+  "amp",
+  "gemini"
 );
 
 /**
@@ -301,6 +318,11 @@ export type AiderConfig = Schema.Schema.Type<typeof AiderConfigSchema>;
  * Amp configuration type
  */
 export type AmpConfig = Schema.Schema.Type<typeof AmpConfigSchema>;
+
+/**
+ * Gemini configuration type
+ */
+export type GeminiConfig = Schema.Schema.Type<typeof GeminiConfigSchema>;
 
 /**
  * Agent configurations type

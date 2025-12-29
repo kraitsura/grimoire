@@ -134,8 +134,30 @@ This project uses AI coding assistants.
 `,
       };
     case "cursor":
-      // Cursor doesn't use an agent MD file - uses .cursor/rules/
-      return null;
+      // Cursor uses .cursor/rules/<name>/RULE.md and AGENTS.md as fallback
+      return {
+        path: join(cwd, "AGENTS.md"),
+        content: `# Agent Instructions
+
+This project uses Cursor for AI-assisted development.
+
+<!-- skills:managed:start -->
+<!-- This section is managed by grimoire skills -->
+<!-- skills:managed:end -->
+`,
+      };
+    case "gemini":
+      return {
+        path: join(cwd, "GEMINI.md"),
+        content: `# Gemini CLI Configuration
+
+This project uses Gemini CLI for AI-assisted development.
+
+<!-- skills:managed:start -->
+<!-- This section is managed by grimoire skills -->
+<!-- skills:managed:end -->
+`,
+      };
     case "aider":
       return {
         path: join(cwd, "CONVENTIONS.md"),
@@ -240,9 +262,19 @@ const getAgentSkillsDirInfo = (agent: AgentType): { agentDir: string; skillsDir:
         skillsDir: join(cwd, ".cursor", "rules"),
       };
     case "codex":
+      // Codex now supports skills directory (Dec 2025)
+      return {
+        agentDir: join(cwd, ".codex"),
+        skillsDir: join(cwd, ".codex", "skills"),
+      };
+    case "gemini":
+      return {
+        agentDir: join(cwd, ".gemini"),
+        skillsDir: join(cwd, ".gemini", "skills"),
+      };
     case "aider":
     case "amp":
-      // These agents don't use a dedicated skills directory - they inject into their MD files
+      // These agents use injection-based skills only
       return null;
     default:
       return null;
