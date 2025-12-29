@@ -15,9 +15,22 @@ import {
   DEFAULT_ALLOWED_DOMAINS,
   DEFAULT_DENY_READ,
   DEFAULT_DENY_WRITE,
-  DEFAULT_ALLOW_WRITE_EXTRA,
+  getDefaultAllowWriteExtra,
   type SrtConfig,
 } from "./srt-service";
+
+/**
+ * Expand ~ to home directory in a path
+ */
+const expandTilde = (path: string): string => {
+  if (path.startsWith("~/")) {
+    return join(homedir(), path.slice(2));
+  }
+  if (path === "~") {
+    return homedir();
+  }
+  return path;
+};
 
 // =============================================================================
 // Schema Definitions
@@ -300,12 +313,12 @@ const makeSrtConfigService = (): SrtConfigServiceImpl => ({
     Effect.gen(function* () {
       const loaded = yield* makeSrtConfigService().loadConfig(projectPath);
 
-      // Build allowed write paths
+      // Build allowed write paths (expand tildes for SRT compatibility)
       // Include worktree path and parent repo's .git for git operations
       const allowWritePaths = [
         worktreePath,
-        ...DEFAULT_ALLOW_WRITE_EXTRA,
-        ...(loaded.config.filesystem?.additionalWritePaths ?? []),
+        ...getDefaultAllowWriteExtra(),
+        ...(loaded.config.filesystem?.additionalWritePaths ?? []).map(expandTilde),
       ];
 
       // Git worktrees need write access to parent repo's .git directory
@@ -315,6 +328,7 @@ const makeSrtConfigService = (): SrtConfigServiceImpl => ({
       }
 
       // Build final config with defaults and mandatory protections
+      // All paths are expanded to handle ~ properly (SRT doesn't expand ~)
       const config: SrtConfig = {
         network: {
           allowedDomains: dedupe([
@@ -330,13 +344,13 @@ const makeSrtConfigService = (): SrtConfigServiceImpl => ({
             ...MANDATORY_DENY_READ,
             ...DEFAULT_DENY_READ,
             ...(loaded.config.filesystem?.denyRead ?? []),
-          ]),
+          ].map(expandTilde)),
           allowWrite: dedupe(allowWritePaths),
           denyWrite: dedupe([
             ...MANDATORY_DENY_WRITE,
             ...DEFAULT_DENY_WRITE,
             ...(loaded.config.filesystem?.denyWrite ?? []),
-          ]),
+          ].map(expandTilde)),
         },
       };
 

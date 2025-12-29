@@ -12,7 +12,7 @@
 
 import { Context, Effect, Layer } from "effect";
 import { join } from "path";
-import { tmpdir } from "os";
+import { tmpdir, homedir } from "os";
 import { randomUUID } from "crypto";
 
 // =============================================================================
@@ -151,12 +151,32 @@ export const DEFAULT_DENY_WRITE = [
   "~/.aws",
 ];
 
-/** Default additional write paths */
+/** Default additional write paths (use getDefaultAllowWriteExtra() for expanded paths) */
 export const DEFAULT_ALLOW_WRITE_EXTRA = [
   "/tmp",
   "~/.claude.json", // Claude Code config file
   "~/.claude", // Claude Code directory
 ];
+
+/**
+ * Expand ~ to home directory in a path
+ */
+const expandTilde = (path: string): string => {
+  if (path.startsWith("~/")) {
+    return join(homedir(), path.slice(2));
+  }
+  if (path === "~") {
+    return homedir();
+  }
+  return path;
+};
+
+/**
+ * Get default allow write paths with ~ expanded to actual home directory
+ * This is needed because SRT doesn't expand ~ in paths
+ */
+export const getDefaultAllowWriteExtra = (): string[] =>
+  DEFAULT_ALLOW_WRITE_EXTRA.map(expandTilde);
 
 // =============================================================================
 // Service Interface
@@ -362,13 +382,13 @@ const makeSrtService = (): SrtServiceImpl => {
     generateConfig: (options: SrtConfigOptions) =>
       Effect.succeed({
         filesystem: {
-          denyRead: [...DEFAULT_DENY_READ, ...(options.additionalDenyRead ?? [])],
+          denyRead: [...DEFAULT_DENY_READ, ...(options.additionalDenyRead ?? [])].map(expandTilde),
           allowWrite: [
             options.worktreePath,
-            ...DEFAULT_ALLOW_WRITE_EXTRA,
-            ...(options.additionalWritePaths ?? []),
+            ...getDefaultAllowWriteExtra(),
+            ...(options.additionalWritePaths ?? []).map(expandTilde),
           ],
-          denyWrite: [...DEFAULT_DENY_WRITE],
+          denyWrite: [...DEFAULT_DENY_WRITE].map(expandTilde),
         },
         network: {
           allowedDomains: [

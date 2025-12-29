@@ -38,11 +38,20 @@ import type { AgentSessionMode } from "../../models/agent-session";
 /**
  * Check if Claude OAuth token is configured for headless mode
  * Returns true if token is set up, false if headless would use API credits
+ *
+ * IMPORTANT: ANTHROPIC_API_KEY takes precedence over OAuth in headless mode.
+ * We unset it during the check and spawn to ensure subscription is used.
  */
-const checkHeadlessAuth = (): { hasToken: boolean; error?: string } => {
+const checkHeadlessAuth = (): { hasToken: boolean; hasApiKey: boolean; error?: string } => {
+  // Check if ANTHROPIC_API_KEY is set (it would override OAuth)
+  const hasApiKey = !!(process.env.ANTHROPIC_API_KEY);
+
   try {
-    // Test with $0 budget - if auth works, we hit budget limit
-    // If no token, we get "Credit balance is too low"
+    // Test with $0 budget WITHOUT ANTHROPIC_API_KEY
+    // This forces OAuth authentication check
+    const testEnv = { ...process.env };
+    delete testEnv.ANTHROPIC_API_KEY; // Remove API key to test OAuth
+
     const result = spawnSync(
       "claude",
       ["--print", "--max-budget-usd", "0", "test"],
@@ -50,6 +59,7 @@ const checkHeadlessAuth = (): { hasToken: boolean; error?: string } => {
         timeout: 15000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        env: testEnv,
       }
     );
 
@@ -58,14 +68,15 @@ const checkHeadlessAuth = (): { hasToken: boolean; error?: string } => {
     if (output.includes("Credit balance is too low")) {
       return {
         hasToken: false,
-        error: "No OAuth token. Headless mode would use API credits.",
+        hasApiKey,
+        error: "No OAuth token configured. Run 'claude setup-token' to enable subscription-based headless mode.",
       };
     }
 
-    // Budget exceeded or other response = auth is working
-    return { hasToken: true };
+    // Budget exceeded or other response = OAuth is working
+    return { hasToken: true, hasApiKey };
   } catch (err) {
-    return { hasToken: false, error: `Auth check failed: ${err}` };
+    return { hasToken: false, hasApiKey, error: `Auth check failed: ${err}` };
   }
 };
 
@@ -147,11 +158,17 @@ Your task: `;
       `Command: ${fullCommand}\n\n`
     );
 
+    // Build clean environment for headless spawn
+    // CRITICAL: Remove ANTHROPIC_API_KEY to ensure OAuth/subscription is used
+    // API key takes precedence and would consume credits instead of subscription
+    const spawnEnv = { ...process.env };
+    delete spawnEnv.ANTHROPIC_API_KEY;
+
     // Spawn detached process with shell redirection
     const child = spawn("sh", ["-c", fullCommand], {
       cwd: worktree.path,
       env: {
-        ...process.env,
+        ...spawnEnv,
         GRIMOIRE_WORKTREE: worktree.name,
         GRIMOIRE_WORKTREE_PATH: worktree.path,
         GRIMOIRE_SESSION_ID: sessionId,
@@ -278,6 +295,12 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     if (headless) {
       console.log("Checking authentication for headless mode...");
       const authStatus = checkHeadlessAuth();
+
+      // Warn if API key is set (we'll remove it to force subscription)
+      if (authStatus.hasApiKey) {
+        console.log("  Note: ANTHROPIC_API_KEY detected - will be excluded to use subscription");
+      }
+
       if (!authStatus.hasToken) {
         console.log();
         console.log("╔══════════════════════════════════════════════════════════════════╗");
@@ -287,10 +310,10 @@ export const worktreeSpawn = (args: ParsedArgs) =>
         console.log("║  Without it, background agents charge against API credits.       ║");
         console.log("║                                                                  ║");
         console.log("║  To fix this, run:                                               ║");
-        console.log("║    grimoire wt auth --setup                                      ║");
-        console.log("║                                                                  ║");
-        console.log("║  Or manually:                                                    ║");
         console.log("║    claude setup-token                                            ║");
+        console.log("║                                                                  ║");
+        console.log("║  Then set the token in your environment:                         ║");
+        console.log("║    export CLAUDE_CODE_OAUTH_TOKEN=<your-token>                   ║");
         console.log("╚══════════════════════════════════════════════════════════════════╝");
         console.log();
         process.exit(1);
