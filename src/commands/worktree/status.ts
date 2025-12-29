@@ -10,8 +10,28 @@ import {
   WorktreeServiceLive,
   WorktreeStateService,
   WorktreeStateServiceLive,
+  AgentSessionService,
+  AgentSessionServiceLive,
 } from "../../services/worktree";
+import type { AgentSession } from "../../models/agent-session";
 import type { WorktreeListItem } from "../../models/worktree";
+
+/**
+ * Format relative time (e.g., "2h ago", "3d ago")
+ */
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays > 0) return `${diffDays}d ago`;
+  if (diffHours > 0) return `${diffHours}h ago`;
+  if (diffMins > 0) return `${diffMins}m ago`;
+  return "just now";
+}
 
 /**
  * Get issue status from beads
@@ -38,6 +58,7 @@ export const worktreeStatus = (args: ParsedArgs) =>
 
     const service = yield* WorktreeService;
     const stateService = yield* WorktreeStateService;
+    const agentSessionService = yield* AgentSessionService;
     const cwd = process.cwd();
 
     const worktreesResult = yield* Effect.either(service.list(cwd));
@@ -64,10 +85,30 @@ export const worktreeStatus = (args: ParsedArgs) =>
     const repoRoot = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
     const state = yield* stateService.getState(repoRoot);
 
-    // Build rich data
-    const richData = worktrees.map((wt) => {
+    // Build rich data with agent session info
+    interface RichWorktreeData extends WorktreeListItem {
+      claimedBy?: string;
+      claimedAt?: string;
+      logs: unknown[];
+      checkpoints: unknown[];
+      currentStage?: string;
+      issueProvider?: string;
+      agentSession?: AgentSession | null;
+      agentAlive?: boolean;
+    }
+
+    const richData: RichWorktreeData[] = [];
+    for (const wt of worktrees) {
       const entry = state.worktrees.find((w) => w.name === wt.name);
-      return {
+
+      // Get agent session info (refreshes status automatically)
+      const sessionResult = yield* Effect.either(
+        agentSessionService.refreshSessionStatus(wt.path)
+      );
+      const session = sessionResult._tag === "Right" ? sessionResult.right : null;
+      const alive = session?.status === "running" && agentSessionService.isPidAlive(session.pid);
+
+      richData.push({
         ...wt,
         claimedBy: entry?.claimedBy,
         claimedAt: entry?.claimedAt,
@@ -75,8 +116,10 @@ export const worktreeStatus = (args: ParsedArgs) =>
         checkpoints: entry?.checkpoints || [],
         currentStage: entry?.currentStage,
         issueProvider: entry?.issueProvider,
-      };
-    });
+        agentSession: session,
+        agentAlive: alive,
+      });
+    }
 
     // Calculate summary
     const active = richData.filter((w) => w.status === "active").length;
@@ -85,13 +128,27 @@ export const worktreeStatus = (args: ParsedArgs) =>
     const available = active - claimed;
     const totalLogs = richData.reduce((sum, w) => sum + w.logs.length, 0);
     const totalCheckpoints = richData.reduce((sum, w) => sum + w.checkpoints.length, 0);
+    const runningAgents = richData.filter((w) => w.agentAlive).length;
 
     if (json) {
       console.log(
         JSON.stringify(
           {
-            worktrees: richData,
-            summary: { active, stale, claimed, available, totalLogs, totalCheckpoints },
+            worktrees: richData.map((w) => ({
+              ...w,
+              agentSession: w.agentSession
+                ? {
+                    sessionId: w.agentSession.sessionId,
+                    pid: w.agentSession.pid,
+                    mode: w.agentSession.mode,
+                    status: w.agentAlive ? "running" : w.agentSession.status,
+                    startedAt: w.agentSession.startedAt,
+                    prompt: w.agentSession.prompt,
+                    logFile: w.agentSession.logFile,
+                  }
+                : null,
+            })),
+            summary: { active, stale, claimed, available, runningAgents, totalLogs, totalCheckpoints },
           },
           null,
           2
@@ -103,16 +160,18 @@ export const worktreeStatus = (args: ParsedArgs) =>
     if (brief) {
       // Compact view
       console.log(`Worktrees: ${active} active (${claimed} claimed, ${available} available), ${stale} stale`);
+      if (runningAgents > 0) console.log(`Agents: ${runningAgents} running`);
       for (const wt of richData) {
         const claimInfo = wt.claimedBy ? `[${wt.claimedBy}]` : "";
+        const agentInfo = wt.agentAlive ? "[agent]" : "";
         const issueInfo = wt.linkedIssue || "";
-        console.log(`  ${wt.name} ${wt.status} ${claimInfo} ${issueInfo}`);
+        console.log(`  ${wt.name} ${wt.status} ${claimInfo} ${agentInfo} ${issueInfo}`.trim());
       }
       return;
     }
 
     // Compact default view (optimized for agents)
-    console.log(`worktrees: ${active} active, ${claimed} claimed, ${available} available${stale > 0 ? `, ${stale} stale` : ""}`);
+    console.log(`worktrees: ${active} active, ${claimed} claimed, ${available} available${stale > 0 ? `, ${stale} stale` : ""}${runningAgents > 0 ? `, ${runningAgents} agents` : ""}`);
     for (const wt of richData) {
       const parts: string[] = [`name=${wt.name}`, `status=${wt.status}`];
       if (wt.claimedBy) parts.push(`claimed_by=${wt.claimedBy}`);
@@ -125,9 +184,27 @@ export const worktreeStatus = (args: ParsedArgs) =>
       }
       if (wt.logs.length > 0) parts.push(`logs=${wt.logs.length}`);
       if (wt.currentStage) parts.push(`stage=${wt.currentStage}`);
+
+      // Agent session info
+      if (wt.agentSession) {
+        const status = wt.agentAlive ? "running" : wt.agentSession.status;
+        parts.push(`agent=${status}`);
+        if (wt.agentAlive) {
+          parts.push(`pid=${wt.agentSession.pid}`);
+          parts.push(`started=${formatRelativeTime(wt.agentSession.startedAt)}`);
+        }
+        if (wt.agentSession.prompt) {
+          const shortPrompt = wt.agentSession.prompt.length > 40
+            ? wt.agentSession.prompt.substring(0, 37) + "..."
+            : wt.agentSession.prompt;
+          parts.push(`prompt="${shortPrompt}"`);
+        }
+      }
+
       console.log(`  ${parts.join(" ")}`);
     }
   }).pipe(
     Effect.provide(WorktreeServiceLive),
-    Effect.provide(WorktreeStateServiceLive)
+    Effect.provide(WorktreeStateServiceLive),
+    Effect.provide(AgentSessionServiceLive)
   );

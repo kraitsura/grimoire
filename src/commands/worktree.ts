@@ -30,6 +30,8 @@ import {
   worktreeWait,
   worktreeCollect,
   worktreeKill,
+  worktreeMerge,
+  worktreePr,
 } from "./worktree/index";
 import { WorktreeDashboard } from "../cli/components/worktree";
 
@@ -47,6 +49,8 @@ COMMANDS:
   children           Show worktrees spawned by current session
   wait               Block until child worktrees complete
   collect            Merge completed children back into current branch
+  merge <name>       Merge worktree branch into current branch
+  pr <name>          Create GitHub PR from worktree branch
   from-issue <id>    Create worktree from issue ID
   list               List active worktrees
   status             Rich status with claims, logs, stages
@@ -96,6 +100,10 @@ EXAMPLES:
   grimoire wt ps --running               # Only show running
   grimoire wt kill auth-feature          # Terminate spawned agent
   grimoire wt kill auth-feature --force  # Force kill (SIGKILL)
+  grimoire wt merge auth-feature         # Merge branch into current
+  grimoire wt merge auth-feature --squash  # Squash merge
+  grimoire wt pr auth-feature            # Create PR from branch
+  grimoire wt pr auth-feature --draft    # Create draft PR
   grimoire wt from-issue grimoire-123    # Create from issue
   grimoire wt status                     # Rich status view
   grimoire wt available                  # Find unclaimed work
@@ -188,6 +196,10 @@ export const worktreeCommand = (args: ParsedArgs) =>
         return yield* worktreeWait(args);
       case "collect":
         return yield* worktreeCollect(args);
+      case "merge":
+        return yield* worktreeMerge(args);
+      case "pr":
+        return yield* worktreePr(args);
       default:
         console.log(`Unknown worktree command: ${subcommand}`);
         printWorktreeHelp();

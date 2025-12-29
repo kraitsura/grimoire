@@ -1,15 +1,22 @@
 /**
  * grimoire wt log - Add and view progress logs for worktrees
+ *
+ * - `wt log "message"` - Add manual progress note to state
+ * - `wt logs <name>` - View agent session output (from .claude-session.log)
  */
 
 import { Effect } from "effect";
-import { execSync } from "child_process";
+import { execSync, spawn } from "child_process";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import type { ParsedArgs } from "../../cli/parser";
 import {
   WorktreeService,
   WorktreeServiceLive,
   WorktreeStateService,
   WorktreeStateServiceLive,
+  AgentSessionService,
+  AgentSessionServiceLive,
 } from "../../services/worktree";
 import type { WorktreeLog } from "../../models/worktree";
 
@@ -52,61 +59,88 @@ export const worktreeLog = (args: ParsedArgs) =>
     const cwd = process.cwd();
     const service = yield* WorktreeService;
     const stateService = yield* WorktreeStateService;
+    const agentSessionService = yield* AgentSessionService;
 
     // Detect if we're viewing logs or adding
-    // "logs" subcommand = view, otherwise = add
+    // "logs" subcommand = view agent output, otherwise = add manual log
     if (subcommand === "logs") {
-      // View logs: grimoire wt logs [name] [--json]
+      // View agent session output: grimoire wt logs [name] [-f] [-n N]
       const name = args.positional[1] || detectCurrentWorktree(cwd);
-      const json = args.flags.json === true;
+      const follow = args.flags.f === true || args.flags.follow === true;
+      const numLines = (args.flags.n as number) || (args.flags.lines as number) || 50;
 
       if (!name) {
         console.error("Error: Specify worktree name or run from within a worktree");
         console.log();
-        console.log("Usage: grimoire wt logs <name>");
-        console.log("       grimoire wt logs         # from within worktree");
+        console.log("Usage: grimoire wt logs <name>       # View agent session output");
+        console.log("       grimoire wt logs <name> -f    # Follow (like tail -f)");
+        console.log("       grimoire wt logs <name> -n 100 # Last N lines");
+        console.log();
+        console.log("       grimoire wt logs              # From within worktree");
         process.exit(1);
       }
 
-      // Get worktree to verify it exists
+      // Get worktree to verify it exists and get path
       const infoResult = yield* Effect.either(service.get(cwd, name));
       if (infoResult._tag === "Left") {
         console.error(`Error: Worktree '${name}' not found`);
         process.exit(1);
       }
 
-      // Get full state to access logs
-      const repoRoot = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
+      const worktree = infoResult.right;
 
-      const state = yield* stateService.getState(repoRoot);
-      const entry = state.worktrees.find((w) => w.name === name);
-      const logs = (entry?.logs || []) as WorktreeLog[];
+      // Get session to find log file
+      const sessionResult = yield* Effect.either(
+        agentSessionService.getSession(worktree.path)
+      );
 
-      if (json) {
-        console.log(JSON.stringify({ name, logs }, null, 2));
-        return;
+      let logFile: string;
+
+      if (sessionResult._tag === "Right" && sessionResult.right?.logFile) {
+        logFile = sessionResult.right.logFile;
+      } else {
+        // Fallback to default location
+        logFile = join(worktree.path, ".claude-session.log");
       }
 
-      if (logs.length === 0) {
-        console.log(`${name} (no logs)`);
-        return;
+      // Check if log file exists
+      if (!existsSync(logFile)) {
+        console.error(`Error: No logs found for worktree "${name}"`);
+        console.log();
+        console.log("Hint: Was this worktree spawned with --headless (-H) or --background (-bg)?");
+        console.log("      Interactive sessions don't write to log files.");
+        process.exit(1);
       }
 
-      console.log(`${name} (${logs.length} logs)`);
-      console.log("─".repeat(40));
+      if (follow) {
+        // Use tail -f for following
+        console.log(`Following logs for ${name} (Ctrl+C to stop)...`);
+        console.log("─".repeat(60));
 
-      let lastDate = "";
-      for (const log of logs) {
-        const date = formatDate(log.time);
-        if (date !== lastDate) {
-          if (lastDate) console.log();
-          console.log(`  ${date}`);
-          lastDate = date;
-        }
+        const tail = spawn("tail", ["-f", logFile], {
+          stdio: "inherit",
+        });
 
-        const time = formatTime(log.time);
-        const typeMarker = log.type === "handoff" ? " [handoff]" : log.type === "interrupt" ? " [interrupt]" : "";
-        console.log(`  ${time}  ${log.message}${typeMarker}`);
+        // Handle graceful exit
+        yield* Effect.promise(
+          () =>
+            new Promise<void>((resolve) => {
+              process.on("SIGINT", () => {
+                tail.kill();
+                resolve();
+              });
+              tail.on("close", () => resolve());
+            })
+        );
+      } else {
+        // Read last N lines
+        const content = readFileSync(logFile, "utf8");
+        const lines = content.split("\n");
+        const lastLines = lines.slice(-numLines);
+
+        console.log(`Logs for ${name} (last ${Math.min(numLines, lines.length)} lines)`);
+        console.log("─".repeat(60));
+        console.log(lastLines.join("\n"));
       }
       return;
     }
@@ -191,5 +225,6 @@ export const worktreeLog = (args: ParsedArgs) =>
     }
   }).pipe(
     Effect.provide(WorktreeServiceLive),
-    Effect.provide(WorktreeStateServiceLive)
+    Effect.provide(WorktreeStateServiceLive),
+    Effect.provide(AgentSessionServiceLive)
   );
