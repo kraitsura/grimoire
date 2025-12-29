@@ -1,13 +1,14 @@
 /**
  * Skills Disable Command
  *
- * Disables one or more skills in the current project.
+ * Disables one or more skills in the current project or globally.
  * This removes skill files and injections but does NOT uninstall CLI tools or plugins.
  *
  * Usage:
  *   grimoire skills disable <name> [...names]
  *   grimoire skills disable beads --purge
  *   grimoire skills disable beads --purge -y
+ *   grimoire skills disable beads --global
  */
 
 import { Effect } from "effect";
@@ -84,21 +85,24 @@ const disableSkill = (
   projectPath: string,
   skillName: string,
   purge: boolean,
-  yes: boolean
+  yes: boolean,
+  scope: "global" | "project"
 ): Effect.Effect<void, never, SkillStateService | SkillEngineService> =>
   Effect.gen(function* () {
     const stateService = yield* SkillStateService;
     const engineService = yield* SkillEngineService;
 
-    // 1. Verify skill is enabled (no-op if not)
-    const enabled = yield* stateService.getEnabled(projectPath);
-    if (!enabled.includes(skillName)) {
-      console.log(`${colors.gray}Skill '${skillName}' is not enabled${colors.reset}`);
-      return;
+    // For project scope, verify skill is enabled
+    if (scope === "project") {
+      const enabled = yield* stateService.getEnabled(projectPath);
+      if (!enabled.includes(skillName)) {
+        console.log(`${colors.gray}Skill '${skillName}' is not enabled${colors.reset}`);
+        return;
+      }
     }
 
-    // 2-5. Use SkillEngineService to disable the skill
-    yield* engineService.disable(projectPath, skillName, { purge, yes }).pipe(
+    // Use SkillEngineService to disable the skill
+    yield* engineService.disable(projectPath, skillName, { purge, yes, scope }).pipe(
       Effect.catchTag("SkillNotEnabledError", (error) => {
         console.log(`${colors.gray}Skill '${error.name}' is not enabled${colors.reset}`);
         return Effect.void;
@@ -110,18 +114,22 @@ const disableSkill = (
     const agentType = projectState?.agent || "claude_code";
 
     // Display success message
-    console.log(`${colors.green}+${colors.reset} Disabled ${skillName}`);
+    const scopeLabel = scope === "global" ? `${colors.yellow}(global)${colors.reset} ` : "";
+    console.log(`${colors.green}+${colors.reset} Disabled ${scopeLabel}${skillName}`);
 
-    if (agentType === "claude_code") {
-      console.log(`  ${colors.gray}- Removed from CLAUDE.md${colors.reset}`);
-    } else if (agentType === "opencode") {
-      console.log(`  ${colors.gray}- Removed from AGENTS.md${colors.reset}`);
+    if (scope === "project") {
+      if (agentType === "claude_code") {
+        console.log(`  ${colors.gray}- Removed from CLAUDE.md${colors.reset}`);
+      } else if (agentType === "opencode") {
+        console.log(`  ${colors.gray}- Removed from AGENTS.md${colors.reset}`);
+      }
+      console.log(`  ${colors.gray}- Removed .claude/skills/${skillName}/${colors.reset}`);
+    } else {
+      console.log(`  ${colors.gray}- Removed from ~/.claude/skills/${skillName}/${colors.reset}`);
     }
 
-    console.log(`  ${colors.gray}- Removed .claude/skills/${skillName}.md${colors.reset}`);
-
-    // Handle purge option
-    if (purge) {
+    // Handle purge option (only for project scope)
+    if (purge && scope === "project") {
       const purged = yield* purgeArtifacts(projectPath, skillName);
       if (purged) {
         console.log(`  ${colors.gray}- Removed project artifacts${colors.reset}`);
@@ -145,11 +153,14 @@ export const skillsDisable = (args: ParsedArgs) =>
     const skillNames = args.positional.slice(1); // Skip "disable" subcommand
     const purgeFlag = args.flags.purge === true;
     const yesFlag = args.flags.yes === true || args.flags.y === true;
+    const globalFlag = args.flags.global === true || args.flags.g === true;
+    const scope = globalFlag ? "global" : "project";
 
     if (skillNames.length === 0) {
       console.log(`${colors.yellow}Usage: grimoire skills disable <name> [...names]${colors.reset}`);
       console.log("");
       console.log("Flags:");
+      console.log("  -g, --global   Remove from global/user location (e.g., ~/.claude/skills/)");
       console.log("  --purge        Also remove project artifacts (e.g., .beads/ directory)");
       console.log("  -y, --yes      Skip confirmation for purge");
       console.log("");
@@ -157,12 +168,13 @@ export const skillsDisable = (args: ParsedArgs) =>
       console.log("  grimoire skills disable beads");
       console.log("  grimoire skills disable beads typescript-strict");
       console.log("  grimoire skills disable beads --purge -y");
+      console.log("  grimoire skills disable beads --global");
       process.exit(1);
     }
 
     // Disable each skill
     for (const skillName of skillNames) {
-      yield* disableSkill(projectPath, skillName, purgeFlag, yesFlag).pipe(
+      yield* disableSkill(projectPath, skillName, purgeFlag, yesFlag, scope).pipe(
         Effect.catchAll((error) => {
           console.log(`${colors.gray}x Failed to disable ${skillName}${colors.reset}`);
           console.log(`  ${colors.gray}Error: ${String(error)}${colors.reset}`);

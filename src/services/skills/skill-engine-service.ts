@@ -64,6 +64,7 @@ export interface EnableOptions {
 export interface DisableOptions {
   purge?: boolean; // Remove project artifacts
   yes?: boolean; // Skip confirmation for purge
+  scope?: "global" | "project"; // Disable scope (default: project)
 }
 
 /**
@@ -337,15 +338,20 @@ const makeSkillEngineService = (
 
   disable: (projectPath: string, skillName: string, options?: DisableOptions) =>
     Effect.gen(function* () {
-      // 1. Verify skill is enabled
-      const enabled = yield* state.getEnabled(projectPath);
-      if (!enabled.includes(skillName)) {
-        return yield* Effect.fail(
-          new SkillNotEnabledError({ name: skillName })
-        );
+      const scope = options?.scope ?? "project";
+      const isGlobal = scope === "global";
+
+      // For project scope, verify skill is enabled
+      if (!isGlobal) {
+        const enabled = yield* state.getEnabled(projectPath);
+        if (!enabled.includes(skillName)) {
+          return yield* Effect.fail(
+            new SkillNotEnabledError({ name: skillName })
+          );
+        }
       }
 
-      // 2. Get agent adapter for project
+      // Get agent adapter for project
       const projectState = yield* state.getProjectState(projectPath);
       if (!projectState) {
         return yield* Effect.fail(
@@ -354,20 +360,28 @@ const makeSkillEngineService = (
       }
 
       const adapter = adapters.getAdapter(projectState.agent);
-      const skillsDir = adapter.getSkillsDir(projectPath);
 
-      // 3. Call adapter.disableSkill()
-      yield* adapter.disableSkill(projectPath, skillName);
+      if (isGlobal) {
+        // For global scope, remove from global skills directory
+        const globalSkillsDir = adapter.getGlobalSkillsDir();
+        yield* removeSkillFile(skillName, globalSkillsDir);
+      } else {
+        // For project scope, use full disable flow
+        const skillsDir = adapter.getSkillsDir(projectPath);
 
-      // 4. Call adapter.removeInjection()
-      yield* adapter.removeInjection(projectPath, skillName);
+        // Call adapter.disableSkill()
+        yield* adapter.disableSkill(projectPath, skillName);
 
-      // 5. Remove skill file from project skills dir
-      yield* removeSkillFile(skillName, skillsDir);
+        // Call adapter.removeInjection()
+        yield* adapter.removeInjection(projectPath, skillName);
 
-      // 6. Update state (removeEnabled, recordDisable)
-      yield* state.removeEnabled(projectPath, skillName);
-      yield* state.recordDisable(projectPath, skillName);
+        // Remove skill file from project skills dir
+        yield* removeSkillFile(skillName, skillsDir);
+
+        // Update state (removeEnabled, recordDisable)
+        yield* state.removeEnabled(projectPath, skillName);
+        yield* state.recordDisable(projectPath, skillName);
+      }
     }),
 
   canEnable: (projectPath: string, skillName: string) =>
