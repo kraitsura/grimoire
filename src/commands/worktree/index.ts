@@ -23,3 +23,4 @@ export { worktreePs } from "./ps";
 export { worktreeChildren } from "./children";
 export { worktreeWait } from "./wait";
 export { worktreeCollect } from "./collect";
+export { worktreeKill } from "./kill";

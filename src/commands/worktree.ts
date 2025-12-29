@@ -29,6 +29,7 @@ import {
   worktreeChildren,
   worktreeWait,
   worktreeCollect,
+  worktreeKill,
 } from "./worktree/index";
 import { WorktreeDashboard } from "../cli/components/worktree";
 
@@ -42,6 +43,7 @@ COMMANDS:
   new <branch>       Create a new worktree from branch
   spawn <name>       Create worktree + launch sandboxed Claude session
   ps                 List running/spawned agents
+  kill <name>        Terminate a spawned agent
   children           Show worktrees spawned by current session
   wait               Block until child worktrees complete
   collect            Merge completed children back into current branch
@@ -92,6 +94,8 @@ EXAMPLES:
   grimoire wt spawn fix --no-sandbox     # Skip sandboxing
   grimoire wt ps                         # List running agents
   grimoire wt ps --running               # Only show running
+  grimoire wt kill auth-feature          # Terminate spawned agent
+  grimoire wt kill auth-feature --force  # Force kill (SIGKILL)
   grimoire wt from-issue grimoire-123    # Create from issue
   grimoire wt status                     # Rich status view
   grimoire wt available                  # Find unclaimed work
@@ -176,6 +180,8 @@ export const worktreeCommand = (args: ParsedArgs) =>
         return yield* worktreeSpawn(args);
       case "ps":
         return yield* worktreePs(args);
+      case "kill":
+        return yield* worktreeKill(args);
       case "children":
         return yield* worktreeChildren(args);
       case "wait":
