@@ -1581,6 +1581,42 @@ Instructions for AI coding assistants.
 // ============================================================================
 
 /**
+ * Parse globs from SKILL.md frontmatter
+ * Supports both array format and comma-separated string
+ */
+function parseGlobsFromFrontmatter(content: string): string[] | undefined {
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!frontmatterMatch) return undefined;
+
+  const frontmatter = frontmatterMatch[1];
+
+  // Try to find globs field
+  const globsMatch = frontmatter.match(/^globs:\s*(.+)$/m);
+  if (!globsMatch) return undefined;
+
+  const globsValue = globsMatch[1].trim();
+
+  // Handle array format: ["*.ts", "*.tsx"]
+  if (globsValue.startsWith("[")) {
+    try {
+      // Simple JSON-like array parsing
+      const parsed = JSON.parse(globsValue.replace(/'/g, '"'));
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // Fall through to string parsing
+    }
+  }
+
+  // Handle comma-separated: "*.ts, *.tsx"
+  if (globsValue.includes(",")) {
+    return globsValue.split(",").map((g) => g.trim().replace(/^["']|["']$/g, ""));
+  }
+
+  // Single glob
+  return [globsValue.replace(/^["']|["']$/g, "")];
+}
+
+/**
  * Convert SKILL.md to Cursor RULE.md format
  * New format uses folders: .cursor/rules/<name>/RULE.md
  */
@@ -1592,13 +1628,21 @@ function convertToRuleMd(skill: CachedSkill, skillContent: string): string {
     ? `|\n${description.split("\n").map(line => `  ${line}`).join("\n")}`
     : `"${description.replace(/"/g, '\\"')}"`;
 
+  // Parse globs from SKILL.md frontmatter if present
+  const globs = parseGlobsFromFrontmatter(skillContent);
+
   // Strip existing frontmatter from skill content
   const contentWithoutFrontmatter = skillContent.replace(/^---[\s\S]*?---\n*/, "");
 
   const lines = ["---"];
   lines.push(`description: ${descriptionYaml}`);
   lines.push(`alwaysApply: false`);
-  // Add globs if specified in the skill's cursor config (optional)
+
+  // Add globs if specified in the skill's frontmatter
+  if (globs && globs.length > 0) {
+    lines.push(`globs: ${JSON.stringify(globs)}`);
+  }
+
   lines.push("---");
   lines.push("");
   lines.push(contentWithoutFrontmatter);
