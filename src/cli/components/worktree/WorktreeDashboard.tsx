@@ -391,18 +391,25 @@ export function WorktreeDashboard() {
 
   return (
     <Box flexDirection="column" height="100%">
+      {/* Header bar */}
+      <Box paddingX={1} marginBottom={0}>
+        <Text bold color="cyan">Worktree Manager</Text>
+        <Text dimColor> - </Text>
+        <Text dimColor>{worktrees.length} worktree{worktrees.length !== 1 ? "s" : ""}</Text>
+      </Box>
+
       {/* Main panels */}
       <Box flexGrow={1} flexDirection="row">
         {/* Left panel: Worktree list */}
         <Box
-          width="30%"
+          width="40%"
           flexDirection="column"
           borderStyle={safeBorderStyle}
-          borderColor={focusedPanel === "list" ? "cyan" : undefined}
+          borderColor={focusedPanel === "list" ? "cyan" : "gray"}
         >
           <Box paddingX={1}>
-            <Text bold color={focusedPanel === "list" ? "cyan" : undefined}>
-              WORKTREES
+            <Text bold color={focusedPanel === "list" ? "cyan" : "white"}>
+              Worktrees
             </Text>
           </Box>
           <WorktreeList
@@ -418,7 +425,7 @@ export function WorktreeDashboard() {
           flexGrow={1}
           flexDirection="column"
           borderStyle={safeBorderStyle}
-          borderColor={focusedPanel === "detail" ? "cyan" : undefined}
+          borderColor={focusedPanel === "detail" ? "cyan" : "gray"}
         >
           <WorktreeDetail
             worktree={selectedWorktree}
@@ -428,29 +435,36 @@ export function WorktreeDashboard() {
       </Box>
 
       {/* Action bar */}
-      <Box paddingX={1} gap={2}>
-        <Text dimColor>[j/k]</Text>
-        <Text>nav</Text>
-        <Text dimColor>[Tab]</Text>
-        <Text>switch</Text>
-        <Text dimColor>[c]</Text>
-        <Text>claim</Text>
-        <Text dimColor>[r]</Text>
-        <Text>release</Text>
-        <Text dimColor>[d]</Text>
-        <Text color="red">delete</Text>
-        <Text dimColor>[R]</Text>
-        <Text>refresh</Text>
-        <Text dimColor>[?]</Text>
-        <Text>help</Text>
-        <Text dimColor>[q]</Text>
-        <Text>quit</Text>
+      <Box paddingX={1} gap={1} marginTop={0}>
+        <Text dimColor>j/k</Text>
+        <Text color="gray">nav</Text>
+        <Text dimColor>|</Text>
+        <Text dimColor>Tab</Text>
+        <Text color="gray">panel</Text>
+        <Text dimColor>|</Text>
+        <Text dimColor>c</Text>
+        <Text color="gray">claim</Text>
+        <Text dimColor>|</Text>
+        <Text dimColor>r</Text>
+        <Text color="gray">release</Text>
+        <Text dimColor>|</Text>
+        <Text dimColor>d</Text>
+        <Text color="red">del</Text>
+        <Text dimColor>|</Text>
+        <Text dimColor>R</Text>
+        <Text color="gray">refresh</Text>
+        <Text dimColor>|</Text>
+        <Text dimColor>?</Text>
+        <Text color="gray">help</Text>
+        <Text dimColor>|</Text>
+        <Text dimColor>q</Text>
+        <Text color="gray">quit</Text>
       </Box>
 
       {/* Status bar */}
       {statusMessage && (
         <Box paddingX={1}>
-          <Text color="yellow">{statusMessage}</Text>
+          <Text color="green">{statusMessage}</Text>
         </Box>
       )}
 

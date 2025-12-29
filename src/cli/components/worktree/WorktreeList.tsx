@@ -1,10 +1,12 @@
 /**
  * WorktreeList - Navigable list of worktrees
+ *
+ * Displays worktrees in a clean, scannable list with status indicators.
+ * Uses ASCII-safe characters for maximum terminal compatibility.
  */
 
 import React from "react";
 import { Box, Text, useInput } from "ink";
-import { selectionStyle, statusColors } from "../theme";
 
 interface WorktreeItem {
   name: string;
@@ -40,52 +42,66 @@ export function WorktreeList({ worktrees, selectedIndex, onSelect, focused }: Wo
     <Box flexDirection="column" paddingX={1}>
       {worktrees.map((wt, i) => {
         const isSelected = i === selectedIndex;
-        const indicator = isSelected ? "> " : "  ";
 
-        // Status badge
-        let statusBadge = "";
+        // Status indicator (left side)
+        let statusIndicator = " ";
         let statusColor: "green" | "yellow" | "gray" = "green";
         if (wt.status === "stale") {
-          statusBadge = "[stale]";
+          statusIndicator = "~";
           statusColor = "yellow";
         } else if (wt.status === "orphaned") {
-          statusBadge = "[orphan]";
+          statusIndicator = "?";
           statusColor = "gray";
         }
 
-        // Claim indicator
-        const claimBadge = wt.claimedBy ? `[${wt.claimedBy}]` : "";
+        // Truncate name to fit
+        const maxNameLen = 22;
+        const displayName = wt.name.length > maxNameLen
+          ? wt.name.slice(0, maxNameLen - 2) + ".."
+          : wt.name.padEnd(maxNameLen);
 
-        // Changes indicator (uncommitted changes)
-        const uncommittedBadge = wt.uncommittedChanges && wt.uncommittedChanges > 0
-          ? `*${wt.uncommittedChanges}`
-          : "";
+        // Build status badges (right-aligned)
+        const badges: { text: string; color: "yellow" | "cyan" | "magenta" }[] = [];
 
-        // Unpushed commits indicator
-        const unpushedBadge = wt.unpushedCommits && wt.unpushedCommits > 0
-          ? `↑${wt.unpushedCommits}`
-          : "";
+        // Uncommitted changes: show as "M3" (modified)
+        if (wt.uncommittedChanges && wt.uncommittedChanges > 0) {
+          badges.push({ text: `M${wt.uncommittedChanges}`, color: "yellow" });
+        }
+
+        // Unpushed commits: show as "^3" (up arrow, ASCII-safe)
+        if (wt.unpushedCommits && wt.unpushedCommits > 0) {
+          badges.push({ text: `^${wt.unpushedCommits}`, color: "cyan" });
+        }
+
+        // Claimed by indicator
+        if (wt.claimedBy) {
+          badges.push({ text: `@${wt.claimedBy.slice(0, 6)}`, color: "magenta" });
+        }
 
         return (
-          <Box key={wt.name}>
-            <Text
-              {...(isSelected && focused ? selectionStyle.primary : {})}
-            >
-              {indicator}
-              {wt.name.length > 20 ? wt.name.slice(0, 18) + ".." : wt.name}
+          <Box key={wt.name} gap={1}>
+            {/* Selection indicator */}
+            <Text color={isSelected && focused ? "cyan" : undefined}>
+              {isSelected ? ">" : " "}
             </Text>
-            {statusBadge && (
-              <Text color={statusColor}> {statusBadge}</Text>
-            )}
-            {claimBadge && (
-              <Text color="magenta"> {claimBadge}</Text>
-            )}
-            {uncommittedBadge && (
-              <Text color="yellow"> {uncommittedBadge}</Text>
-            )}
-            {unpushedBadge && (
-              <Text color="cyan"> {unpushedBadge}</Text>
-            )}
+
+            {/* Status indicator */}
+            <Text color={statusColor}>{statusIndicator}</Text>
+
+            {/* Worktree name */}
+            <Text
+              bold={isSelected}
+              color={isSelected && focused ? "cyan" : undefined}
+            >
+              {displayName}
+            </Text>
+
+            {/* Badges */}
+            {badges.map((badge, idx) => (
+              <Text key={idx} color={badge.color} dimColor={!isSelected}>
+                {badge.text}
+              </Text>
+            ))}
           </Box>
         );
       })}

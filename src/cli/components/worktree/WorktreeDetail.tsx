@@ -5,7 +5,6 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { execSync } from "child_process";
-import { selectionStyle } from "../theme";
 
 interface LogEntry {
   time: string;
@@ -130,29 +129,32 @@ export function WorktreeDetail({ worktree, focused }: WorktreeDetailProps) {
     <Box flexDirection="column" height="100%">
       {/* Header with worktree info */}
       <Box paddingX={1} flexDirection="column">
-        <Box gap={2}>
-          <Text bold>{worktree.name}</Text>
+        <Box gap={1}>
+          <Text bold color={focused ? "cyan" : "white"}>{worktree.name}</Text>
           {worktree.linkedIssue && (
-            <Text color="cyan">[{worktree.linkedIssue}]</Text>
+            <Text color="yellow">{worktree.linkedIssue}</Text>
           )}
           {worktree.claimedBy && (
-            <Text color="magenta">claimed by {worktree.claimedBy}</Text>
+            <Text color="magenta">@{worktree.claimedBy}</Text>
           )}
         </Box>
-        <Text dimColor>branch: {worktree.branch}</Text>
+        <Text dimColor>on {worktree.branch}</Text>
+        <Text dimColor>{"-".repeat(40)}</Text>
       </Box>
 
       {/* Tab bar */}
-      <Box paddingX={1} marginTop={1} gap={2}>
+      <Box paddingX={1} marginTop={1} gap={3}>
         <Text
-          {...(logsTab && focused ? selectionStyle.primary : {})}
           bold={logsTab}
+          color={logsTab ? (focused ? "cyan" : "white") : "gray"}
+          underline={logsTab}
         >
           Logs ({worktree.logs.length})
         </Text>
         <Text
-          {...(commitsTab && focused ? selectionStyle.primary : {})}
           bold={commitsTab}
+          color={commitsTab ? (focused ? "cyan" : "white") : "gray"}
+          underline={commitsTab}
         >
           Commits ({commits.length})
         </Text>
@@ -170,7 +172,7 @@ export function WorktreeDetail({ worktree, focused }: WorktreeDetailProps) {
 
       {/* Navigation hint */}
       <Box paddingX={1}>
-        <Text dimColor>[h/l] switch tabs  [j/k] scroll</Text>
+        <Text dimColor>h/l tabs | j/k scroll</Text>
       </Box>
     </Box>
   );

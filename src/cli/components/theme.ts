@@ -40,9 +40,15 @@ export const statusColors = {
 } as const;
 
 /**
- * Border style that works on all terminals
- * 'single' uses Unicode box-drawing characters that may not render properly
- * 'classic' uses ASCII characters (+, -, |) that work everywhere
+ * Border style configuration
+ *
+ * Options:
+ * - 'single': Unicode box-drawing (┌─┐│└┘) - cleaner but may not work everywhere
+ * - 'round': Rounded corners (╭─╮│╰╯) - modern look, requires Unicode support
+ * - 'double': Double lines (╔═╗║╚╝) - bold appearance
+ * - 'classic': ASCII (+--+||) - works everywhere
+ *
+ * Using 'classic' for maximum terminal compatibility.
  */
 export const safeBorderStyle = "classic" as const;
 
