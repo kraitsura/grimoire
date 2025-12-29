@@ -1292,27 +1292,62 @@ const GenericAdapter: AgentAdapter = {
 // ============================================================================
 
 /**
+ * Get the effective agent MD path for reading, checking override first
+ * Codex supports AGENTS.override.md which takes precedence over AGENTS.md
+ */
+function getCodexAgentMdPathForRead(projectPath: string): string {
+  const overridePath = join(projectPath, "AGENTS.override.md");
+  if (existsSync(overridePath)) {
+    return overridePath;
+  }
+  return join(projectPath, "AGENTS.md");
+}
+
+/**
+ * Check if an AGENTS.override.md exists at the given path
+ */
+function hasCodexOverrideFile(projectPath: string): boolean {
+  return existsSync(join(projectPath, "AGENTS.override.md"));
+}
+
+/**
  * Codex adapter
  *
  * Codex configuration:
  * - Agent MD: AGENTS.md (walks from repo root to cwd)
+ * - Override: AGENTS.override.md takes precedence when present
  * - Config: ~/.codex/config.toml
- * - Skills: Injected into AGENTS.md (no separate skills dir)
+ * - Skills: .codex/skills/<name>/SKILL.md (file-based, Dec 2025 format)
+ * - Global skills: ~/.codex/skills/<name>/SKILL.md
  */
 const CodexAdapter: AgentAdapter = {
   name: "codex",
 
   detect: (projectPath: string) =>
     Effect.gen(function* () {
-      // Check for AGENTS.md file (Codex uses this)
-      // Note: We don't check ~/.codex as that's global config
+      // Check for AGENTS.md, AGENTS.override.md, or .codex/ directory
       const agentsMd = join(projectPath, "AGENTS.md");
-      return existsSync(agentsMd);
+      const agentsOverrideMd = join(projectPath, "AGENTS.override.md");
+      const codexDir = join(projectPath, ".codex");
+      return existsSync(agentsMd) || existsSync(agentsOverrideMd) || existsSync(codexDir);
     }),
 
   init: (projectPath: string) =>
     Effect.gen(function* () {
       const agentsMdPath = join(projectPath, "AGENTS.md");
+      const skillsDir = join(projectPath, ".codex", "skills");
+
+      // Create .codex/skills/ directory
+      yield* Effect.tryPromise({
+        try: () => mkdir(skillsDir, { recursive: true }),
+        catch: (error) =>
+          new AgentAdapterError({
+            agent: "codex",
+            operation: "init",
+            message: `Failed to create skills directory: ${skillsDir}`,
+            cause: error,
+          }),
+      });
 
       // Ensure AGENTS.md exists with managed section
       const agentsMdExists = existsSync(agentsMdPath);
@@ -1364,7 +1399,7 @@ Instructions for AI coding assistants.
     }).pipe(Effect.orDie),
 
   getSkillsDir: (projectPath: string) => {
-    // Codex doesn't have a skills dir - it uses AGENTS.md injection
+    // Codex now supports skills directory (Dec 2025)
     return join(projectPath, ".codex", "skills");
   },
 
@@ -1383,45 +1418,60 @@ Instructions for AI coding assistants.
         skillFileCopied: false,
       };
 
-      // Codex uses injection-based skills (no file copying)
-      // Global scope not supported for injection-based adapters
       const scope = options?.scope ?? "project";
-      if (scope === "global") {
-        return yield* Effect.fail(
-          new AgentAdapterError({
-            agent: "codex",
-            operation: "enableSkill",
-            message: "Codex uses injection-based skills. Global scope is not supported.",
-          })
-        );
-      }
+      const shouldLink = options?.link ?? false;
 
-      // For Codex, we inject skill content into AGENTS.md rather than copying files
-      // Read SKILL.md content and inject it
+      // Codex now supports file-based skills (Dec 2025 format)
+      // Skills go in .codex/skills/<name>/SKILL.md
       if (skill.skillMdPath) {
-        const skillContent = yield* Effect.tryPromise(() =>
-          readFile(skill.skillMdPath!, "utf-8")
-        ).pipe(Effect.orElse(() => Effect.succeed("")));
+        // Determine target directory based on scope
+        const skillsDir = scope === "global"
+          ? CodexAdapter.getGlobalSkillsDir()
+          : CodexAdapter.getSkillsDir(projectPath);
+        const skillDir = join(skillsDir, skill.manifest.name);
 
-        if (skillContent) {
-          // Strip frontmatter before injection
-          const contentWithoutFrontmatter = skillContent.replace(/^---[\s\S]*?---\n*/, "");
-          yield* CodexAdapter.injectContent(
-            projectPath,
-            skill.manifest.name,
-            contentWithoutFrontmatter
-          ).pipe(
-            Effect.mapError(
-              (error) =>
+        // Get the source cache directory (parent of SKILL.md)
+        const sourceCacheDir = dirname(skill.skillMdPath);
+
+        if (shouldLink && scope === "project") {
+          // Create symlink from global to project
+          const globalSkillDir = join(CodexAdapter.getGlobalSkillsDir(), skill.manifest.name);
+          if (existsSync(globalSkillDir)) {
+            yield* Effect.tryPromise({
+              try: async () => {
+                const { symlink } = await import("node:fs/promises");
+                await mkdir(dirname(skillDir), { recursive: true });
+                await symlink(globalSkillDir, skillDir, "dir");
+              },
+              catch: (error) =>
                 new AgentAdapterError({
                   agent: "codex",
                   operation: "enableSkill",
-                  message: `Failed to inject content: ${error.message}`,
+                  message: `Failed to create symlink: ${error instanceof Error ? error.message : String(error)}`,
                   cause: error,
-                })
-            )
+                }),
+            });
+            result.skillFileCopied = true;
+            result.linked = true;
+          } else {
+            return yield* Effect.fail(
+              new AgentAdapterError({
+                agent: "codex",
+                operation: "enableSkill",
+                message: `Cannot link: skill not installed globally. Run 'grimoire skills enable ${skill.manifest.name} --global' first.`,
+              })
+            );
+          }
+        } else {
+          // Copy entire skill directory from cache to target location
+          // Codex uses standard SKILL.md format (agentskills.io compatible)
+          yield* copySkillDirectoryToProject(
+            sourceCacheDir,
+            skillDir,
+            { manifest: skill.manifest, addFrontmatter: true },
+            "codex"
           );
-          result.injected = true;
+          result.skillFileCopied = true;
         }
       }
 
@@ -1430,19 +1480,45 @@ Instructions for AI coding assistants.
 
   disableSkill: (projectPath: string, skillName: string) =>
     Effect.gen(function* () {
+      const skillsDir = CodexAdapter.getSkillsDir(projectPath);
+      const skillDir = join(skillsDir, skillName);
+
+      // Remove skill directory if it exists (.codex/skills/<name>/)
+      if (existsSync(skillDir)) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            const { rm } = await import("node:fs/promises");
+            await rm(skillDir, { recursive: true, force: true });
+          },
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "codex",
+              operation: "disableSkill",
+              message: `Failed to remove skill directory: ${skillDir}`,
+              cause: error,
+            }),
+        });
+      }
+
+      // Also remove any legacy injection from AGENTS.md
       yield* CodexAdapter.removeInjection(projectPath, skillName);
     }).pipe(Effect.orDie),
 
   injectContent: (projectPath: string, skillName: string, content: string) =>
     Effect.gen(function* () {
-      const agentsMdPath = CodexAdapter.getAgentMdPath(projectPath);
+      // Use override file if it exists, otherwise regular AGENTS.md
+      const agentsMdPath = getCodexAgentMdPathForRead(projectPath);
+
+      if (!existsSync(agentsMdPath)) {
+        return;
+      }
 
       const currentContent = yield* Effect.tryPromise({
         try: () => readFile(agentsMdPath, "utf-8"),
         catch: (error) =>
           new InjectionError({
             file: agentsMdPath,
-            message: `Failed to read AGENTS.md`,
+            message: `Failed to read ${hasCodexOverrideFile(projectPath) ? "AGENTS.override.md" : "AGENTS.md"}`,
           }),
       });
 
@@ -1453,43 +1529,49 @@ Instructions for AI coding assistants.
         catch: (error) =>
           new InjectionError({
             file: agentsMdPath,
-            message: `Failed to write AGENTS.md`,
+            message: `Failed to write ${hasCodexOverrideFile(projectPath) ? "AGENTS.override.md" : "AGENTS.md"}`,
           }),
       });
     }),
 
   removeInjection: (projectPath: string, skillName: string) =>
     Effect.gen(function* () {
-      const agentsMdPath = CodexAdapter.getAgentMdPath(projectPath);
+      // Check both override and regular file for injections to remove
+      const filesToCheck = [
+        join(projectPath, "AGENTS.override.md"),
+        join(projectPath, "AGENTS.md"),
+      ];
 
-      if (!existsSync(agentsMdPath)) {
-        return;
-      }
+      for (const agentsMdPath of filesToCheck) {
+        if (!existsSync(agentsMdPath)) {
+          continue;
+        }
 
-      const currentContent = yield* Effect.tryPromise({
-        try: () => readFile(agentsMdPath, "utf-8"),
-        catch: (error) =>
-          new AgentAdapterError({
-            agent: "codex",
-            operation: "removeInjection",
-            message: `Failed to read AGENTS.md`,
-            cause: error,
-          }),
-      });
-
-      const updatedContent = removeSkillInjection(currentContent, skillName);
-
-      if (updatedContent !== currentContent) {
-        yield* Effect.tryPromise({
-          try: () => writeFile(agentsMdPath, updatedContent, "utf-8"),
+        const currentContent = yield* Effect.tryPromise({
+          try: () => readFile(agentsMdPath, "utf-8"),
           catch: (error) =>
             new AgentAdapterError({
               agent: "codex",
               operation: "removeInjection",
-              message: `Failed to write AGENTS.md`,
+              message: `Failed to read ${agentsMdPath}`,
               cause: error,
             }),
         });
+
+        const updatedContent = removeSkillInjection(currentContent, skillName);
+
+        if (updatedContent !== currentContent) {
+          yield* Effect.tryPromise({
+            try: () => writeFile(agentsMdPath, updatedContent, "utf-8"),
+            catch: (error) =>
+              new AgentAdapterError({
+                agent: "codex",
+                operation: "removeInjection",
+                message: `Failed to write ${agentsMdPath}`,
+                cause: error,
+              }),
+          });
+        }
       }
     }).pipe(Effect.orDie),
 };
@@ -1499,20 +1581,24 @@ Instructions for AI coding assistants.
 // ============================================================================
 
 /**
- * Convert SKILL.md to Cursor MDC format
+ * Convert SKILL.md to Cursor RULE.md format
+ * New format uses folders: .cursor/rules/<name>/RULE.md
  */
-function convertToMdc(skill: CachedSkill, skillContent: string): string {
-  const frontmatter = {
-    description: skill.manifest.description || skill.manifest.name,
-    alwaysApply: false,
-  };
+function convertToRuleMd(skill: CachedSkill, skillContent: string): string {
+  const description = skill.manifest.description || skill.manifest.name;
+
+  // Handle multi-line descriptions
+  const descriptionYaml = description.includes("\n")
+    ? `|\n${description.split("\n").map(line => `  ${line}`).join("\n")}`
+    : `"${description.replace(/"/g, '\\"')}"`;
 
   // Strip existing frontmatter from skill content
   const contentWithoutFrontmatter = skillContent.replace(/^---[\s\S]*?---\n*/, "");
 
   const lines = ["---"];
-  lines.push(`description: ${frontmatter.description}`);
-  lines.push(`alwaysApply: ${frontmatter.alwaysApply}`);
+  lines.push(`description: ${descriptionYaml}`);
+  lines.push(`alwaysApply: false`);
+  // Add globs if specified in the skill's cursor config (optional)
   lines.push("---");
   lines.push("");
   lines.push(contentWithoutFrontmatter);
@@ -1524,8 +1610,8 @@ function convertToMdc(skill: CachedSkill, skillContent: string): string {
  * Cursor adapter
  *
  * Cursor configuration:
- * - Rules: .cursor/rules/*.mdc (MDC format)
- * - No AGENTS.md - uses rule files directly
+ * - Rules: .cursor/rules/<name>/RULE.md (folder-based format)
+ * - Supports AGENTS.md fallback for legacy compatibility
  */
 const CursorAdapter: AgentAdapter = {
   name: "cursor",
@@ -1552,6 +1638,23 @@ const CursorAdapter: AgentAdapter = {
             cause: error,
           }),
       });
+
+      // Create AGENTS.md for legacy compatibility
+      const agentsMdPath = join(projectPath, "AGENTS.md");
+      if (!existsSync(agentsMdPath)) {
+        const defaultContent = "# Agent Instructions\n\n";
+        const contentWithManaged = addManagedSection(defaultContent);
+        yield* Effect.tryPromise({
+          try: () => writeFile(agentsMdPath, contentWithManaged, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "cursor",
+              operation: "init",
+              message: `Failed to create AGENTS.md`,
+              cause: error,
+            }),
+        });
+      }
     }).pipe(Effect.orDie),
 
   getSkillsDir: (projectPath: string) => {
@@ -1563,9 +1666,8 @@ const CursorAdapter: AgentAdapter = {
   },
 
   getAgentMdPath: (projectPath: string) => {
-    // Cursor doesn't use a single agent MD file
-    // Return the rules directory instead
-    return join(projectPath, ".cursor", "rules");
+    // Cursor supports AGENTS.md as fallback
+    return join(projectPath, "AGENTS.md");
   },
 
   enableSkill: (projectPath: string, skill: CachedSkill, options?: EnableSkillOptions) =>
@@ -1580,31 +1682,35 @@ const CursorAdapter: AgentAdapter = {
 
       if (skill.skillMdPath) {
         // Determine target directory based on scope
+        // New format: .cursor/rules/<name>/RULE.md
         const rulesDir = scope === "global"
           ? CursorAdapter.getGlobalSkillsDir()
           : CursorAdapter.getSkillsDir(projectPath);
-        const ruleFile = join(rulesDir, `${skill.manifest.name}.mdc`);
+        const ruleDir = join(rulesDir, skill.manifest.name);
+        const ruleFile = join(ruleDir, "RULE.md");
 
         // Ensure rules directory exists
         yield* Effect.tryPromise({
-          try: () => mkdir(rulesDir, { recursive: true }),
+          try: () => mkdir(ruleDir, { recursive: true }),
           catch: (error) =>
             new AgentAdapterError({
               agent: "cursor",
               operation: "enableSkill",
-              message: `Failed to create rules directory`,
+              message: `Failed to create rule directory`,
               cause: error,
             }),
         });
 
         if (shouldLink && scope === "project") {
           // Create symlink from global to project
-          const globalRuleFile = join(CursorAdapter.getGlobalSkillsDir(), `${skill.manifest.name}.mdc`);
-          if (existsSync(globalRuleFile)) {
+          const globalRuleDir = join(CursorAdapter.getGlobalSkillsDir(), skill.manifest.name);
+          if (existsSync(globalRuleDir)) {
             yield* Effect.tryPromise({
               try: async () => {
-                const { symlink } = await import("node:fs/promises");
-                await symlink(globalRuleFile, ruleFile);
+                const { symlink, rm } = await import("node:fs/promises");
+                // Remove the directory we just created to replace with symlink
+                await rm(ruleDir, { recursive: true, force: true });
+                await symlink(globalRuleDir, ruleDir, "dir");
               },
               catch: (error) =>
                 new AgentAdapterError({
@@ -1626,7 +1732,7 @@ const CursorAdapter: AgentAdapter = {
             );
           }
         } else {
-          // Read SKILL.md and convert to MDC format
+          // Read SKILL.md and convert to RULE.md format
           const skillContent = yield* Effect.tryPromise({
             try: () => readFile(skill.skillMdPath!, "utf-8"),
             catch: (error) =>
@@ -1638,15 +1744,15 @@ const CursorAdapter: AgentAdapter = {
               }),
           });
 
-          const mdcContent = convertToMdc(skill, skillContent);
+          const ruleMdContent = convertToRuleMd(skill, skillContent);
 
           yield* Effect.tryPromise({
-            try: () => writeFile(ruleFile, mdcContent, "utf-8"),
+            try: () => writeFile(ruleFile, ruleMdContent, "utf-8"),
             catch: (error) =>
               new AgentAdapterError({
                 agent: "cursor",
                 operation: "enableSkill",
-                message: `Failed to write rule file`,
+                message: `Failed to write RULE.md file`,
                 cause: error,
               }),
           });
@@ -1660,19 +1766,38 @@ const CursorAdapter: AgentAdapter = {
   disableSkill: (projectPath: string, skillName: string) =>
     Effect.gen(function* () {
       const rulesDir = CursorAdapter.getSkillsDir(projectPath);
-      const ruleFile = join(rulesDir, `${skillName}.mdc`);
 
-      if (existsSync(ruleFile)) {
+      // New format: .cursor/rules/<name>/ folder
+      const ruleDir = join(rulesDir, skillName);
+      if (existsSync(ruleDir)) {
         yield* Effect.tryPromise({
           try: async () => {
-            const { unlink } = await import("node:fs/promises");
-            await unlink(ruleFile);
+            const { rm } = await import("node:fs/promises");
+            await rm(ruleDir, { recursive: true, force: true });
           },
           catch: (error) =>
             new AgentAdapterError({
               agent: "cursor",
               operation: "disableSkill",
-              message: `Failed to remove rule file: ${ruleFile}`,
+              message: `Failed to remove rule directory: ${ruleDir}`,
+              cause: error,
+            }),
+        });
+      }
+
+      // Legacy format: .cursor/rules/<name>.mdc file
+      const legacyRuleFile = join(rulesDir, `${skillName}.mdc`);
+      if (existsSync(legacyRuleFile)) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            const { unlink } = await import("node:fs/promises");
+            await unlink(legacyRuleFile);
+          },
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "cursor",
+              operation: "disableSkill",
+              message: `Failed to remove legacy rule file: ${legacyRuleFile}`,
               cause: error,
             }),
         });
@@ -1681,14 +1806,64 @@ const CursorAdapter: AgentAdapter = {
 
   injectContent: (projectPath: string, skillName: string, content: string) =>
     Effect.gen(function* () {
-      // Cursor uses individual rule files, not injection
-      // This is a no-op for Cursor
+      // Cursor primarily uses individual rule files
+      // But we support AGENTS.md injection as fallback
+      const agentsMdPath = CursorAdapter.getAgentMdPath(projectPath);
+      if (existsSync(agentsMdPath)) {
+        const currentContent = yield* Effect.tryPromise({
+          try: () => readFile(agentsMdPath, "utf-8"),
+          catch: (error) =>
+            new InjectionError({
+              file: agentsMdPath,
+              message: `Failed to read AGENTS.md`,
+            }),
+        });
+
+        const updatedContent = yield* addSkillInjection(currentContent, skillName, content);
+
+        yield* Effect.tryPromise({
+          try: () => writeFile(agentsMdPath, updatedContent, "utf-8"),
+          catch: (error) =>
+            new InjectionError({
+              file: agentsMdPath,
+              message: `Failed to write AGENTS.md`,
+            }),
+        });
+      }
     }),
 
   removeInjection: (projectPath: string, skillName: string) =>
     Effect.gen(function* () {
-      // Cursor uses individual rule files, not injection
-      // This is a no-op for Cursor
+      const agentsMdPath = CursorAdapter.getAgentMdPath(projectPath);
+      if (!existsSync(agentsMdPath)) {
+        return;
+      }
+
+      const currentContent = yield* Effect.tryPromise({
+        try: () => readFile(agentsMdPath, "utf-8"),
+        catch: (error) =>
+          new AgentAdapterError({
+            agent: "cursor",
+            operation: "removeInjection",
+            message: `Failed to read AGENTS.md`,
+            cause: error,
+          }),
+      });
+
+      const updatedContent = removeSkillInjection(currentContent, skillName);
+
+      if (updatedContent !== currentContent) {
+        yield* Effect.tryPromise({
+          try: () => writeFile(agentsMdPath, updatedContent, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "cursor",
+              operation: "removeInjection",
+              message: `Failed to write AGENTS.md`,
+              cause: error,
+            }),
+        });
+      }
     }).pipe(Effect.orDie),
 };
 
@@ -2104,6 +2279,339 @@ Instructions for Amp AI coding assistant.
 };
 
 // ============================================================================
+// Gemini Adapter (Google Gemini CLI)
+// ============================================================================
+
+/**
+ * Gemini adapter
+ *
+ * Gemini CLI configuration:
+ * - Agent MD: GEMINI.md (project root, or hierarchical in subdirs)
+ * - Global config: ~/.gemini/GEMINI.md
+ * - Settings: ~/.gemini/settings.json
+ * - Skills: .gemini/skills/<name>/SKILL.md (project)
+ * - Global skills: ~/.gemini/skills/<name>/SKILL.md
+ */
+const GeminiAdapter: AgentAdapter = {
+  name: "gemini",
+
+  detect: (projectPath: string) =>
+    Effect.gen(function* () {
+      // Check for GEMINI.md file or .gemini/ directory
+      const geminiMd = join(projectPath, "GEMINI.md");
+      const geminiDir = join(projectPath, ".gemini");
+      return existsSync(geminiMd) || existsSync(geminiDir);
+    }),
+
+  init: (projectPath: string) =>
+    Effect.gen(function* () {
+      const geminiMdPath = join(projectPath, "GEMINI.md");
+      const geminiDir = join(projectPath, ".gemini");
+      const skillsDir = join(geminiDir, "skills");
+
+      // Create .gemini/skills/ directory
+      yield* Effect.tryPromise({
+        try: () => mkdir(skillsDir, { recursive: true }),
+        catch: (error) =>
+          new AgentAdapterError({
+            agent: "gemini",
+            operation: "init",
+            message: `Failed to create skills directory: ${skillsDir}`,
+            cause: error,
+          }),
+      });
+
+      // Ensure GEMINI.md exists with managed section
+      const geminiMdExists = existsSync(geminiMdPath);
+      if (!geminiMdExists) {
+        const defaultContent = `# Gemini CLI Instructions
+
+Instructions for Gemini AI coding assistant.
+
+<!-- skills:managed:start -->
+<!-- This section is managed by grimoire skills -->
+<!-- skills:managed:end -->
+`;
+        yield* Effect.tryPromise({
+          try: () => writeFile(geminiMdPath, defaultContent, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "gemini",
+              operation: "init",
+              message: `Failed to create GEMINI.md`,
+              cause: error,
+            }),
+        });
+      } else {
+        const content = yield* Effect.tryPromise({
+          try: () => readFile(geminiMdPath, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "gemini",
+              operation: "init",
+              message: `Failed to read GEMINI.md`,
+              cause: error,
+            }),
+        });
+
+        if (!hasManagedSection(content)) {
+          const contentWithManaged = addManagedSection(content);
+          yield* Effect.tryPromise({
+            try: () => writeFile(geminiMdPath, contentWithManaged, "utf-8"),
+            catch: (error) =>
+              new AgentAdapterError({
+                agent: "gemini",
+                operation: "init",
+                message: `Failed to update GEMINI.md`,
+                cause: error,
+              }),
+          });
+        }
+      }
+    }).pipe(Effect.orDie),
+
+  getSkillsDir: (projectPath: string) => {
+    return join(projectPath, ".gemini", "skills");
+  },
+
+  getGlobalSkillsDir: () => {
+    return getGlobalSkillsDir("gemini");
+  },
+
+  getAgentMdPath: (projectPath: string) => {
+    return join(projectPath, "GEMINI.md");
+  },
+
+  enableSkill: (projectPath: string, skill: CachedSkill, options?: EnableSkillOptions) =>
+    Effect.gen(function* () {
+      const result: AgentEnableResult = {
+        injected: false,
+        skillFileCopied: false,
+      };
+
+      const scope = options?.scope ?? "project";
+      const shouldLink = options?.link ?? false;
+
+      // Gemini uses file-based skills similar to Claude Code
+      // Skills go in .gemini/skills/<name>/SKILL.md
+      if (skill.skillMdPath) {
+        // Determine target directory based on scope
+        const skillsDir = scope === "global"
+          ? GeminiAdapter.getGlobalSkillsDir()
+          : GeminiAdapter.getSkillsDir(projectPath);
+        const skillDir = join(skillsDir, skill.manifest.name);
+
+        // Get the source cache directory (parent of SKILL.md)
+        const sourceCacheDir = dirname(skill.skillMdPath);
+
+        if (shouldLink && scope === "project") {
+          // Create symlink from global to project
+          const globalSkillDir = join(GeminiAdapter.getGlobalSkillsDir(), skill.manifest.name);
+          if (existsSync(globalSkillDir)) {
+            yield* Effect.tryPromise({
+              try: async () => {
+                const { symlink } = await import("node:fs/promises");
+                await mkdir(dirname(skillDir), { recursive: true });
+                await symlink(globalSkillDir, skillDir, "dir");
+              },
+              catch: (error) =>
+                new AgentAdapterError({
+                  agent: "gemini",
+                  operation: "enableSkill",
+                  message: `Failed to create symlink: ${error instanceof Error ? error.message : String(error)}`,
+                  cause: error,
+                }),
+            });
+            result.skillFileCopied = true;
+            result.linked = true;
+          } else {
+            return yield* Effect.fail(
+              new AgentAdapterError({
+                agent: "gemini",
+                operation: "enableSkill",
+                message: `Cannot link: skill not installed globally. Run 'grimoire skills enable ${skill.manifest.name} --global' first.`,
+              })
+            );
+          }
+        } else {
+          // Copy entire skill directory from cache to target location
+          // Gemini uses standard SKILL.md format with frontmatter
+          yield* copySkillDirectoryToProject(
+            sourceCacheDir,
+            skillDir,
+            { manifest: skill.manifest, addFrontmatter: true },
+            "gemini"
+          );
+          result.skillFileCopied = true;
+        }
+      }
+
+      return result;
+    }),
+
+  disableSkill: (projectPath: string, skillName: string) =>
+    Effect.gen(function* () {
+      const skillsDir = GeminiAdapter.getSkillsDir(projectPath);
+      const skillDir = join(skillsDir, skillName);
+      const legacyFilePath = join(skillsDir, `${skillName}.md`);
+
+      // Remove skill directory if it exists (.gemini/skills/<name>/)
+      if (existsSync(skillDir)) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            const { rm } = await import("node:fs/promises");
+            await rm(skillDir, { recursive: true, force: true });
+          },
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "gemini",
+              operation: "disableSkill",
+              message: `Failed to remove skill directory: ${skillDir}`,
+              cause: error,
+            }),
+        });
+      }
+
+      // Also remove legacy file structure if it exists
+      if (existsSync(legacyFilePath)) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            const { unlink } = await import("node:fs/promises");
+            await unlink(legacyFilePath);
+          },
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "gemini",
+              operation: "disableSkill",
+              message: `Failed to remove legacy skill file: ${legacyFilePath}`,
+              cause: error,
+            }),
+        });
+      }
+
+      // Remove injection from GEMINI.md
+      yield* GeminiAdapter.removeInjection(projectPath, skillName);
+    }).pipe(Effect.orDie),
+
+  configureMcp: (projectPath: string, name: string, config: McpConfig) =>
+    Effect.gen(function* () {
+      // Gemini uses ~/.gemini/settings.json for MCP configuration
+      const settingsPath = join(projectPath, ".gemini", "settings.json");
+
+      // Read existing settings or create empty object
+      let settings: any = {};
+      if (existsSync(settingsPath)) {
+        const content = yield* Effect.tryPromise({
+          try: () => readFile(settingsPath, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "gemini",
+              operation: "configureMcp",
+              message: `Failed to read settings.json`,
+              cause: error,
+            }),
+        });
+        try {
+          settings = JSON.parse(content);
+        } catch (error) {
+          settings = {};
+        }
+      }
+
+      // Add MCP configuration
+      if (!settings.mcpServers) {
+        settings.mcpServers = {};
+      }
+      settings.mcpServers[name] = config;
+
+      // Ensure .gemini directory exists
+      yield* Effect.tryPromise({
+        try: () => mkdir(dirname(settingsPath), { recursive: true }),
+        catch: () => new AgentAdapterError({
+          agent: "gemini",
+          operation: "configureMcp",
+          message: `Failed to create .gemini directory`,
+        }),
+      });
+
+      // Write updated settings
+      yield* Effect.tryPromise({
+        try: () => writeFile(settingsPath, JSON.stringify(settings, null, 2), "utf-8"),
+        catch: (error) =>
+          new AgentAdapterError({
+            agent: "gemini",
+            operation: "configureMcp",
+            message: `Failed to write settings.json`,
+            cause: error,
+          }),
+      });
+    }).pipe(Effect.orDie),
+
+  injectContent: (projectPath: string, skillName: string, content: string) =>
+    Effect.gen(function* () {
+      const geminiMdPath = GeminiAdapter.getAgentMdPath(projectPath);
+
+      // Read current content
+      const currentContent = yield* Effect.tryPromise({
+        try: () => readFile(geminiMdPath, "utf-8"),
+        catch: (error) =>
+          new InjectionError({
+            file: geminiMdPath,
+            message: `Failed to read GEMINI.md`,
+          }),
+      });
+
+      // Add skill injection
+      const updatedContent = yield* addSkillInjection(currentContent, skillName, content);
+
+      // Write updated content
+      yield* Effect.tryPromise({
+        try: () => writeFile(geminiMdPath, updatedContent, "utf-8"),
+        catch: (error) =>
+          new InjectionError({
+            file: geminiMdPath,
+            message: `Failed to write GEMINI.md`,
+          }),
+      });
+    }),
+
+  removeInjection: (projectPath: string, skillName: string) =>
+    Effect.gen(function* () {
+      const geminiMdPath = GeminiAdapter.getAgentMdPath(projectPath);
+
+      if (!existsSync(geminiMdPath)) {
+        return;
+      }
+
+      const currentContent = yield* Effect.tryPromise({
+        try: () => readFile(geminiMdPath, "utf-8"),
+        catch: (error) =>
+          new AgentAdapterError({
+            agent: "gemini",
+            operation: "removeInjection",
+            message: `Failed to read GEMINI.md`,
+            cause: error,
+          }),
+      });
+
+      const updatedContent = removeSkillInjection(currentContent, skillName);
+
+      if (updatedContent !== currentContent) {
+        yield* Effect.tryPromise({
+          try: () => writeFile(geminiMdPath, updatedContent, "utf-8"),
+          catch: (error) =>
+            new AgentAdapterError({
+              agent: "gemini",
+              operation: "removeInjection",
+              message: `Failed to write GEMINI.md`,
+              cause: error,
+            }),
+        });
+      }
+    }).pipe(Effect.orDie),
+};
+
+// ============================================================================
 // Factory Functions
 // ============================================================================
 
@@ -2117,6 +2625,7 @@ const adapters: Record<AgentType, AgentAdapter> = {
   cursor: CursorAdapter,
   aider: AiderAdapter,
   amp: AmpAdapter,
+  gemini: GeminiAdapter,
   generic: GenericAdapter,
 };
 
@@ -2137,9 +2646,10 @@ export function getAgentAdapter(agent: AgentType): AgentAdapter {
  * - Claude Code: .claude/ directory
  * - OpenCode: .opencode/ directory
  * - Cursor: .cursor/ directory
+ * - Gemini: .gemini/ directory or GEMINI.md
  * - Aider: .aider.conf.yml or CONVENTIONS.md
  * - Amp: AGENT.md (singular)
- * - Codex: AGENTS.md
+ * - Codex: .codex/ directory or AGENTS.md
  * - Generic: AGENTS.md (fallback)
  *
  * @param projectPath - Path to the project directory
@@ -2165,6 +2675,12 @@ export function detectAgent(projectPath: string): Effect.Effect<AgentType | null
       return "cursor" as AgentType;
     }
 
+    // Try Gemini (.gemini/ directory or GEMINI.md)
+    const geminiDetected = yield* GeminiAdapter.detect(projectPath);
+    if (geminiDetected) {
+      return "gemini" as AgentType;
+    }
+
     // Try Aider
     const aiderDetected = yield* AiderAdapter.detect(projectPath);
     if (aiderDetected) {
@@ -2177,7 +2693,7 @@ export function detectAgent(projectPath: string): Effect.Effect<AgentType | null
       return "amp" as AgentType;
     }
 
-    // Try Codex (AGENTS.md)
+    // Try Codex (.codex/ directory or AGENTS.md)
     const codexDetected = yield* CodexAdapter.detect(projectPath);
     if (codexDetected) {
       return "codex" as AgentType;
