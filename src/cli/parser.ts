@@ -55,7 +55,7 @@ export function parseArgs(args: string[]): ParsedArgs {
       else {
         const shortFlags = arg.slice(1).split("");
         // Short flags that take a value
-        const valueFlags = new Set(["c", "t", "n"]);
+        const valueFlags = new Set(["c", "t", "n", "I", "p", "b"]);
         for (let j = 0; j < shortFlags.length; j++) {
           const flag = shortFlags[j];
           // If this is a value flag and it's the last in the group

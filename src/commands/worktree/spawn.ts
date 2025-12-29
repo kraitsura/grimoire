@@ -8,7 +8,7 @@
  */
 
 import { Effect } from "effect";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { appendFileSync } from "fs";
@@ -34,6 +34,40 @@ import {
 } from "../../services/terminal";
 import type { WorktreeInfo } from "../../models/worktree";
 import type { AgentSessionMode } from "../../models/agent-session";
+
+/**
+ * Check if Claude OAuth token is configured for headless mode
+ * Returns true if token is set up, false if headless would use API credits
+ */
+const checkHeadlessAuth = (): { hasToken: boolean; error?: string } => {
+  try {
+    // Test with $0 budget - if auth works, we hit budget limit
+    // If no token, we get "Credit balance is too low"
+    const result = spawnSync(
+      "claude",
+      ["--print", "--max-budget-usd", "0", "test"],
+      {
+        timeout: 15000,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }
+    );
+
+    const output = (result.stdout || "") + (result.stderr || "");
+
+    if (output.includes("Credit balance is too low")) {
+      return {
+        hasToken: false,
+        error: "No OAuth token. Headless mode would use API credits.",
+      };
+    }
+
+    // Budget exceeded or other response = auth is working
+    return { hasToken: true };
+  } catch (err) {
+    return { hasToken: false, error: `Auth check failed: ${err}` };
+  }
+};
 
 /**
  * Parameters for spawning a headless session
@@ -164,7 +198,7 @@ const printUsage = () => {
   console.log("Options:");
   console.log("  --branch, -b <name>    Use different branch name");
   console.log("  --prompt, -p <text>    Initial prompt for Claude");
-  console.log("  --issue, -i <id>       Link to beads issue");
+  console.log("  --issue, -I <id>       Link to beads issue (capital I)");
   console.log("  --new-tab              Open Claude in a new terminal tab/window");
   console.log("  --no-copy              Skip copying config files");
   console.log("  --no-hooks             Skip running post-create hooks");
@@ -181,6 +215,8 @@ const printUsage = () => {
   console.log("  --dangerously-skip-permissions");
   console.log("                         Autonomous without sandbox (use with caution)");
   console.log("  --no-sandbox           Disable sandbox (for debugging)");
+  console.log();
+  console.log("Note: Headless mode requires `claude setup-token` for subscription auth.");
   console.log();
   console.log("Examples:");
   console.log('  grimoire wt spawn auth-feature --prompt "Implement OAuth2"');
@@ -211,8 +247,9 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       prompt = args.positional[2];
     }
 
+    // Use -I (capital) for issue to avoid conflict with -i (interactive)
     const linkedIssue =
-      (args.flags.issue as string) || (args.flags.i as string);
+      (args.flags.issue as string) || (args.flags.I as string);
     const noSandbox = args.flags["no-sandbox"] === true;
     const skipCopy = args.flags["no-copy"] === true;
     const skipHooks = args.flags["no-hooks"] === true;
@@ -235,6 +272,31 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       console.log("Hint: Use --srt for sandboxed autonomous execution (recommended)");
       console.log("Hint: Or use -bg/--background for quick background mode (-H --srt combined)");
       process.exit(1);
+    }
+
+    // Check OAuth token for headless mode (subscription vs API credits)
+    if (headless) {
+      console.log("Checking authentication for headless mode...");
+      const authStatus = checkHeadlessAuth();
+      if (!authStatus.hasToken) {
+        console.log();
+        console.log("╔══════════════════════════════════════════════════════════════════╗");
+        console.log("║  ⚠️  NO OAUTH TOKEN - HEADLESS WOULD USE API CREDITS              ║");
+        console.log("╠══════════════════════════════════════════════════════════════════╣");
+        console.log("║  Headless mode requires an OAuth token to use your subscription. ║");
+        console.log("║  Without it, background agents charge against API credits.       ║");
+        console.log("║                                                                  ║");
+        console.log("║  To fix this, run:                                               ║");
+        console.log("║    grimoire wt auth --setup                                      ║");
+        console.log("║                                                                  ║");
+        console.log("║  Or manually:                                                    ║");
+        console.log("║    claude setup-token                                            ║");
+        console.log("╚══════════════════════════════════════════════════════════════════╝");
+        console.log();
+        process.exit(1);
+      }
+      console.log("✓ OAuth token verified - using subscription");
+      console.log();
     }
 
     const worktreeService = yield* WorktreeService;

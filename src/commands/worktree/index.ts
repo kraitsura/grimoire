@@ -26,3 +26,4 @@ export { worktreeCollect } from "./collect";
 export { worktreeKill } from "./kill";
 export { worktreeMerge } from "./merge";
 export { worktreePr } from "./pr";
+export { worktreeAuth } from "./auth";

@@ -32,6 +32,7 @@ import {
   worktreeKill,
   worktreeMerge,
   worktreePr,
+  worktreeAuth,
 } from "./worktree/index";
 import { WorktreeDashboard } from "../cli/components/worktree";
 
@@ -51,6 +52,7 @@ COMMANDS:
   collect            Merge completed children back into current branch
   merge <name>       Merge worktree branch into current branch
   pr <name>          Create GitHub PR from worktree branch
+  auth               Check/setup OAuth for headless agents
   from-issue <id>    Create worktree from issue ID
   list               List active worktrees
   status             Rich status with claims, logs, stages
@@ -200,6 +202,8 @@ export const worktreeCommand = (args: ParsedArgs) =>
         return yield* worktreeMerge(args);
       case "pr":
         return yield* worktreePr(args);
+      case "auth":
+        return yield* worktreeAuth(args);
       default:
         console.log(`Unknown worktree command: ${subcommand}`);
         printWorktreeHelp();
