@@ -28,3 +28,4 @@ export { worktreeMerge } from "./merge";
 export { worktreePr } from "./pr";
 export { worktreeAuth } from "./auth";
 export { worktreeCommit } from "./commit";
+export { worktreeAdopt } from "./adopt";

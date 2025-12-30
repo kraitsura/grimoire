@@ -34,6 +34,7 @@ import {
   worktreePr,
   worktreeAuth,
   worktreeCommit,
+  worktreeAdopt,
 } from "./worktree/index";
 import { WorktreeDashboard } from "../cli/components/worktree";
 
@@ -62,7 +63,8 @@ COMMANDS:
   path <name>        Print worktree path (for scripting)
   exec <name> <cmd>  Execute command in worktree context
   open <name>        Open shell in worktree directory
-  clean              Remove stale worktrees
+  clean              Remove stale worktrees (managed only)
+  adopt <name>       Take ownership of unmanaged worktree
   config [key]       View or modify configuration
 
   each <cmd>         Run command across all worktrees
@@ -215,6 +217,8 @@ export const worktreeCommand = (args: ParsedArgs) =>
         return yield* worktreeAuth(args);
       case "commit":
         return yield* worktreeCommit(args);
+      case "adopt":
+        return yield* worktreeAdopt(args);
       default:
         console.log(`Unknown worktree command: ${subcommand}`);
         printWorktreeHelp();
