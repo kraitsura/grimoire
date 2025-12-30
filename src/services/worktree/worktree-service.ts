@@ -737,6 +737,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
             uncommittedChanges: uncommittedChanges > 0 ? uncommittedChanges : undefined,
             unpushedCommits: unpushedCommits > 0 ? unpushedCommits : undefined,
             metadata: stateEntry?.metadata,
+            managed: stateEntry !== null,
           });
         }
 

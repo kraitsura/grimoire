@@ -122,6 +122,8 @@ export const WorktreeListItemSchema = Schema.extend(
     uncommittedChanges: Schema.optional(Schema.Number),
     /** Number of commits ahead of remote (unpushed) */
     unpushedCommits: Schema.optional(Schema.Number),
+    /** Whether this worktree is managed by grim wt (has state entry) */
+    managed: Schema.optional(Schema.Boolean),
   })
 );
 
