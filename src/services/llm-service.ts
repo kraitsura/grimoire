@@ -464,29 +464,46 @@ export const streamFromAsyncIterator = <T, E>(
   onError: (error: unknown) => E,
   timeoutMs = 180000 // 3 minutes default
 ): Stream.Stream<StreamChunk, E> =>
-  Stream.asyncEffect<StreamChunk, E>((emit) =>
-    Effect.gen(function* () {
-      yield* Effect.tryPromise({
-        try: async () => {
+  // Use Stream.async for real-time chunk delivery (Stream.asyncEffect buffers until completion)
+  pipe(
+    Stream.async<StreamChunk, E>((emit) => {
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+      const cleanup = () => {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
+        }
+      };
+
+      // Set up timeout
+      timeoutHandle = setTimeout(() => {
+        emit.fail(onError(new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds`)));
+      }, timeoutMs);
+
+      // Run the async iteration
+      (async () => {
+        try {
           const iterator = await getIterator();
           for await (const item of iterator) {
             const chunk = transform(item);
             if (chunk) {
-              await emit.single(chunk);
+              emit.single(chunk);
             }
           }
           // Emit final done chunk
-          await emit.single(onDone());
-          await emit.end();
-        },
-        catch: onError,
-      }).pipe(
-        Effect.timeout(Duration.millis(timeoutMs)),
-        Effect.catchTag("TimeoutException", () =>
-          Effect.fail(
-            onError(new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds`))
-          )
-        )
-      );
-    })
+          emit.single(onDone());
+          emit.end();
+        } catch (error) {
+          emit.fail(onError(error));
+        } finally {
+          cleanup();
+        }
+      })();
+
+      // Return cleanup function
+      return Effect.sync(cleanup);
+    }),
+    // Ensure proper cleanup on stream termination
+    Stream.ensuring(Effect.void)
   );
