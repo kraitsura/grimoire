@@ -140,7 +140,7 @@ export const rollbackCommand = (args: ParsedArgs) =>
       content: targetVersionData.content,
     });
 
-    console.log(`\nRollback complete: ${validatedArgs.promptName} → v${newVersion.version}`);
+    console.log(`\nRollback complete: ${validatedArgs.promptName} -> v${newVersion.version}`);
     if (validatedArgs.reason) {
       console.log(`Reason: ${validatedArgs.reason}`);
     }

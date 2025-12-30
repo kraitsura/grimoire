@@ -190,14 +190,14 @@ export const agentsValidate = (args: ParsedArgs) =>
     console.log(`${colors.bold}Validating: ${def.name}${colors.reset}\n`);
 
     if (result.valid && result.warnings.length === 0) {
-      console.log(`${colors.green}✓ Agent is valid${colors.reset}`);
+      console.log(`${colors.green}+ Agent is valid${colors.reset}`);
       return;
     }
 
     if (result.errors.length > 0) {
       console.log(`${colors.red}Errors:${colors.reset}`);
       for (const error of result.errors) {
-        console.log(`  ${colors.red}✗${colors.reset} ${error.field}: ${error.message}`);
+        console.log(`  ${colors.red}-${colors.reset} ${error.field}: ${error.message}`);
         if (error.value !== undefined) {
           console.log(`    ${colors.dim}Value: ${error.value}${colors.reset}`);
         }
@@ -217,9 +217,9 @@ export const agentsValidate = (args: ParsedArgs) =>
     }
 
     if (result.valid) {
-      console.log(`${colors.green}✓ Agent is valid${colors.reset} (with ${result.warnings.length} warning(s))`);
+      console.log(`${colors.green}+ Agent is valid${colors.reset} (with ${result.warnings.length} warning(s))`);
     } else {
-      console.log(`${colors.red}✗ Agent has ${result.errors.length} error(s)${colors.reset}`);
+      console.log(`${colors.red}- Agent has ${result.errors.length} error(s)${colors.reset}`);
       process.exit(1);
     }
   }).pipe(

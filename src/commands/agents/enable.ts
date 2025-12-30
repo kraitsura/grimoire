@@ -89,7 +89,7 @@ export const agentsEnable = (args: ParsedArgs) =>
       // Write transpiled agent
       yield* Effect.promise(() => Bun.write(targetPath, content));
 
-      console.log(`  ${colors.green}✓${colors.reset} ${platform}: ${targetPath}`);
+      console.log(`  ${colors.green}+${colors.reset} ${platform}: ${targetPath}`);
     }
 
     // 5. Update state

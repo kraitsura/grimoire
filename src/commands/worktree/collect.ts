@@ -271,7 +271,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
         console.log(`     (explicit - works from any branch, including '${currentBranch}')`);
         console.log();
         console.log("Example hierarchical workflow:");
-        console.log(`  main → feature-base → feature-impl`);
+        console.log(`  main -> feature-base -> feature-impl`);
         console.log(`  $ git checkout feature-base`);
         console.log(`  $ grim wt collect feature-impl  # Explicit: merges feature-impl into feature-base`);
         console.log();
@@ -308,7 +308,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
       }
 
       // Allow explicit collection from any branch, including worktree branches
-      // This supports hierarchical workflows: main → feature-base → feature-impl
+      // This supports hierarchical workflows: main -> feature-base -> feature-impl
       if (!json && verbose) {
         const isWorktree = isWorktreeBranch(repoRoot, currentBranch, state);
         console.log(`Collecting into: ${currentBranch}${isWorktree ? " (worktree branch)" : ""}`);
@@ -413,7 +413,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
 
           childEntries.push(entry);
           if (!json) {
-            console.log(`  ✓ Found: ${entry.name}`);
+            console.log(`  + Found: ${entry.name}`);
           }
         }
       }

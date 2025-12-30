@@ -110,13 +110,13 @@ export const worktreeHandoff = (args: ParsedArgs) =>
     // Update state
     yield* stateService.updateWorktree(repoRoot, name, updates as any);
 
-    console.log(`✓ Released ${name}`);
+    console.log(`+ Released ${name}`);
 
     // Send notification via beads mail
     if (provider === "beads") {
       try {
         const priority = urgent ? "p0" : "p2";
-        const subject = `[handoff] ${name}${nextStage ? ` → ${nextStage}` : ""}`;
+        const subject = `[handoff] ${name}${nextStage ? ` -> ${nextStage}` : ""}`;
         const body = [
           `Worktree: ${name}`,
           entry.linkedIssue ? `Issue: ${entry.linkedIssue}` : null,
@@ -131,13 +131,13 @@ export const worktreeHandoff = (args: ParsedArgs) =>
           `bd mail send ${toAgent} --subject "${subject}" --priority ${priority} --body "${body.replace(/"/g, '\\"')}"`,
           { stdio: "ignore" }
         );
-        console.log(`✓ Notified ${toAgent} via beads mail`);
+        console.log(`+ Notified ${toAgent} via beads mail`);
       } catch {
-        console.log(`⚠ Could not send mail (beads mail not available)`);
+        console.log(`! Could not send mail (beads mail not available)`);
       }
     } else if (provider === "mcp") {
       // MCP mail integration placeholder
-      console.log(`⚠ MCP mail provider not yet implemented`);
+      console.log(`! MCP mail provider not yet implemented`);
     }
 
     // Update beads issue if linked

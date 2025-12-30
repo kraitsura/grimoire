@@ -114,7 +114,7 @@ const MethodSelector: React.FC<MethodSelectorProps> = ({
 
       <Box marginTop={1}>
         <Text color="gray" dimColor>
-          ↑↓ navigate  enter select  q cancel
+          up/down navigate  enter select  q cancel
         </Text>
       </Box>
     </Box>
@@ -234,7 +234,7 @@ const ItemSelector: React.FC<ItemSelectorProps> = ({ items, onConfirm, onCancel 
 
       <Box marginTop={1}>
         <Text color="gray" dimColor>
-          ↑↓ navigate  space toggle  a all  enter confirm  q cancel
+          up/down navigate  space toggle  a all  enter confirm  q cancel
         </Text>
       </Box>
 
@@ -271,7 +271,7 @@ const MissingFeaturesWarning: React.FC<MissingFeaturesWarningProps> = ({
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text color="yellow">⚠️  Installing as skills ({agentType} detected)</Text>
+        <Text color="yellow">Warning: Installing as skills ({agentType} detected)</Text>
       </Box>
       <Box marginLeft={3} flexDirection="column">
         <Text color="gray" dimColor>

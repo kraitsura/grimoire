@@ -81,7 +81,7 @@ export const worktreeClaim = (args: ParsedArgs) =>
         console.error("Use --force to override.");
         process.exit(1);
       }
-      console.log(`⚠ Overriding claim from ${entry.claimedBy}`);
+      console.log(`! Overriding claim from ${entry.claimedBy}`);
     }
 
     // Create claim log entry
@@ -101,7 +101,7 @@ export const worktreeClaim = (args: ParsedArgs) =>
       logs: [...currentLogs, claimLog],
     });
 
-    console.log(`✓ Claimed ${name}`);
+    console.log(`+ Claimed ${name}`);
 
     // Optional: sync to beads assignee
     if (entry.linkedIssue) {
@@ -221,7 +221,7 @@ export const worktreeRelease = (args: ParsedArgs) =>
     // Update state
     yield* stateService.updateWorktree(repoRoot, name, updates as any);
 
-    console.log(`✓ Released ${name}`);
+    console.log(`+ Released ${name}`);
     if (note) {
       console.log(`  Note: ${note}`);
     }

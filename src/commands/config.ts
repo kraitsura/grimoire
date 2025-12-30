@@ -217,7 +217,7 @@ export const configCommand = (args: ParsedArgs) =>
         const llmService = yield* LLMService;
         const isDoctor = validatedArgs.action === "doctor";
 
-        console.log(isDoctor ? "\n🔍 LLM Provider Diagnostics\n" : "\nTesting LLM Provider(s)...\n");
+        console.log(isDoctor ? "\n LLM Provider Diagnostics\n" : "\nTesting LLM Provider(s)...\n");
         console.log("─".repeat(60));
 
         for (const p of providersToTest) {
@@ -227,31 +227,31 @@ export const configCommand = (args: ParsedArgs) =>
           // Step 1: Check API key
           const hasKey = yield* apiKeyService.validate(p);
           if (!hasKey) {
-            console.log("  ❌ API key not configured");
+            console.log("  X API key not configured");
             continue;
           }
-          console.log("  ✓ API key configured");
+          console.log("  + API key configured");
 
           // Step 2: Get provider and validate key
           const providerResult = yield* Effect.either(llmService.getProvider(p));
           if (providerResult._tag === "Left") {
-            console.log(`  ❌ Provider not available: ${providerResult.left.message}`);
+            console.log(`  X Provider not available: ${providerResult.left.message}`);
             continue;
           }
           const llmProvider = providerResult.right;
 
           const validResult = yield* Effect.either(llmProvider.validateApiKey());
           if (validResult._tag === "Right" && validResult.right) {
-            console.log("  ✓ API key validated");
+            console.log("  + API key validated");
           } else {
-            console.log("  ⚠ API key validation uncertain");
+            console.log("  ! API key validation uncertain");
           }
 
           // Step 3: For doctor mode, test actual model calls
           if (isDoctor) {
             const models = yield* Effect.either(llmProvider.listModels());
             if (models._tag === "Left") {
-              console.log(`  ❌ Could not list models`);
+              console.log(`  X Could not list models`);
               continue;
             }
 
@@ -292,15 +292,15 @@ export const configCommand = (args: ParsedArgs) =>
               );
 
               if (testResult._tag === "Right" && testResult.right.gotContent) {
-                console.log(`     ✓ ${model}`);
+                console.log(`     + ${model}`);
               } else if (testResult._tag === "Left") {
                 const errMsg =
                   testResult.left && typeof testResult.left === "object" && "message" in testResult.left
                     ? (testResult.left as { message: string }).message.slice(0, 50)
                     : "timeout";
-                console.log(`     ❌ ${model}: ${errMsg}`);
+                console.log(`     X ${model}: ${errMsg}`);
               } else {
-                console.log(`     ❌ ${model}: no response`);
+                console.log(`     X ${model}: no response`);
               }
             }
 
@@ -312,7 +312,7 @@ export const configCommand = (args: ParsedArgs) =>
 
         console.log("\n" + "─".repeat(60));
         if (isDoctor) {
-          console.log("\n✓ Diagnostic complete\n");
+          console.log("\n+ Diagnostic complete\n");
         }
         break;
       }

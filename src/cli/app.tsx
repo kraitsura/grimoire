@@ -133,7 +133,7 @@ const QuitConfirmation: React.FC<{
       >
         <Box marginBottom={1}>
           <Text bold color="yellow">
-            ⚠ Unsaved Changes
+            ! Unsaved Changes
           </Text>
         </Box>
 

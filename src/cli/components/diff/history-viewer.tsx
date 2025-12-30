@@ -156,9 +156,9 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({
         {/* Scroll indicator */}
         {(canScrollUp || canScrollDown) && (
           <Text color="gray" dimColor>
-            {canScrollUp && "↑ "}
+            {canScrollUp && "^ "}
             {scrollOffset + 1}-{Math.min(scrollOffset + height, totalVersions)} of {totalVersions}
-            {canScrollDown && " ↓"}
+            {canScrollDown && " v"}
           </Text>
         )}
 

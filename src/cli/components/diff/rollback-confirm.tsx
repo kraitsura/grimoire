@@ -58,7 +58,7 @@ export const RollbackConfirm: React.FC<RollbackConfirmProps> = ({
       {/* Warning header */}
       <Box marginBottom={1} borderStyle={safeBorderStyle} borderColor="yellow" paddingX={1}>
         <Text color="yellow" bold>
-          ⚠ Rollback Confirmation
+          ! Rollback Confirmation
         </Text>
       </Box>
 

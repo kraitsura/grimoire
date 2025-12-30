@@ -122,9 +122,9 @@ export const SideBySideDiffViewer: React.FC<SideBySideDiffViewerProps> = ({
       {(canScrollUp || canScrollDown) && (
         <Box marginTop={1}>
           <Text color="gray" dimColor>
-            {canScrollUp && "↑ "}
+            {canScrollUp && "^ "}
             {scrollOffset + 1}-{Math.min(scrollOffset + height, totalLines)} of {totalLines}
-            {canScrollDown && " ↓"}
+            {canScrollDown && " v"}
           </Text>
           <Text dimColor> | j/k: scroll | g/G: top/bottom</Text>
         </Box>

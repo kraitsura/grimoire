@@ -219,7 +219,7 @@ export const worktreePr = (args: ParsedArgs) =>
       }).trim();
 
       console.log();
-      console.log("✓ Pull request created!");
+      console.log("+ Pull request created!");
       console.log(`  ${prUrl}`);
 
       // Log PR creation in worktree state

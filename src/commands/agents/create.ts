@@ -175,7 +175,7 @@ export const agentsCreate = (args: ParsedArgs) =>
       )
     );
 
-    console.log(`\n${colors.green}✓ Agent '${name}' created successfully.${colors.reset}`);
+    console.log(`\n${colors.green}+ Agent '${name}' created successfully.${colors.reset}`);
     console.log("");
     console.log(`${colors.dim}Description:${colors.reset}`);
     console.log(`  ${agent.description}`);

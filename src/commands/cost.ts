@@ -82,7 +82,7 @@ export const costCommand = (args: ParsedArgs) =>
       const contextWindow = MODEL_PRICING[selectedModel].contextWindow;
       if (contextWindow && tokenCount > contextWindow) {
         console.log(
-          `\n⚠️  Warning: Prompt exceeds ${selectedModel} context window (${formatNumber(contextWindow)} tokens)`
+          `\nWarning: Prompt exceeds ${selectedModel} context window (${formatNumber(contextWindow)} tokens)`
         );
       }
     }
@@ -101,7 +101,7 @@ export const costCommand = (args: ParsedArgs) =>
 
       if (exceededModels.length > 0) {
         console.log(
-          `\n⚠️  Warning: Prompt exceeds context window for: ${exceededModels.join(", ")}`
+          `\nWarning: Prompt exceeds context window for: ${exceededModels.join(", ")}`
         );
       }
     } else {

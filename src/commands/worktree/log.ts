@@ -212,7 +212,7 @@ export const worktreeLog = (args: ParsedArgs) =>
     // Update state
     yield* stateService.updateWorktree(repoRoot, name, { logs: updatedLogs });
 
-    console.log(`✓ Logged: ${message}`);
+    console.log(`+ Logged: ${message}`);
 
     // Optional: sync to beads if linked
     if (entry.linkedIssue) {

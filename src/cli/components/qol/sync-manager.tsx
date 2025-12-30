@@ -112,12 +112,12 @@ export const SyncManager: React.FC<SyncManagerProps> = ({
         <Box marginLeft={2} flexDirection="column">
           {isAhead && (
             <Text color="yellow">
-              ↑ {status.ahead} commit{status.ahead > 1 ? "s" : ""} ahead
+              ^ {status.ahead} commit{status.ahead > 1 ? "s" : ""} ahead
             </Text>
           )}
           {isBehind && (
             <Text color="yellow">
-              ↓ {status.behind} commit{status.behind > 1 ? "s" : ""} behind
+              v {status.behind} commit{status.behind > 1 ? "s" : ""} behind
             </Text>
           )}
           {!isAhead && !isBehind && <Text color="green">[ok] In sync with remote</Text>}

@@ -325,7 +325,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       if (!authStatus.hasToken) {
         console.log();
         console.log("╔══════════════════════════════════════════════════════════════════╗");
-        console.log("║  ⚠️  NO OAUTH TOKEN - HEADLESS WOULD USE API CREDITS              ║");
+        console.log("║  WARNING: NO OAUTH TOKEN - HEADLESS WOULD USE API CREDITS       ║");
         console.log("╠══════════════════════════════════════════════════════════════════╣");
         console.log("║  Headless mode requires an OAuth token to use your subscription. ║");
         console.log("║  Without it, background agents charge against API credits.       ║");
@@ -339,7 +339,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
         console.log();
         process.exit(1);
       }
-      console.log("✓ OAuth token verified - using subscription");
+      console.log("+ OAuth token verified - using subscription");
       console.log();
     }
 

@@ -195,7 +195,7 @@ export const worktreeCheckpoint = (args: ParsedArgs) =>
       logs: [...currentLogs, log],
     });
 
-    console.log(`✓ Checkpoint: ${message}`);
+    console.log(`+ Checkpoint: ${message}`);
   }).pipe(
     Effect.provide(WorktreeServiceLive),
     Effect.provide(WorktreeStateServiceLive)

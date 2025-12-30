@@ -178,7 +178,7 @@ export const worktreeFromIssue = (args: ParsedArgs) =>
     yield* stateService.updateWorktree(repoRoot, worktreeName, updates as any);
 
     console.log();
-    console.log(`✓ Created worktree: ${worktreeName}`);
+    console.log(`+ Created worktree: ${worktreeName}`);
     console.log(`  Path: ${info.path}`);
     console.log(`  Issue: ${issueId}`);
     if (!noClaim) {

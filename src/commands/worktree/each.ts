@@ -145,7 +145,7 @@ export const worktreeEach = (args: ParsedArgs) =>
       );
 
       for (const result of allResults) {
-        const icon = result.success ? "✓" : "✗";
+        const icon = result.success ? "+" : "-";
         console.log(`${icon} [${result.name}] exit ${result.exitCode}`);
         if (result.output && !result.success) {
           // Show output for failures

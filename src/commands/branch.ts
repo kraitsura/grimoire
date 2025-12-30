@@ -207,7 +207,7 @@ export const branchCommand = (args: ParsedArgs) =>
 
       const mergedVersion = mergeResult.right;
       console.log(
-        `${COLORS.green}Merged '${sourceBranch}' into '${targetBranch}'${COLORS.reset} → v${mergedVersion.version}`
+        `${COLORS.green}Merged '${sourceBranch}' into '${targetBranch}'${COLORS.reset} -> v${mergedVersion.version}`
       );
       return;
     }

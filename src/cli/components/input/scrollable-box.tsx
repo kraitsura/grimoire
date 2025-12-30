@@ -63,10 +63,10 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
       {showScrollIndicator && (canScrollUp || canScrollDown) && (
         <Box marginTop={1}>
           <Text color="gray" dimColor>
-            {canScrollUp && "↑ "}
+            {canScrollUp && "^ "}
             {scrollOffset + 1}-{Math.min(scrollOffset + height, totalLines)} of {totalLines} (
             {scrollPercentage}%)
-            {canScrollDown && " ↓"}
+            {canScrollDown && " v"}
           </Text>
         </Box>
       )}

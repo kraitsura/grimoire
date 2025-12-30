@@ -62,7 +62,7 @@ export const agentsDisable = (args: ParsedArgs) =>
 
       try {
         yield* Effect.promise(() => fs.unlink(targetPath));
-        console.log(`  ${colors.green}✓${colors.reset} Removed: ${targetPath}`);
+        console.log(`  ${colors.green}+${colors.reset} Removed: ${targetPath}`);
       } catch {
         // File may not exist for this platform
         console.log(`  ${colors.dim}-${colors.reset} Not found: ${targetPath}`);

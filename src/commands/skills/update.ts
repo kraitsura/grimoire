@@ -213,18 +213,18 @@ export const skillsUpdate = (args: ParsedArgs) =>
     // Apply updates
     if (triggerFlag) {
       frontmatter.description = triggerFlag;
-      changes.push(`description → "${triggerFlag.slice(0, 50)}${triggerFlag.length > 50 ? "..." : ""}"`);
+      changes.push(`description -> "${triggerFlag.slice(0, 50)}${triggerFlag.length > 50 ? "..." : ""}"`);
     }
 
     if (allowedToolsFlag) {
       frontmatter["allowed-tools"] = allowedToolsFlag;
-      changes.push(`allowed-tools → ${allowedToolsFlag}`);
+      changes.push(`allowed-tools -> ${allowedToolsFlag}`);
     }
 
     if (descriptionFlag && !triggerFlag) {
       // Only update description if trigger wasn't set (trigger takes precedence)
       frontmatter.description = descriptionFlag;
-      changes.push(`description → "${descriptionFlag.slice(0, 50)}${descriptionFlag.length > 50 ? "..." : ""}"`);
+      changes.push(`description -> "${descriptionFlag.slice(0, 50)}${descriptionFlag.length > 50 ? "..." : ""}"`);
     }
 
     // Ensure name is set

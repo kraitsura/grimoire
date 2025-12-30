@@ -98,7 +98,7 @@ export const worktreeAuth = (args: ParsedArgs) =>
           stdio: "inherit",
         });
         console.log();
-        console.log("✓ Token setup complete. Headless agents will now use your subscription.");
+        console.log("+ Token setup complete. Headless agents will now use your subscription.");
       } catch (err) {
         console.log();
         console.log("Token setup was cancelled or failed.");
@@ -115,10 +115,10 @@ export const worktreeAuth = (args: ParsedArgs) =>
       const status = checkAuthStatus();
 
       if (status.hasToken) {
-        console.log("✓ OAuth token is configured");
+        console.log("+ OAuth token is configured");
         console.log("  Headless agents will use your Claude subscription.");
       } else {
-        console.log("✗ OAuth token NOT configured");
+        console.log("- OAuth token NOT configured");
         console.log();
         if (status.error) {
           console.log(`  ${status.error}`);

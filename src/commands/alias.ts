@@ -43,7 +43,7 @@ export const aliasCommand = (args: ParsedArgs) =>
       for (const alias of sorted) {
         const name = alias.name.padEnd(maxNameLength + 2);
         const command = alias.command + (alias.args.length > 0 ? " " + alias.args.join(" ") : "");
-        console.log(`  ${name}→ ${command}`);
+        console.log(`  ${name}-> ${command}`);
       }
 
       console.log("\nUse: grimoire <alias> [args...]");

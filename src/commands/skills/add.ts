@@ -336,7 +336,7 @@ export const skillsAdd = (args: ParsedArgs) =>
       if (validationResult.warnings.length > 0) {
         console.log(`\nValidation warnings:`);
         for (const warning of validationResult.warnings) {
-          console.log(`  ⚠ ${warning.field}: ${warning.message}`);
+          console.log(`  ! ${warning.field}: ${warning.message}`);
         }
       }
     }
