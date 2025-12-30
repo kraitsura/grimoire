@@ -24,9 +24,16 @@ import { ApiKeyService, ApiKeyNotFoundError } from "../api-key-service";
 const PROVIDER_NAME = "openai";
 const DEFAULT_TIMEOUT_MS = 180000; // 3 minutes
 
-// Supported models (updated December 2025)
+// Supported models - matching TanStack AI OpenAI adapter
 const SUPPORTED_MODELS = [
-  // GPT-4.1 family (April 2025)
+  // GPT-5.x family (latest)
+  "gpt-5.2",
+  "gpt-5.2-pro",
+  "gpt-5.1",
+  "gpt-5",
+  "gpt-5-mini",
+  "gpt-5-nano",
+  // GPT-4.1 family
   "gpt-4.1",
   "gpt-4.1-mini",
   "gpt-4.1-nano",
@@ -36,8 +43,10 @@ const SUPPORTED_MODELS = [
   // O-series reasoning models
   "o3",
   "o3-pro",
+  "o3-mini",
   "o4-mini",
   "o1",
+  "o1-pro",
   // Legacy
   "gpt-4-turbo",
   "gpt-4",
@@ -178,7 +187,7 @@ export const makeOpenAIProvider = Effect.gen(function* () {
     let usageData: { promptTokens?: number; completionTokens?: number } | undefined;
 
     return streamFromAsyncIterator<
-      { type: string; delta?: string; usage?: { promptTokens?: number; completionTokens?: number } },
+      { type: string; delta?: string; usage?: { promptTokens?: number; completionTokens?: number }; error?: { message?: string; code?: string } },
       LLMErrors
     >(
       async () => {
@@ -193,9 +202,28 @@ export const makeOpenAIProvider = Effect.gen(function* () {
         });
       },
       (chunk) => {
+        // Handle error chunks from TanStack AI
+        if (chunk.type === "error") {
+          const rawMsg = (chunk as { error?: { message?: string } }).error?.message ?? "Unknown API error";
+          // Parse nested JSON error format if present
+          let errorMsg = rawMsg;
+          try {
+            const jsonMatch = rawMsg.match(/\d+\s*(\{.+\})/);
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[1]);
+              errorMsg = parsed?.error?.message ?? parsed?.message ?? rawMsg;
+            }
+          } catch {
+            // Keep original message if parsing fails
+          }
+          throw new Error(errorMsg);
+        }
         // TanStack AI uses `delta` for incremental content
-        if (chunk.type === "content" && chunk.delta) {
-          return { type: "content" as const, content: chunk.delta, done: false };
+        if (chunk.type === "content") {
+          const content = chunk.delta ?? "";
+          if (content) {
+            return { type: "content" as const, content, done: false };
+          }
         }
         if (chunk.type === "done") {
           usageData = chunk.usage;

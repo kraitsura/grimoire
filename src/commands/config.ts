@@ -50,12 +50,13 @@ export const configCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
     // Check for help case first (no subcommand or invalid subcommand)
     if (!args.positional[0] || args.positional[0] !== "llm") {
-      console.log("Usage: grimoire config llm <list|add|test|remove> [provider]");
+      console.log("Usage: grimoire config llm <list|add|test|doctor|remove> [provider]");
       console.log("\nManage LLM provider configuration.");
       console.log("\nSubcommands:");
       console.log("  list              List configured providers");
       console.log("  add <provider>    Add or update provider API key");
-      console.log("  test <provider>   Test provider API key");
+      console.log("  test [provider]   Quick API key validation");
+      console.log("  doctor [provider] Full diagnostic with model tests");
       console.log("  remove <provider> Remove provider configuration");
       console.log("\nProviders: openai, anthropic, google, ollama");
       console.log("\nKeys are stored in ~/.grimoire/.env with secure permissions (0600).");
@@ -191,40 +192,127 @@ export const configCommand = (args: ParsedArgs) =>
         break;
       }
 
-      case "test": {
-        if (!validatedArgs.provider) {
-          console.log(`Usage: grimoire config llm test <${PROVIDERS.join("|")}>`);
-          return;
-        }
-
+      case "test":
+      case "doctor": {
         const provider = validatedArgs.provider;
-        const info = PROVIDER_INFO[provider];
 
-        console.log(`Testing ${info.name} configuration...`);
+        // If no provider specified, test all configured providers
+        const providersToTest: Provider[] = provider
+          ? [provider]
+          : yield* Effect.gen(function* () {
+              const configured: Provider[] = [];
+              for (const p of PROVIDERS) {
+                const hasKey = yield* apiKeyService.validate(p);
+                if (hasKey) configured.push(p);
+              }
+              return configured;
+            });
 
-        // Check if key exists
-        const hasKey = yield* apiKeyService.validate(provider);
-        if (!hasKey) {
-          console.log(`\n[!!] ${info.name} is not configured`);
-          console.log(`Run 'grimoire config llm add ${provider}' to configure it`);
+        if (providersToTest.length === 0) {
+          console.log("No providers configured.");
+          console.log(`Run 'grimoire config llm add <${PROVIDERS.join("|")}>' to configure one.`);
           return;
         }
 
-        // Try to use the LLM service to validate
         const llmService = yield* LLMService;
+        const isDoctor = validatedArgs.action === "doctor";
 
-        const testResult = yield* Effect.either(
-          Effect.gen(function* () {
-            const llmProvider = yield* llmService.getProvider(provider);
-            return yield* llmProvider.validateApiKey();
-          })
-        );
+        console.log(isDoctor ? "\n🔍 LLM Provider Diagnostics\n" : "\nTesting LLM Provider(s)...\n");
+        console.log("─".repeat(60));
 
-        if (testResult._tag === "Right" && testResult.right) {
-          console.log(`\n[ok] ${info.name} API key is valid`);
-        } else {
-          console.log(`\n? ${info.name} key exists but validation failed`);
-          console.log("The key may still work - try 'grimoire test <prompt>' to verify");
+        for (const p of providersToTest) {
+          const info = PROVIDER_INFO[p];
+          console.log(`\n${info.name}:`);
+
+          // Step 1: Check API key
+          const hasKey = yield* apiKeyService.validate(p);
+          if (!hasKey) {
+            console.log("  ❌ API key not configured");
+            continue;
+          }
+          console.log("  ✓ API key configured");
+
+          // Step 2: Get provider and validate key
+          const providerResult = yield* Effect.either(llmService.getProvider(p));
+          if (providerResult._tag === "Left") {
+            console.log(`  ❌ Provider not available: ${providerResult.left.message}`);
+            continue;
+          }
+          const llmProvider = providerResult.right;
+
+          const validResult = yield* Effect.either(llmProvider.validateApiKey());
+          if (validResult._tag === "Right" && validResult.right) {
+            console.log("  ✓ API key validated");
+          } else {
+            console.log("  ⚠ API key validation uncertain");
+          }
+
+          // Step 3: For doctor mode, test actual model calls
+          if (isDoctor) {
+            const models = yield* Effect.either(llmProvider.listModels());
+            if (models._tag === "Left") {
+              console.log(`  ❌ Could not list models`);
+              continue;
+            }
+
+            console.log(`  📋 Testing ${models.right.length} models...`);
+
+            for (const model of models.right.slice(0, 5)) {
+              // Test top 5 models
+              const testResult = yield* Effect.either(
+                Effect.gen(function* () {
+                  const stream = llmService.stream({
+                    model,
+                    messages: [{ role: "user", content: "Hi" }],
+                    maxTokens: 10,
+                  });
+
+                  let gotContent = false;
+                  let error: string | null = null;
+
+                  yield* Effect.tryPromise({
+                    try: async () => {
+                      const { Stream } = await import("effect");
+                      await Effect.runPromise(
+                        Stream.runForEach(stream, (chunk) =>
+                          Effect.sync(() => {
+                            if (chunk.type === "content" && chunk.content) gotContent = true;
+                            if (chunk.type === "done" && chunk.content?.includes("error")) {
+                              error = chunk.content;
+                            }
+                          })
+                        )
+                      );
+                    },
+                    catch: (e) => e,
+                  });
+
+                  return { gotContent, error };
+                }).pipe(Effect.timeout("15 seconds"))
+              );
+
+              if (testResult._tag === "Right" && testResult.right.gotContent) {
+                console.log(`     ✓ ${model}`);
+              } else if (testResult._tag === "Left") {
+                const errMsg =
+                  testResult.left && typeof testResult.left === "object" && "message" in testResult.left
+                    ? (testResult.left as { message: string }).message.slice(0, 50)
+                    : "timeout";
+                console.log(`     ❌ ${model}: ${errMsg}`);
+              } else {
+                console.log(`     ❌ ${model}: no response`);
+              }
+            }
+
+            if (models.right.length > 5) {
+              console.log(`     ... and ${models.right.length - 5} more models`);
+            }
+          }
+        }
+
+        console.log("\n" + "─".repeat(60));
+        if (isDoctor) {
+          console.log("\n✓ Diagnostic complete\n");
         }
         break;
       }

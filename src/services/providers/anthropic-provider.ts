@@ -24,17 +24,13 @@ import { ApiKeyService, ApiKeyNotFoundError } from "../api-key-service";
 const PROVIDER_NAME = "anthropic";
 const DEFAULT_TIMEOUT_MS = 180000; // 3 minutes
 
-// Supported models - using TanStack AI model IDs
+// Supported models - only models verified to work with Anthropic API
+// Note: Many TanStack AI model aliases return 404 from Anthropic
 const SUPPORTED_MODELS = [
-  "claude-opus-4-5",
-  "claude-sonnet-4-5",
-  "claude-haiku-4-5",
-  "claude-opus-4-1",
-  "claude-sonnet-4",
-  "claude-3-7-sonnet",
-  "claude-opus-4",
-  "claude-3-5-haiku",
-  "claude-3-haiku",
+  "claude-opus-4-5",    // Claude 4.5 Opus - thinking capable
+  "claude-sonnet-4-5",  // Claude 4.5 Sonnet - thinking capable
+  "claude-haiku-4-5",   // Claude 4.5 Haiku - thinking capable
+  "claude-opus-4-1",    // Claude 4.1 Opus - thinking capable
 ] as const;
 
 type AnthropicModel = (typeof SUPPORTED_MODELS)[number];
@@ -58,13 +54,49 @@ const convertMessages = (
       content: msg.content,
     }));
 
-/** Resolve model name to actual API model name with fallback */
+/** Map Anthropic dated model names to TanStack AI aliases */
+const MODEL_ALIASES: Record<string, AnthropicModel> = {
+  // Claude 4.5 models (with date suffixes)
+  "claude-sonnet-4-5-20250514": "claude-sonnet-4-5",
+  "claude-opus-4-5-20250514": "claude-opus-4-5",
+  "claude-haiku-4-5-20250514": "claude-haiku-4-5",
+  // Claude 4.1 models
+  "claude-opus-4-1-20250414": "claude-opus-4-1",
+  // Claude 4 models -> map to 4.5 equivalents (claude-sonnet-4/opus-4 don't work)
+  "claude-sonnet-4-20250514": "claude-sonnet-4-5",
+  "claude-opus-4-20250514": "claude-opus-4-5",
+  // Legacy Claude 3.x models -> map to 4.5 equivalents
+  "claude-3-5-sonnet-20241022": "claude-sonnet-4-5",
+  "claude-3-5-sonnet-latest": "claude-sonnet-4-5",
+  "claude-3-5-haiku-20241022": "claude-haiku-4-5",
+  "claude-3-5-haiku-latest": "claude-haiku-4-5",
+  "claude-3-opus-20240229": "claude-opus-4-5",
+  "claude-3-opus-latest": "claude-opus-4-5",
+  "claude-3-sonnet-20240229": "claude-sonnet-4-5",
+  "claude-3-haiku-20240307": "claude-haiku-4-5",
+};
+
+/** Resolve model name to TanStack AI model alias with fallback */
 const resolveModel = (model: string): AnthropicModel => {
+  // Check if it's already a supported model
   if (SUPPORTED_MODELS.includes(model as AnthropicModel)) {
     return model as AnthropicModel;
   }
+
+  // Check for known aliases
+  if (model in MODEL_ALIASES) {
+    return MODEL_ALIASES[model];
+  }
+
+  // Try to infer from model name patterns
+  const lowerModel = model.toLowerCase();
+  if (lowerModel.includes("opus") && lowerModel.includes("4-1")) return "claude-opus-4-1";
+  if (lowerModel.includes("opus")) return "claude-opus-4-5";
+  if (lowerModel.includes("sonnet")) return "claude-sonnet-4-5";
+  if (lowerModel.includes("haiku")) return "claude-haiku-4-5";
+
   // Default fallback
-  return "claude-sonnet-4";
+  return "claude-sonnet-4-5";
 };
 
 /** Parse TanStack AI usage to our TokenUsage format */
@@ -172,21 +204,18 @@ export const makeAnthropicProvider = Effect.gen(function* () {
     // Track usage data across chunks
     let usageData: { promptTokens?: number; completionTokens?: number } | undefined;
 
-    // Build model options - include max_tokens inside modelOptions when thinking is enabled
-    // as TanStack AI requires max_tokens > budget_tokens for extended thinking
-    const thinkingBudget = request.thinking?.budgetTokens ?? 4096;
+    // Build thinking options if enabled
     const modelOptions = request.thinking?.enabled
       ? {
-          max_tokens: Math.max(request.maxTokens ?? 8192, thinkingBudget + 1024),
           thinking: {
             type: "enabled" as const,
-            budget_tokens: thinkingBudget,
+            budget_tokens: request.thinking.budgetTokens ?? 4096,
           },
         }
       : undefined;
 
     return streamFromAsyncIterator<
-      { type: string; delta?: string; content?: string; usage?: { promptTokens?: number; completionTokens?: number } },
+      { type: string; delta?: string; content?: string; usage?: { promptTokens?: number; completionTokens?: number }; error?: { message?: string; code?: string } },
       LLMErrors
     >(
       // Get iterator
@@ -198,27 +227,47 @@ export const makeAnthropicProvider = Effect.gen(function* () {
           messages,
           systemPrompts: systemPrompts.length > 0 ? systemPrompts : undefined,
           temperature: request.temperature,
-          // Only pass maxTokens separately when thinking is disabled
-          // When thinking is enabled, max_tokens is inside modelOptions
-          maxTokens: request.thinking?.enabled ? undefined : request.maxTokens,
+          maxTokens: request.maxTokens,
           modelOptions,
         });
       },
       // Transform chunks
       (chunk) => {
-        // Handle thinking chunks
-        if (chunk.type === "thinking" && chunk.delta) {
-          return {
-            type: "thinking" as const,
-            content: "",
-            thinkingDelta: chunk.delta,
-            thinkingContent: chunk.content,
-            done: false,
-          };
+        // Handle error chunks from TanStack AI - throw to trigger error handling
+        if (chunk.type === "error") {
+          const rawMsg = (chunk as { error?: { message?: string } }).error?.message ?? "Unknown API error";
+          // Parse nested JSON error format from Anthropic: "400 {\"type\":\"error\",\"error\":{...}}"
+          let errorMsg = rawMsg;
+          try {
+            const jsonMatch = rawMsg.match(/\d+\s*(\{.+\})/);
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[1]);
+              errorMsg = parsed?.error?.message ?? parsed?.message ?? rawMsg;
+            }
+          } catch {
+            // Keep original message if parsing fails
+          }
+          throw new Error(errorMsg);
         }
-        // Handle content chunks
-        if (chunk.type === "content" && chunk.delta) {
-          return { type: "content" as const, content: chunk.delta, done: false };
+        // Handle thinking chunks - include delta in content for display
+        if (chunk.type === "thinking") {
+          const delta = chunk.delta ?? "";
+          if (delta) {
+            return {
+              type: "thinking" as const,
+              content: delta, // Include delta so it displays during streaming
+              thinkingDelta: delta,
+              thinkingContent: chunk.content,
+              done: false,
+            };
+          }
+        }
+        // Handle content chunks - accept either delta or content
+        if (chunk.type === "content") {
+          const content = chunk.delta ?? "";
+          if (content) {
+            return { type: "content" as const, content, done: false };
+          }
         }
         if (chunk.type === "done") {
           usageData = chunk.usage;
