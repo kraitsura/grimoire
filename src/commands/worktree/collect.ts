@@ -599,11 +599,36 @@ export const worktreeCollect = (args: ParsedArgs) =>
         continue;
       }
 
-      const wtPath = child.worktree!.path;
+      const wtPath = child.worktree?.path;
+      if (!wtPath) {
+        logSkip(json, entry.name, entry.branch, SkipReason.WORKTREE_NOT_FOUND,
+          "Worktree directory not found");
+        results.push({
+          worktree: entry.name,
+          branch: entry.branch,
+          status: "skipped",
+          message: `${SkipReason.WORKTREE_NOT_FOUND} - worktree directory missing`,
+        });
+        continue;
+      }
 
       // ═══════════════════════════════════════════════════════════════════
       // PHASE 1: Validate child worktree
       // ═══════════════════════════════════════════════════════════════════
+
+      // Verify child is on the expected branch
+      const childBranch = getCurrentBranch(wtPath);
+      if (childBranch !== entry.branch) {
+        logSkip(json, entry.name, entry.branch, SkipReason.REBASE_ERROR,
+          `Worktree is on '${childBranch}', expected '${entry.branch}'`);
+        results.push({
+          worktree: entry.name,
+          branch: entry.branch,
+          status: "skipped",
+          message: `Worktree is on wrong branch: ${childBranch}`,
+        });
+        continue;
+      }
 
       if (hasUncommittedChanges(wtPath)) {
         logSkip(json, entry.name, entry.branch, SkipReason.UNCOMMITTED_CHANGES,
@@ -622,9 +647,6 @@ export const worktreeCollect = (args: ParsedArgs) =>
       // ═══════════════════════════════════════════════════════════════════
 
       if (autoRebase) {
-        // Fetch latest target branch state
-        execGit(`git fetch origin ${targetBranch}`, wtPath);
-
         const rebase = execGit(`git rebase ${targetBranch}`, wtPath);
 
         if (!rebase.success) {
@@ -655,9 +677,13 @@ export const worktreeCollect = (args: ParsedArgs) =>
               if (conflictFiles.length > 5) {
                 console.log(`    ... and ${conflictFiles.length - 5} more`);
               }
-              console.log(`    To fix: cd ${wtPath}`);
-              console.log(`            # resolve conflicts`);
-              console.log(`            git add . && git rebase --continue`);
+              console.log();
+              console.log(`    To fix:`);
+              console.log(`      cd ${wtPath}`);
+              console.log(`      # resolve conflicts in the files above`);
+              console.log(`      git add . && git rebase --continue`);
+              console.log(`      cd ${cwd}`);
+              console.log(`      grim wt collect ${entry.name}`);
             }
 
             hadConflict = true;
