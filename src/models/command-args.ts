@@ -200,7 +200,7 @@ export type ListCommandArgs = Schema.Schema.Type<typeof ListCommandArgsSchema>;
  */
 export const ConfigCommandArgsSchema = Schema.Struct({
   subcommand: Schema.Literal("llm"),
-  action: Schema.Literal("list", "add", "test", "remove"),
+  action: Schema.Literal("list", "add", "test", "doctor", "remove"),
   provider: Schema.optional(LLMProviderSchema),
   model: Schema.optional(ModelNameSchema),
 });

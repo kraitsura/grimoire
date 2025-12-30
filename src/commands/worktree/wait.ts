@@ -158,7 +158,9 @@ export const worktreeWait = (args: ParsedArgs) =>
             completedCount++;
 
             if (!json) {
-              console.log(`  [${current.status}] ${wt.name}${current.exitCode !== null ? ` (exit ${current.exitCode})` : ""}`);
+              const symbol = current.exitCode === 0 ? "*" : "!";
+              const exitInfo = current.exitCode !== null ? ` (exit ${current.exitCode})` : "";
+              console.log(`  ${symbol} ${wt.name}${exitInfo}`);
             }
           }
         } else {
@@ -172,7 +174,7 @@ export const worktreeWait = (args: ParsedArgs) =>
             anyCompleted = true;
 
             if (!json) {
-              console.log(`  [completed] ${wt.name} (${entry.mergeStatus})`);
+              console.log(`  * ${wt.name} (${entry.mergeStatus})`);
             }
           } else if (isExplicit) {
             // Explicitly specified worktree with no agent session - consider it done
@@ -182,7 +184,7 @@ export const worktreeWait = (args: ParsedArgs) =>
             anyCompleted = true;
 
             if (!json) {
-              console.log(`  [completed] ${wt.name} (no agent)`);
+              console.log(`  * ${wt.name} (no agent)`);
             }
           }
         }
@@ -217,7 +219,11 @@ export const worktreeWait = (args: ParsedArgs) =>
       const running = resultArray.filter((r) => r.status === "running").length;
 
       console.log();
-      console.log(`Done: ${completed} completed, ${timedOut} timeout, ${running} still running`);
+      if (timedOut > 0) {
+        console.log(`Completed: ${completed}/${targets.length} (${timedOut} timeout)`);
+      } else {
+        console.log(`Completed: ${completed}/${targets.length}`);
+      }
     }
 
     // Exit with error if any timed out

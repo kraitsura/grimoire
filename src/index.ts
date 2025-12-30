@@ -5,6 +5,11 @@
  * A CLI tool for storing, editing, and managing prompts with clipboard support.
  */
 
+// Fix UTF-8 encoding for Unicode symbols (must be first!)
+if (process.stdout.setEncoding) {
+  process.stdout.setEncoding("utf8");
+}
+
 import { Effect } from "effect";
 import { join } from "path";
 import { homedir } from "os";

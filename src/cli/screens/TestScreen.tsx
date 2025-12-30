@@ -69,10 +69,10 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
   const [config, setConfig] = useState<TestConfig>({
     model: "",
     temperature: 0.7,
-    maxTokens: 4096,
+    maxTokens: 16384,
     variables: {},
     enableThinking: false,
-    thinkingBudget: 8192,
+    thinkingBudget: 10240,
   });
   const [output, setOutput] = useState("");
   const [stats, setStats] = useState<TestStats | null>(null);
