@@ -1,58 +1,225 @@
 /**
- * grimoire wt ps - List running spawned agents
+ * grimoire wt ps - Comprehensive worktree status view
  */
 
 import { Effect } from "effect";
-import { join } from "path";
+import { execSync } from "child_process";
 import type { ParsedArgs } from "../../cli/parser";
 import {
   WorktreeService,
   WorktreeServiceLive,
   AgentSessionService,
   AgentSessionServiceLive,
+  WorktreeStateService,
+  WorktreeStateServiceLive,
 } from "../../services/worktree";
 import type { WorktreeListItem } from "../../models/worktree";
 import type { AgentSession } from "../../models/agent-session";
 
 /**
- * Format relative time (e.g., "2h ago", "3d ago")
+ * Get visual width of a string (accounts for wide characters)
  */
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffDays > 0) return `${diffDays}d ago`;
-  if (diffHours > 0) return `${diffHours}h ago`;
-  if (diffMins > 0) return `${diffMins}m ago`;
-  return "just now";
+function visualWidth(str: string): number {
+  let width = 0;
+  for (const char of str) {
+    const code = char.codePointAt(0) || 0;
+    // East Asian Wide and Fullwidth characters
+    if (
+      (code >= 0x1100 && code <= 0x115f) || // Hangul Jamo
+      (code >= 0x2e80 && code <= 0x9fff) || // CJK
+      (code >= 0xac00 && code <= 0xd7a3) || // Hangul Syllables
+      (code >= 0xf900 && code <= 0xfaff) || // CJK Compatibility
+      (code >= 0xfe10 && code <= 0xfe19) || // Vertical forms
+      (code >= 0xfe30 && code <= 0xfe6f) || // CJK Compatibility Forms
+      (code >= 0xff00 && code <= 0xff60) || // Fullwidth Forms
+      (code >= 0xffe0 && code <= 0xffe6) || // Fullwidth Forms
+      (code >= 0x20000 && code <= 0x2fffd) || // CJK Extension
+      (code >= 0x30000 && code <= 0x3fffd) // CJK Extension
+    ) {
+      width += 2;
+    } else {
+      width += 1;
+    }
+  }
+  return width;
 }
 
 /**
- * Pad string to length
+ * Pad string to length, truncating if needed (Unicode-safe)
  */
 function pad(str: string, len: number): string {
-  if (str.length >= len) return str.substring(0, len - 1) + "…";
-  return str + " ".repeat(len - str.length);
+  const width = visualWidth(str);
+  if (width > len) {
+    // Truncate safely - leave room for ellipsis
+    let result = "";
+    let currentWidth = 0;
+    const ellipsis = "...";  // ASCII instead of Unicode … due to Bun bundler bug
+    const ellipsisWidth = 3;
+    const targetLen = len - ellipsisWidth;
+
+    for (const char of str) {
+      const charWidth = visualWidth(char);
+      if (currentWidth + charWidth > targetLen) break;
+      result += char;
+      currentWidth += charWidth;
+    }
+    return result + ellipsis + " ".repeat(Math.max(0, len - currentWidth - ellipsisWidth));
+  }
+  return str + " ".repeat(len - width);
 }
 
-interface WorktreeWithSession {
+/**
+ * Find the main branch (main or master)
+ */
+async function getMainBranch(repoRoot: string): Promise<string> {
+  try {
+    const proc = Bun.spawn(
+      [
+        "sh",
+        "-c",
+        "git rev-parse --verify refs/heads/main 2>/dev/null && echo main || (git rev-parse --verify refs/heads/master 2>/dev/null && echo master)",
+      ],
+      { cwd: repoRoot, stdout: "pipe", stderr: "pipe" }
+    );
+    const output = (await new Response(proc.stdout).text()).trim();
+    await proc.exited;
+    const branch = output.split("\n").pop() || "main";
+    return branch;
+  } catch {
+    return "main";
+  }
+}
+
+/**
+ * Count commits in worktree vs base branch
+ */
+async function getCommitsVsBase(
+  worktreePath: string,
+  baseBranch: string
+): Promise<number> {
+  try {
+    const proc = Bun.spawn(
+      ["git", "rev-list", "--count", `${baseBranch}..HEAD`],
+      { cwd: worktreePath, stdout: "pipe", stderr: "pipe" }
+    );
+    const output = (await new Response(proc.stdout).text()).trim();
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0 || !output) {
+      // Fallback: count all commits
+      const fallbackProc = Bun.spawn(
+        ["git", "rev-list", "--count", "HEAD"],
+        { cwd: worktreePath, stdout: "pipe", stderr: "pipe" }
+      );
+      const fallbackOutput = (
+        await new Response(fallbackProc.stdout).text()
+      ).trim();
+      await fallbackProc.exited;
+      return parseInt(fallbackOutput, 10) || 0;
+    }
+
+    return parseInt(output, 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Count dirty (uncommitted) files
+ */
+async function getDirtyCount(worktreePath: string): Promise<number> {
+  try {
+    const proc = Bun.spawn(["git", "status", "--porcelain"], {
+      cwd: worktreePath,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = (await new Response(proc.stdout).text()).trim();
+    await proc.exited;
+
+    if (!output) return 0;
+    return output.split("\n").filter((line) => line.trim()).length;
+  } catch {
+    return 0;
+  }
+}
+
+interface WorktreeData {
   worktree: WorktreeListItem;
   session: AgentSession | null;
-  alive: boolean;
+  dirty: number;
+  commits: number;
+  mergeStatus?: string;
 }
+
+/**
+ * Get agent display string
+ */
+function getAgentDisplay(session: AgentSession | null, alive: boolean): string {
+  if (!session) return "no agent";
+  if (alive) return `pid=${session.pid}`;
+  if (session.exitCode !== undefined && session.exitCode !== null) {
+    return `exited(${session.exitCode})`;
+  }
+  if (session.status === "crashed") return "exited(1)";
+  if (session.status === "stopped") return "exited(0)";
+  return session.status;
+}
+
+/**
+ * Get synthesized status
+ */
+function getStatus(data: WorktreeData, alive: boolean): string {
+  if (alive) return "> running";
+  if (data.dirty > 0 && data.commits === 0) return "! uncommitted";
+  if (data.commits > 0 && data.dirty > 0) return "+ committed";
+  if (data.commits > 0 && data.dirty === 0) return "* clean";
+  return "- empty";
+}
+
+// NOTE: Unicode symbols (⚠ ✓ ▶ ○) would be ideal but Bun's bundler has a bug
+// that causes double UTF-8 encoding. Tracking: https://github.com/oven-sh/bun/issues
+// When fixed, restore Unicode for better visual clarity.
+
+/**
+ * Get collect status
+ */
+function getCollectStatus(data: WorktreeData, alive: boolean): string {
+  if (data.commits === 0 && data.dirty === 0) return "-";
+  if (alive) return "blocked";
+  if (data.commits === 0) return "blocked";
+  if (data.dirty > 0) return "blocked";
+  if (data.mergeStatus === "conflict") return "blocked";
+  return "ready";
+}
+
+// Column widths
+const COL = {
+  name: 16,
+  agent: 14,
+  dirty: 7,
+  commits: 9,
+  status: 16,
+  collect: 10,
+};
 
 export const worktreePs = (args: ParsedArgs) =>
   Effect.gen(function* () {
-    const runningOnly = args.flags.running === true;
     const json = args.flags.json === true;
 
     const worktreeService = yield* WorktreeService;
     const sessionService = yield* AgentSessionService;
+    const stateService = yield* WorktreeStateService;
     const cwd = process.cwd();
+
+    // Get repository root
+    let repoRoot: string;
+    try {
+      repoRoot = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
+    } catch {
+      console.log("Error: Not in a git repository");
+      process.exit(1);
+    }
 
     // Get all worktrees
     const worktreesResult = yield* Effect.either(worktreeService.list(cwd));
@@ -64,84 +231,135 @@ export const worktreePs = (args: ParsedArgs) =>
 
     const worktrees = worktreesResult.right;
 
-    // Get session info for each worktree - refreshSessionStatus updates crashed sessions automatically
-    const results: WorktreeWithSession[] = [];
-    for (const wt of worktrees) {
-      const sessionResult = yield* Effect.either(
-        sessionService.refreshSessionStatus(wt.path)
-      );
-
-      if (sessionResult._tag === "Right" && sessionResult.right) {
-        const s = sessionResult.right;
-        // Use session status directly - refreshSessionStatus already marks crashed sessions
-        const alive = s.status === "running";
-        results.push({ worktree: wt, session: s, alive });
+    if (worktrees.length === 0) {
+      if (json) {
+        console.log(JSON.stringify({ worktrees: [], summary: {} }, null, 2));
       } else {
-        results.push({ worktree: wt, session: null, alive: false });
+        console.log("No worktrees found.");
+        console.log();
+        console.log("Create one with: grim wt new <branch>");
       }
-    }
-
-    // Filter if needed
-    const filtered = runningOnly
-      ? results.filter((r) => r.session?.status === "running" && r.alive)
-      : results;
-
-    if (json) {
-      const output = filtered.map((r) => ({
-        worktree: r.worktree.name,
-        path: r.worktree.path,
-        pid: r.session?.pid ?? null,
-        sessionId: r.session?.sessionId ?? null,
-        mode: r.session?.mode ?? null,
-        status: r.alive ? "running" : (r.session?.status ?? "none"),
-        startedAt: r.session?.startedAt ?? null,
-      }));
-      console.log(JSON.stringify(output, null, 2));
       return;
     }
 
-    // Count running
-    const runningCount = results.filter(
-      (r) => r.session?.status === "running" && r.alive
-    ).length;
+    // Get main branch and state
+    const mainBranch = yield* Effect.promise(() => getMainBranch(repoRoot));
+    const state = yield* stateService.getState(repoRoot);
 
-    if (filtered.length === 0) {
-      if (runningOnly) {
-        console.log("No running agents.");
-      } else {
-        console.log("No worktrees with session history.");
-      }
+    // Collect data for all worktrees in parallel
+    const dataArr: WorktreeData[] = yield* Effect.promise(() =>
+      Promise.all(
+        worktrees.map(async (wt) => {
+          // Get session info
+          const sessionResult = await Effect.runPromise(
+            sessionService.refreshSessionStatus(wt.path).pipe(
+              Effect.either,
+              Effect.provide(AgentSessionServiceLive)
+            )
+          );
+          const session =
+            sessionResult._tag === "Right" ? sessionResult.right : null;
+
+          // Get git stats
+          const dirty = await getDirtyCount(wt.path);
+          const commits = await getCommitsVsBase(wt.path, mainBranch);
+
+          // Get merge status from state
+          const entry = state.worktrees.find((w) => w.name === wt.name);
+          const mergeStatus = entry?.mergeStatus;
+
+          return { worktree: wt, session, dirty, commits, mergeStatus };
+        })
+      )
+    );
+
+    if (json) {
+      const output = {
+        worktrees: dataArr.map((data) => {
+          const alive = data.session?.status === "running";
+          return {
+            name: data.worktree.name,
+            branch: data.worktree.branch,
+            path: data.worktree.path,
+            agent: {
+              status: alive ? "running" : data.session ? "exited" : "none",
+              pid: data.session?.pid ?? null,
+              exitCode: data.session?.exitCode ?? null,
+            },
+            dirty: data.dirty,
+            commits: data.commits,
+            status: getStatus(data, alive),
+            collect: getCollectStatus(data, alive),
+          };
+        }),
+        summary: {
+          total: dataArr.length,
+          running: dataArr.filter((d) => d.session?.status === "running").length,
+          clean: dataArr.filter(
+            (d) => d.commits > 0 && d.dirty === 0 && d.session?.status !== "running"
+          ).length,
+          uncommitted: dataArr.filter((d) => d.dirty > 0).length,
+          ready: dataArr.filter(
+            (d) =>
+              getCollectStatus(d, d.session?.status === "running") === "ready"
+          ).length,
+        },
+      };
+      console.log(JSON.stringify(output, null, 2));
       return;
     }
 
     // Table header
     console.log(
-      `${pad("WORKTREE", 20)}${pad("PID", 8)}${pad("STARTED", 12)}${pad("STATUS", 10)}MODE`
+      `${pad("WORKTREE", COL.name)}${pad("AGENT", COL.agent)}${pad("DIRTY", COL.dirty)}${pad("COMMITS", COL.commits)}${pad("STATUS", COL.status)}COLLECT`
     );
 
     // Table rows
-    for (const r of filtered) {
-      const name = r.worktree.name;
-      const pid = r.session?.pid?.toString() ?? "-";
-      const started = r.session?.startedAt
-        ? formatRelativeTime(r.session.startedAt)
-        : "-";
-
-      // Status is already accurate from refreshSessionStatus
-      // Map stopped/crashed to completed (both mean work is done)
-      const rawStatus = r.session?.status;
-      const status = (rawStatus === "stopped" || rawStatus === "crashed") ? "completed" : (rawStatus ?? "-");
-
-      const mode = r.session?.mode ?? "-";
-
+    for (const data of dataArr) {
+      const alive = data.session?.status === "running";
       console.log(
-        `${pad(name, 20)}${pad(pid, 8)}${pad(started, 12)}${pad(status, 10)}${mode}`
+        `${pad(data.worktree.name, COL.name)}${pad(getAgentDisplay(data.session, alive), COL.agent)}${pad(data.dirty.toString(), COL.dirty)}${pad(data.commits.toString(), COL.commits)}${pad(getStatus(data, alive), COL.status)}${getCollectStatus(data, alive)}`
       );
     }
 
+    // Summary
+    const running = dataArr.filter((d) => d.session?.status === "running").length;
+    const clean = dataArr.filter(
+      (d) => d.commits > 0 && d.dirty === 0 && d.session?.status !== "running"
+    ).length;
+    const uncommitted = dataArr.filter((d) => d.dirty > 0).length;
+
     console.log();
-    console.log(`${runningCount} running, ${filtered.length} total`);
+    console.log(
+      `Summary: ${running} running, ${clean} clean, ${uncommitted} uncommitted`
+    );
+
+    // Ready to collect
+    const readyWorktrees = dataArr.filter(
+      (d) => getCollectStatus(d, d.session?.status === "running") === "ready"
+    );
+    if (readyWorktrees.length > 0) {
+      const names = readyWorktrees.map((d) => d.worktree.name).join(" ");
+      console.log(`Ready to collect: ${names}`);
+    }
+
+    // Needs commit
+    const dirtyWorktrees = dataArr.filter((d) => d.dirty > 0);
+    if (dirtyWorktrees.length > 0) {
+      const details = dirtyWorktrees
+        .map((d) => `${d.worktree.name} (${d.dirty} dirty)`)
+        .join(", ");
+      console.log(`Needs commit: ${details}`);
+    }
+
+    // Next action
+    if (readyWorktrees.length > 0) {
+      const names = readyWorktrees.map((d) => d.worktree.name).join(" ");
+      console.log();
+      console.log(`Next: grim wt collect ${names} --delete`);
+    }
   }).pipe(
     Effect.provide(WorktreeServiceLive),
-    Effect.provide(AgentSessionServiceLive)
+    Effect.provide(AgentSessionServiceLive),
+    Effect.provide(WorktreeStateServiceLive)
   );

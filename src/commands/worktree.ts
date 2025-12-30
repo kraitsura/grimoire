@@ -43,9 +43,9 @@ grimoire wt - Git Worktree Management
 Manage isolated workspaces for parallel development and agentic coding sessions.
 
 COMMANDS:
+  ps                 Show all worktrees with agent + collect status (default)
   new <branch>       Create a new worktree from branch
   spawn <name>       Create worktree + launch sandboxed Claude session
-  ps                 List running/spawned agents
   kill <name>        Terminate a spawned agent
   children           Show worktrees spawned by current session
   wait               Block until child worktrees complete
@@ -54,8 +54,8 @@ COMMANDS:
   pr <name>          Create GitHub PR from worktree branch
   auth               Check/setup OAuth for headless agents
   from-issue <id>    Create worktree from issue ID
-  list               List active worktrees
-  status             Rich status with claims, logs, stages
+  list               List worktree names (simple output)
+  status             [DEPRECATED] Use 'ps' instead
   rm <name>          Remove a worktree
   path <name>        Print worktree path (for scripting)
   exec <name> <cmd>  Execute command in worktree context
@@ -140,6 +140,11 @@ export const worktreeCommand = (args: ParsedArgs) =>
       });
       yield* Effect.promise(() => waitUntilExit());
       return;
+    }
+
+    // Default to ps if no subcommand provided
+    if (!subcommand && !args.flags.help && !args.flags.h) {
+      return yield* worktreePs(args);
     }
 
     if (!subcommand || args.flags.help || args.flags.h) {
