@@ -72,6 +72,78 @@ function execGit(cmd: string, cwd: string): { success: boolean; output: string }
 }
 
 /**
+ * Check if beads daemon is running
+ */
+function isBeadsDaemonRunning(): boolean {
+  try {
+    // Check if bd command exists and daemon is running
+    const result = execSync("bd daemon --status", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return result.includes("running");
+  } catch {
+    // bd not installed or daemon not running
+    return false;
+  }
+}
+
+/**
+ * Stop beads daemon if running
+ */
+function stopBeadsDaemon(): boolean {
+  try {
+    execSync("bd daemon --stop", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Start beads daemon
+ */
+function startBeadsDaemon(): boolean {
+  try {
+    execSync("bd daemon --start", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if working tree has uncommitted changes
+ */
+function hasUncommittedChanges(cwd: string): boolean {
+  const result = execGit("git status --porcelain", cwd);
+  return result.success && result.output.trim().length > 0;
+}
+
+/**
+ * Stash all changes including untracked files
+ * Returns true if something was stashed
+ */
+function stashChanges(cwd: string): boolean {
+  const result = execGit("git stash push --include-untracked -m 'grim-wt-collect-auto-stash'", cwd);
+  // If nothing to stash, output contains "No local changes to save"
+  return result.success && !result.output.includes("No local changes");
+}
+
+/**
+ * Pop the most recent stash
+ */
+function popStash(cwd: string): { success: boolean; output: string } {
+  return execGit("git stash pop", cwd);
+}
+
+/**
  * Check if branch is a descendant of base branch using git merge-base
  */
 function isBranchDescendant(
@@ -271,7 +343,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
         console.log(`     (explicit - works from any branch, including '${currentBranch}')`);
         console.log();
         console.log("Example hierarchical workflow:");
-        console.log(`  main -> feature-base -> feature-impl`);
+        console.log(`  main → feature-base → feature-impl`);
         console.log(`  $ git checkout feature-base`);
         console.log(`  $ grim wt collect feature-impl  # Explicit: merges feature-impl into feature-base`);
         console.log();
@@ -308,7 +380,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
       }
 
       // Allow explicit collection from any branch, including worktree branches
-      // This supports hierarchical workflows: main -> feature-base -> feature-impl
+      // This supports hierarchical workflows: main → feature-base → feature-impl
       if (!json && verbose) {
         const isWorktree = isWorktreeBranch(repoRoot, currentBranch, state);
         console.log(`Collecting into: ${currentBranch}${isWorktree ? " (worktree branch)" : ""}`);
@@ -413,7 +485,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
 
           childEntries.push(entry);
           if (!json) {
-            console.log(`  + Found: ${entry.name}`);
+            console.log(`  ✓ Found: ${entry.name}`);
           }
         }
       }
