@@ -25,6 +25,37 @@ interface CollectResult {
   message?: string;
 }
 
+enum SkipReason {
+  WORKTREE_NOT_FOUND = "Worktree not found in git",
+  ALREADY_MERGED = "Already merged",
+  NOT_COMPLETED = "Work not yet completed",
+  CHECKOUT_FAILED = "Could not checkout branch",
+  REBASE_CONFLICT = "Rebase conflict",
+  REBASE_ERROR = "Rebase failed (non-conflict)",
+  MERGE_CONFLICT = "Merge conflict",
+  MERGE_ERROR = "Merge failed (non-conflict)",
+  EARLIER_CONFLICT = "Skipped due to earlier conflict in batch",
+}
+
+/**
+ * Log a skip event with details
+ */
+function logSkip(
+  json: boolean,
+  worktree: string,
+  branch: string,
+  reason: SkipReason,
+  details?: string
+): void {
+  if (!json) {
+    console.log(`  [skipped] ${branch}`);
+    console.log(`    └─ ${reason}`);
+    if (details) {
+      console.log(`       ${details}`);
+    }
+  }
+}
+
 /**
  * Execute git command and return result
  */
@@ -38,6 +69,45 @@ function execGit(cmd: string, cwd: string): { success: boolean; output: string }
     const stdout = err.stdout?.toString() || "";
     return { success: false, output: stderr || stdout };
   }
+}
+
+/**
+ * Check if branch is a descendant of base branch using git merge-base
+ */
+function isBranchDescendant(
+  repoRoot: string,
+  baseBranch: string,
+  testBranch: string
+): { isDescendant: boolean; hasCommits: boolean } {
+  // Check if testBranch is descended from baseBranch
+  const ancestorCheck = execGit(
+    `git merge-base --is-ancestor ${baseBranch} ${testBranch}`,
+    repoRoot
+  );
+
+  if (!ancestorCheck.success) {
+    return { isDescendant: false, hasCommits: false };
+  }
+
+  // Check if there are new commits beyond the base
+  const commitCheck = execGit(
+    `git log ${baseBranch}..${testBranch} --oneline`,
+    repoRoot
+  );
+
+  const hasCommits = commitCheck.success && commitCheck.output.trim().length > 0;
+  return { isDescendant: true, hasCommits };
+}
+
+/**
+ * Get current branch name, handling detached HEAD
+ */
+function getCurrentBranch(cwd: string): string | null {
+  const result = execGit("git rev-parse --abbrev-ref HEAD", cwd);
+  if (!result.success || result.output === "HEAD") {
+    return null; // Detached HEAD
+  }
+  return result.output.trim();
 }
 
 /**
@@ -111,6 +181,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
     const dryRun = args.flags["dry-run"] === true;
     const json = args.flags.json === true;
     const deleteAfter = args.flags.delete === true;
+    const verbose = args.flags.verbose === true || args.flags.v === true;
     const strategy = (args.flags.strategy as MergeStrategy) || "merge";
     // Auto-rebase is ON by default - rebase each branch onto current HEAD before merging
     // This prevents conflicts when multiple branches modify the same files in non-overlapping ways
@@ -171,21 +242,43 @@ export const worktreeCollect = (args: ParsedArgs) =>
         (w) => w.parentWorktree === currentWorktree || w.parentSession === currentSession
       )];
     } else {
-      console.log("Usage: grim wt collect <worktree1> <worktree2> ...");
-      console.log("       grim wt collect  (auto-detect children when in spawned context)");
-      console.log();
-      console.log("Options:");
-      console.log("  --dry-run              Preview what would be merged");
-      console.log("  --strategy <type>      merge (default), rebase, or squash");
-      console.log("  --delete               Delete worktree after successful merge");
-      console.log("  --no-rebase            Skip auto-rebase (not recommended)");
-      console.log("  --json                 Output structured JSON");
-      console.log();
-      console.log("Auto-rebase (default ON):");
-      console.log("  Before merging each branch, it's rebased onto current HEAD.");
-      console.log("  This allows multiple branches that modify the same files");
-      console.log("  (in different places) to merge cleanly.");
-      process.exit(1);
+      // NEW: Git ancestry detection - find all worktrees created from current branch
+      const currentBranch = getCurrentBranch(cwd);
+
+      if (!currentBranch) {
+        console.log("Error: Cannot determine current branch (detached HEAD?)");
+        console.log("Usage: grim wt collect <worktree1> <worktree2> ...");
+        console.log("       grim wt collect  (auto-detect from spawned context)");
+        process.exit(1);
+      }
+
+      if (!json) {
+        console.log(`Detecting worktrees created from branch: ${currentBranch}`);
+      }
+
+      // Find all worktrees whose branches are descendants of current branch
+      childEntries = [];
+      for (const entry of state.worktrees) {
+        const ancestry = isBranchDescendant(repoRoot, currentBranch, entry.branch);
+
+        if (verbose && !json) {
+          console.log(`  Checking ${entry.name} (${entry.branch}):`);
+          console.log(`    Is descendant: ${ancestry.isDescendant}, Has commits: ${ancestry.hasCommits}`);
+        }
+
+        if (ancestry.isDescendant && ancestry.hasCommits) {
+          childEntries.push(entry);
+          if (!json) {
+            console.log(`  ✓ Found: ${entry.name}`);
+          }
+        }
+      }
+
+      if (childEntries.length === 0 && !json) {
+        console.log(`No worktrees found that are descendants of ${currentBranch}`);
+        console.log();
+        console.log("Try: grim wt collect <worktree1> <worktree2> ...");
+      }
     }
 
     if (childEntries.length === 0) {
@@ -238,28 +331,37 @@ export const worktreeCollect = (args: ParsedArgs) =>
     for (const entry of orderedEntries) {
       const child = completed.find((c) => c.entry.name === entry.name);
       if (!child?.worktree) {
+        logSkip(json, entry.name, entry.branch, SkipReason.WORKTREE_NOT_FOUND);
         results.push({
           worktree: entry.name,
           branch: entry.branch,
           status: "skipped",
-          message: "Worktree not found",
+          message: SkipReason.WORKTREE_NOT_FOUND,
         });
         continue;
       }
 
       // Skip if already merged
       if (entry.mergeStatus === "merged") {
+        logSkip(json, entry.name, entry.branch, SkipReason.ALREADY_MERGED);
         results.push({
           worktree: entry.name,
           branch: entry.branch,
           status: "skipped",
-          message: "Already merged",
+          message: SkipReason.ALREADY_MERGED,
         });
         continue;
       }
 
       // Check if child is actually completed
       if (!isCompleted(entry, sessionService, child.sessionStatus, explicitSet.has(entry.name))) {
+        if (verbose && !json) {
+          console.log(`  Not completed: ${entry.name}`);
+          console.log(`    mergeStatus: ${entry.mergeStatus || 'undefined'}`);
+          console.log(`    sessionStatus: ${child.sessionStatus?.status || 'none'}`);
+          console.log(`    completedAt: ${entry.completedAt || 'undefined'}`);
+        }
+        logSkip(json, entry.name, entry.branch, SkipReason.NOT_COMPLETED);
         results.push({
           worktree: entry.name,
           branch: entry.branch,
@@ -300,11 +402,12 @@ export const worktreeCollect = (args: ParsedArgs) =>
         // Checkout the child branch and rebase onto current HEAD
         const checkout = execGit(`git checkout ${entry.branch}`, cwd);
         if (!checkout.success) {
+          logSkip(json, entry.name, entry.branch, SkipReason.CHECKOUT_FAILED, checkout.output);
           results.push({
             worktree: entry.name,
             branch: entry.branch,
             status: "skipped",
-            message: `Checkout failed: ${checkout.output}`,
+            message: `${SkipReason.CHECKOUT_FAILED}: ${checkout.output}`,
           });
           continue;
         }
@@ -323,11 +426,12 @@ export const worktreeCollect = (args: ParsedArgs) =>
               mergeStatus: "conflict",
             });
 
+            logSkip(json, entry.name, entry.branch, SkipReason.REBASE_CONFLICT, rebase.output.split("\n")[0]);
             results.push({
               worktree: entry.name,
               branch: entry.branch,
               status: "conflict",
-              message: `Rebase conflict: ${rebase.output.split("\n")[0]}`,
+              message: `${SkipReason.REBASE_CONFLICT}: ${rebase.output.split("\n")[0]}`,
             });
 
             if (!json) {
@@ -338,11 +442,12 @@ export const worktreeCollect = (args: ParsedArgs) =>
             hadConflict = true;
             continue; // Try next branch instead of stopping
           } else {
+            logSkip(json, entry.name, entry.branch, SkipReason.REBASE_ERROR, rebase.output);
             results.push({
               worktree: entry.name,
               branch: entry.branch,
               status: "skipped",
-              message: `Rebase failed: ${rebase.output}`,
+              message: `${SkipReason.REBASE_ERROR}: ${rebase.output}`,
             });
             continue;
           }
@@ -424,11 +529,12 @@ export const worktreeCollect = (args: ParsedArgs) =>
             mergeStatus: "conflict",
           });
 
+          logSkip(json, entry.name, entry.branch, SkipReason.MERGE_CONFLICT, result.output.split("\n")[0]);
           results.push({
             worktree: entry.name,
             branch: entry.branch,
             status: "conflict",
-            message: result.output.split("\n")[0],
+            message: `${SkipReason.MERGE_CONFLICT}: ${result.output.split("\n")[0]}`,
           });
 
           if (!json) {
@@ -439,11 +545,12 @@ export const worktreeCollect = (args: ParsedArgs) =>
           hadConflict = true;
           continue; // Continue with next branch instead of stopping
         } else {
+          logSkip(json, entry.name, entry.branch, SkipReason.MERGE_ERROR, result.output);
           results.push({
             worktree: entry.name,
             branch: entry.branch,
             status: "skipped",
-            message: result.output,
+            message: `${SkipReason.MERGE_ERROR}: ${result.output}`,
           });
         }
       }
@@ -453,11 +560,12 @@ export const worktreeCollect = (args: ParsedArgs) =>
     const processedNames = new Set(results.map((r) => r.worktree));
     for (const entry of orderedEntries) {
       if (!processedNames.has(entry.name)) {
+        logSkip(json, entry.name, entry.branch, SkipReason.EARLIER_CONFLICT);
         results.push({
           worktree: entry.name,
           branch: entry.branch,
           status: "skipped",
-          message: "Skipped due to earlier conflict",
+          message: SkipReason.EARLIER_CONFLICT,
         });
       }
     }

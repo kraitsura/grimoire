@@ -604,7 +604,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
 
     list: (cwd: string) =>
       Effect.gen(function* () {
-        const repoRoot = yield* getGitRoot(cwd);
+        const repoRoot = yield* getMainRepoRoot(cwd);
         const config = yield* getConfig(repoRoot);
 
         // Get worktrees from git
