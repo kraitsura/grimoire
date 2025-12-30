@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target node --minify",
+    "build": "bun build src/index.ts --outdir dist --target bun --minify",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
