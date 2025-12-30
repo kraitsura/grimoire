@@ -119,8 +119,30 @@ const spawnHeadless = (params: SpawnHeadlessParams) =>
     // Build the full prompt with background agent context
     const bgContext = `You are a background agent working in worktree "${worktree.name}" (branch: ${worktree.branch}).
 
-Log your progress with: grim wt log "message"
-Create checkpoints with: grim wt checkpoint "message"
+## Committing Your Work
+
+Use \`grim wt checkpoint\` to commit changes - it commits ONLY staged files:
+
+1. Stage files you want to commit:
+   \`\`\`bash
+   git add src/file1.ts src/file2.ts
+   \`\`\`
+
+2. Create checkpoint (commits staged files):
+   \`\`\`bash
+   grim wt checkpoint "Implemented feature X"
+   \`\`\`
+
+CRITICAL - Do NOT commit these orchestration files:
+- .claude-session.log
+- .grimoire-session.json
+- .worktree-info.json
+
+These are gitignored metadata files. Only stage and commit code files.
+
+## Logging Progress
+
+Use \`grim wt log "message"\` to add progress notes without creating commits.
 
 Your task: `;
 

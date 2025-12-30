@@ -118,24 +118,23 @@ export const worktreeCheckpoint = (args: ParsedArgs) =>
     const info = infoResult.right;
     const repoRoot = yield* getMainRepoRoot(cwd);
 
-    // Check for changes in worktree
-    let hasChanges = false;
+    // Check if anything is staged for commit
+    let hasStagedChanges = false;
     try {
-      const status = execSync("git status --porcelain", {
+      const staged = execSync("git diff --cached --name-only", {
         cwd: info.path,
         encoding: "utf8",
       });
-      hasChanges = status.trim().length > 0;
+      hasStagedChanges = staged.trim().length > 0;
     } catch {
       // Ignore errors
     }
 
     let commitHash: string;
 
-    if (hasChanges) {
-      // Stage and commit all changes
+    if (hasStagedChanges) {
+      // Commit staged changes (no git add - agent must stage explicitly)
       try {
-        execSync("git add -A", { cwd: info.path, stdio: "pipe" });
         execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
           cwd: info.path,
           stdio: "pipe",
@@ -151,12 +150,12 @@ export const worktreeCheckpoint = (args: ParsedArgs) =>
         process.exit(1);
       }
     } else {
-      // No changes - just record current HEAD as checkpoint
+      // No staged changes - just record current HEAD as checkpoint
       commitHash = execSync("git rev-parse HEAD", {
         cwd: info.path,
         encoding: "utf8",
       }).trim();
-      console.log(`No changes to commit, recording HEAD: ${commitHash.slice(0, 7)}`);
+      console.log(`No staged changes, recording HEAD: ${commitHash.slice(0, 7)}`);
     }
 
     const author = (args.flags.author as string) || "human";
