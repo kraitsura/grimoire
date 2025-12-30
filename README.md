@@ -4,22 +4,6 @@ A prompt engineering toolkit for developers. Store prompts with version control,
 
 ## Installation
 
-### Requirements
-
-**Required:**
-- **Node.js 18+** or **Bun** - JavaScript runtime
-- **git** - Version control
-
-**Optional (for specific features):**
-
-| Dependency | Feature | Install |
-|------------|---------|---------|
-| [Claude Code](https://claude.ai/claude-code) | Spawn agents in worktrees (`grim wt spawn`) | `npm install -g @anthropic-ai/claude-code` |
-| [Beads](https://github.com/steveyegge/beads) | Issue tracking integration (`grim wt from-issue`) | `curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh \| bash` |
-| [GitHub CLI](https://cli.github.com) | Create PRs from worktrees (`grim wt pr`) | `brew install gh` or [download](https://cli.github.com) |
-| [SRT](https://github.com/anthropic-experimental/sandbox-runtime) | Sandboxed agent execution | `npm install -g @anthropic-ai/sandbox-runtime` |
-| bubblewrap, socat | SRT on Linux | `sudo apt install bubblewrap socat` |
-
 ### Quick Install (Recommended)
 
 ```bash
@@ -67,6 +51,57 @@ grimoire --help
 ```
 
 The CLI is available as both `grimoire` and `grim` (short alias).
+
+### Requirements
+
+**Required:**
+- **Node.js 18+** or **Bun** - JavaScript runtime
+- **git** - Version control
+
+**Optional (for specific features):**
+
+| Dependency | Feature | Install |
+|------------|---------|---------|
+| [Claude Code](https://claude.ai/claude-code) | Spawn agents in worktrees (`grim wt spawn`) | `npm install -g @anthropic-ai/claude-code` |
+| [Beads](https://github.com/steveyegge/beads) | Issue tracking integration (`grim wt from-issue`) | `curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh \| bash` |
+| [GitHub CLI](https://cli.github.com) | Create PRs from worktrees (`grim wt pr`) | `brew install gh` or [download](https://cli.github.com) |
+| [SRT](https://github.com/anthropic-experimental/sandbox-runtime) | Sandboxed agent execution | `npm install -g @anthropic-ai/sandbox-runtime` |
+| bubblewrap, socat | SRT on Linux | `sudo apt install bubblewrap socat` |
+
+---
+
+## Quick Start
+
+### Create your first prompt
+
+```bash
+grimoire hello-world
+```
+
+This opens your editor. Write a prompt, save, and it's stored in your library.
+
+### Copy to clipboard
+
+```bash
+grimoire copy hello-world
+```
+
+### Add skills to a project
+
+```bash
+cd my-project
+grimoire skills init
+grimoire skills add github:anthropics/claude-code-skills
+grimoire skills enable code-review
+```
+
+### Configure LLM providers
+
+```bash
+grimoire config llm add openai      # Add API key
+grimoire config llm add anthropic
+grimoire test my-prompt             # Test prompts
+```
 
 ---
 
@@ -286,41 +321,6 @@ grimoire agents create my-agent        # Scaffold agent
 ```
 
 [View documentation](docs/plugins.md)
-
----
-
-## Quick Start
-
-### Create your first prompt
-
-```bash
-grimoire hello-world
-```
-
-This opens your editor. Write a prompt, save, and it's stored in your library.
-
-### Copy to clipboard
-
-```bash
-grimoire copy hello-world
-```
-
-### Add skills to a project
-
-```bash
-cd my-project
-grimoire skills init
-grimoire skills add github:anthropics/claude-code-skills
-grimoire skills enable code-review
-```
-
-### Configure LLM providers
-
-```bash
-grimoire config llm add openai      # Add API key
-grimoire config llm add anthropic
-grimoire test my-prompt             # Test prompts
-```
 
 ---
 
