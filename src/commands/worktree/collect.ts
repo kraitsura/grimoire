@@ -23,18 +23,19 @@ interface CollectResult {
   branch: string;
   status: "merged" | "conflict" | "skipped" | "not_ready";
   message?: string;
+  commits?: string[];
+  conflictFiles?: string[];
 }
 
 enum SkipReason {
-  WORKTREE_NOT_FOUND = "Worktree not found in git",
+  WORKTREE_NOT_FOUND = "Worktree not found",
   ALREADY_MERGED = "Already merged",
   NOT_COMPLETED = "Work not yet completed",
-  CHECKOUT_FAILED = "Could not checkout branch",
+  UNCOMMITTED_CHANGES = "Uncommitted changes in worktree",
+  NO_NEW_COMMITS = "No new commits",
   REBASE_CONFLICT = "Rebase conflict",
-  REBASE_ERROR = "Rebase failed (non-conflict)",
-  MERGE_CONFLICT = "Merge conflict",
-  MERGE_ERROR = "Merge failed (non-conflict)",
-  EARLIER_CONFLICT = "Skipped due to earlier conflict in batch",
+  REBASE_ERROR = "Rebase failed",
+  MERGE_ERROR = "Merge failed",
 }
 
 /**
@@ -72,54 +73,7 @@ function execGit(cmd: string, cwd: string): { success: boolean; output: string }
 }
 
 /**
- * Check if beads daemon is running
- */
-function isBeadsDaemonRunning(): boolean {
-  try {
-    // Check if bd command exists and daemon is running
-    const result = execSync("bd daemon --status", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return result.includes("running");
-  } catch {
-    // bd not installed or daemon not running
-    return false;
-  }
-}
-
-/**
- * Stop beads daemon if running
- */
-function stopBeadsDaemon(): boolean {
-  try {
-    execSync("bd daemon --stop", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Start beads daemon
- */
-function startBeadsDaemon(): boolean {
-  try {
-    execSync("bd daemon --start", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if working tree has uncommitted changes
+ * Check if worktree has uncommitted changes
  */
 function hasUncommittedChanges(cwd: string): boolean {
   const result = execGit("git status --porcelain", cwd);
@@ -127,20 +81,28 @@ function hasUncommittedChanges(cwd: string): boolean {
 }
 
 /**
- * Stash all changes including untracked files
- * Returns true if something was stashed
+ * Get commit summaries for a branch (commits not in target)
  */
-function stashChanges(cwd: string): boolean {
-  const result = execGit("git stash push --include-untracked -m 'grim-wt-collect-auto-stash'", cwd);
-  // If nothing to stash, output contains "No local changes to save"
-  return result.success && !result.output.includes("No local changes");
+function getCommitSummaries(repoRoot: string, targetBranch: string, sourceBranch: string): string[] {
+  const result = execGit(
+    `git log ${targetBranch}..${sourceBranch} --format="%s" --reverse`,
+    repoRoot
+  );
+  if (!result.success || !result.output.trim()) {
+    return [];
+  }
+  return result.output.trim().split("\n").filter(Boolean);
 }
 
 /**
- * Pop the most recent stash
+ * Get conflicting files from git status
  */
-function popStash(cwd: string): { success: boolean; output: string } {
-  return execGit("git stash pop", cwd);
+function getConflictingFiles(cwd: string): string[] {
+  const result = execGit("git diff --name-only --diff-filter=U", cwd);
+  if (!result.success || !result.output.trim()) {
+    return [];
+  }
+  return result.output.trim().split("\n").filter(Boolean);
 }
 
 /**
@@ -591,228 +553,165 @@ export const worktreeCollect = (args: ParsedArgs) =>
         continue;
       }
 
+      // Get target branch (branch we're merging into)
+      const targetBranch = getCurrentBranch(cwd);
+      if (!targetBranch) {
+        results.push({
+          worktree: entry.name,
+          branch: entry.branch,
+          status: "skipped",
+          message: "Could not determine target branch",
+        });
+        continue;
+      }
+
+      // Get commit summaries before any changes
+      const commitsBefore = getCommitSummaries(repoRoot, targetBranch, entry.branch);
+
+      if (commitsBefore.length === 0) {
+        logSkip(json, entry.name, entry.branch, SkipReason.NO_NEW_COMMITS);
+        results.push({
+          worktree: entry.name,
+          branch: entry.branch,
+          status: "skipped",
+          message: SkipReason.NO_NEW_COMMITS,
+        });
+        continue;
+      }
+
       if (dryRun) {
         results.push({
           worktree: entry.name,
           branch: entry.branch,
           status: "merged",
           message: "Would merge",
+          commits: commitsBefore,
         });
         if (!json) {
-          console.log(`  [dry-run] Would merge ${entry.branch}${autoRebase ? " (with rebase)" : ""}`);
+          console.log(`  ${entry.name} (dry-run)`);
+          for (const commit of commitsBefore.slice(0, 3)) {
+            console.log(`    ${commit}`);
+          }
+          if (commitsBefore.length > 3) {
+            console.log(`    ... and ${commitsBefore.length - 3} more`);
+          }
         }
         continue;
       }
 
-      // Track if we detached the worktree so we can restore it later
-      let detachedWorktree = false;
+      const wtPath = child.worktree!.path;
 
-      // Auto-rebase: Update the branch to include current HEAD before merging
-      // This prevents conflicts when multiple branches modify the same files
+      // ═══════════════════════════════════════════════════════════════════
+      // PHASE 1: Validate child worktree
+      // ═══════════════════════════════════════════════════════════════════
+
+      if (hasUncommittedChanges(wtPath)) {
+        logSkip(json, entry.name, entry.branch, SkipReason.UNCOMMITTED_CHANGES,
+          "Commit your work first");
+        results.push({
+          worktree: entry.name,
+          branch: entry.branch,
+          status: "skipped",
+          message: `${SkipReason.UNCOMMITTED_CHANGES} - commit your work first`,
+        });
+        continue;
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
+      // PHASE 2: Rebase in child worktree (not main!)
+      // ═══════════════════════════════════════════════════════════════════
+
       if (autoRebase) {
-        // Save current branch
-        const currentBranch = execGit("git rev-parse --abbrev-ref HEAD", cwd);
-        if (!currentBranch.success) {
-          results.push({
-            worktree: entry.name,
-            branch: entry.branch,
-            status: "skipped",
-            message: "Could not determine current branch",
-          });
-          continue;
-        }
+        // Fetch latest target branch state
+        execGit(`git fetch origin ${targetBranch}`, wtPath);
 
-        // If the branch is checked out in a worktree, we need to temporarily detach it
-        // so we can checkout the branch in the main repo for rebasing
-        if (child.worktree) {
-          const wtPath = child.worktree.path;
-          const wtBranch = execGit("git rev-parse --abbrev-ref HEAD", wtPath);
+        const rebase = execGit(`git rebase ${targetBranch}`, wtPath);
 
-          if (wtBranch.success && wtBranch.output === entry.branch) {
-            // Branch is checked out in worktree - detach it temporarily
-            const detach = execGit("git checkout --detach", wtPath);
-            if (detach.success) {
-              detachedWorktree = true;
-              if (verbose && !json) {
-                console.log(`  Temporarily detached ${entry.name} worktree from ${entry.branch}`);
-              }
-            } else {
-              logSkip(json, entry.name, entry.branch, SkipReason.CHECKOUT_FAILED,
-                `Could not detach worktree: ${detach.output}`);
-              results.push({
-                worktree: entry.name,
-                branch: entry.branch,
-                status: "skipped",
-                message: `Could not detach worktree: ${detach.output}`,
-              });
-              continue;
-            }
-          }
-        }
-
-        // Checkout the child branch and rebase onto current HEAD
-        const checkout = execGit(`git checkout ${entry.branch}`, cwd);
-        if (!checkout.success) {
-          // Restore worktree if we detached it
-          if (detachedWorktree && child.worktree) {
-            execGit(`git checkout ${entry.branch}`, child.worktree.path);
-          }
-
-          logSkip(json, entry.name, entry.branch, SkipReason.CHECKOUT_FAILED, checkout.output);
-          results.push({
-            worktree: entry.name,
-            branch: entry.branch,
-            status: "skipped",
-            message: `${SkipReason.CHECKOUT_FAILED}: ${checkout.output}`,
-          });
-          continue;
-        }
-
-        const rebase = execGit(`git rebase ${currentBranch.output}`, cwd);
         if (!rebase.success) {
-          // Rebase failed - abort and report
-          execGit("git rebase --abort", cwd);
-          execGit(`git checkout ${currentBranch.output}`, cwd);
-
-          // Restore worktree if we detached it
-          if (detachedWorktree && child.worktree) {
-            execGit(`git checkout ${entry.branch}`, child.worktree.path);
-          }
-
           const isConflict = rebase.output.includes("CONFLICT") ||
             rebase.output.includes("could not apply");
 
           if (isConflict) {
+            // Don't abort - leave conflict in child for agent to fix
+            const conflictFiles = getConflictingFiles(wtPath);
+
             yield* stateService.updateWorktree(repoRoot, entry.name, {
               mergeStatus: "conflict",
             });
 
-            logSkip(json, entry.name, entry.branch, SkipReason.REBASE_CONFLICT, rebase.output.split("\n")[0]);
             results.push({
               worktree: entry.name,
               branch: entry.branch,
               status: "conflict",
-              message: `${SkipReason.REBASE_CONFLICT}: ${rebase.output.split("\n")[0]}`,
+              message: SkipReason.REBASE_CONFLICT,
+              conflictFiles,
             });
 
             if (!json) {
-              console.log(`  [conflict] ${entry.branch} (during rebase)`);
-              console.log(`    └─ ${rebase.output.split("\n")[0]}`);
+              console.log(`  ${entry.name} [conflict]`);
+              for (const file of conflictFiles.slice(0, 5)) {
+                console.log(`    - ${file}`);
+              }
+              if (conflictFiles.length > 5) {
+                console.log(`    ... and ${conflictFiles.length - 5} more`);
+              }
+              console.log(`    To fix: cd ${wtPath}`);
+              console.log(`            # resolve conflicts`);
+              console.log(`            git add . && git rebase --continue`);
             }
 
             hadConflict = true;
-            continue; // Try next branch instead of stopping
+            continue;
           } else {
+            // Non-conflict rebase error - abort and report
+            execGit("git rebase --abort", wtPath);
             logSkip(json, entry.name, entry.branch, SkipReason.REBASE_ERROR, rebase.output);
             results.push({
               worktree: entry.name,
               branch: entry.branch,
               status: "skipped",
-              message: `${SkipReason.REBASE_ERROR}: ${rebase.output}`,
+              message: `${SkipReason.REBASE_ERROR}: ${rebase.output.split("\n")[0]}`,
             });
             continue;
           }
         }
-
-        // Switch back to main branch for the merge
-        execGit(`git checkout ${currentBranch.output}`, cwd);
-
-        // Note: Don't restore worktree yet - we'll do it after the merge succeeds
-        // This keeps the worktree detached during merge in case something goes wrong
-
-        if (!json) {
-          console.log(`  [rebased] ${entry.branch}`);
-        }
       }
 
-      // Capture HEAD before merge to verify it actually happened
-      const beforeMerge = execGit("git rev-parse HEAD", repoRoot);
-      if (!beforeMerge.success) {
+      // ═══════════════════════════════════════════════════════════════════
+      // PHASE 3: Fast-forward merge into target
+      // ═══════════════════════════════════════════════════════════════════
+
+      // After rebase, merge should be fast-forward
+      const mergeCmd = autoRebase
+        ? `git merge ${entry.branch} --ff-only`
+        : `git merge ${entry.branch} --no-edit`;
+
+      const result = execGit(mergeCmd, cwd);
+
+      if (result.success) {
+        // Get commits that were merged (after rebase, these are the rebased commits)
+        const commitsAfter = autoRebase
+          ? commitsBefore  // Rebase preserves commit messages
+          : getCommitSummaries(repoRoot, targetBranch, entry.branch);
+
+        yield* stateService.updateWorktree(repoRoot, entry.name, {
+          mergeStatus: "merged",
+        });
+
         results.push({
           worktree: entry.name,
           branch: entry.branch,
-          status: "skipped",
-          message: "Could not get current HEAD",
+          status: "merged",
+          commits: commitsAfter,
         });
-        continue;
-      }
 
-      // Perform the merge (should be fast-forward after rebase)
-      let mergeCmd: string;
-      switch (strategy) {
-        case "squash":
-          mergeCmd = `git merge --squash ${entry.branch}`;
-          break;
-        case "rebase":
-          mergeCmd = `git rebase ${entry.branch}`;
-          break;
-        default:
-          mergeCmd = `git merge ${entry.branch} --no-edit`;
-      }
-
-      const result = execGit(mergeCmd, repoRoot);
-
-      if (result.success || (strategy === "squash" && result.output.includes("Squash commit"))) {
-        // For squash, we need to commit
-        if (strategy === "squash") {
-          const commitResult = execGit(`git commit -m "Merge ${entry.branch} (squash)"`, repoRoot);
-          if (!commitResult.success && !commitResult.output.includes("nothing to commit")) {
-            results.push({
-              worktree: entry.name,
-              branch: entry.branch,
-              status: "conflict",
-              message: commitResult.output,
-            });
-            hadConflict = true;
-            break;
+        if (!json) {
+          console.log(`  ${entry.name} [merged]`);
+          for (const commit of commitsAfter.slice(0, 3)) {
+            console.log(`    ${commit}`);
           }
-        }
-
-        // CRITICAL: Verify the merge actually happened by checking if HEAD changed
-        const mergeHappened = verifyMergeHappened(repoRoot, beforeMerge.output);
-
-        if (!mergeHappened && !result.output.includes("Already up to date")) {
-          // Merge command succeeded but HEAD didn't change - something went wrong
-          results.push({
-            worktree: entry.name,
-            branch: entry.branch,
-            status: "skipped",
-            message: "Merge command succeeded but HEAD unchanged (possible git state issue)",
-          });
-
-          if (!json) {
-            console.log(`  [warning] ${entry.branch} - merge reported success but HEAD unchanged`);
-          }
-          continue;
-        }
-
-        // Only update merge status if we verified the merge happened
-        if (mergeHappened || result.output.includes("Already up to date")) {
-          yield* stateService.updateWorktree(repoRoot, entry.name, {
-            mergeStatus: "merged",
-          });
-
-          results.push({
-            worktree: entry.name,
-            branch: entry.branch,
-            status: "merged",
-            message: result.output.includes("Already up to date") ? "Already up to date" : undefined,
-          });
-
-          if (!json) {
-            if (result.output.includes("Already up to date")) {
-              console.log(`  [merged] ${entry.branch} (already up to date)`);
-            } else {
-              console.log(`  [merged] ${entry.branch}`);
-            }
-          }
-        }
-
-        // Restore worktree if we detached it (only if not deleting)
-        if (detachedWorktree && child.worktree && !deleteAfter) {
-          execGit(`git checkout ${entry.branch}`, child.worktree.path);
-          if (verbose && !json) {
-            console.log(`    └─ restored worktree to ${entry.branch}`);
+          if (commitsAfter.length > 3) {
+            console.log(`    ... and ${commitsAfter.length - 3} more`);
           }
         }
 
@@ -820,72 +719,36 @@ export const worktreeCollect = (args: ParsedArgs) =>
         if (deleteAfter) {
           yield* Effect.either(worktreeService.remove(cwd, entry.name, { deleteBranch: false }));
           if (!json) {
-            console.log(`    └─ deleted worktree`);
+            console.log(`    (worktree deleted)`);
           }
         }
       } else {
-        // Check for conflict
+        // Merge failed - this shouldn't happen after successful rebase
+        // but handle it gracefully
         const isConflict = result.output.includes("CONFLICT") ||
-          result.output.includes("Merge conflict") ||
-          result.output.includes("could not apply");
+          result.output.includes("not possible") ||
+          result.output.includes("fatal");
 
         if (isConflict) {
-          // Abort the merge to restore clean state
           execGit("git merge --abort", cwd);
-          execGit("git rebase --abort", cwd);
 
-          // Restore worktree if we detached it
-          if (detachedWorktree && child.worktree) {
-            execGit(`git checkout ${entry.branch}`, child.worktree.path);
-          }
-
-          yield* stateService.updateWorktree(repoRoot, entry.name, {
-            mergeStatus: "conflict",
-          });
-
-          logSkip(json, entry.name, entry.branch, SkipReason.MERGE_CONFLICT, result.output.split("\n")[0]);
+          logSkip(json, entry.name, entry.branch, SkipReason.MERGE_ERROR,
+            result.output.split("\n")[0]);
           results.push({
             worktree: entry.name,
             branch: entry.branch,
-            status: "conflict",
-            message: `${SkipReason.MERGE_CONFLICT}: ${result.output.split("\n")[0]}`,
+            status: "skipped",
+            message: `${SkipReason.MERGE_ERROR}: ${result.output.split("\n")[0]}`,
           });
-
-          if (!json) {
-            console.log(`  [conflict] ${entry.branch} (during merge)`);
-            console.log(`    └─ ${result.output.split("\n")[0]}`);
-          }
-
-          hadConflict = true;
-          continue; // Continue with next branch instead of stopping
         } else {
-          // Restore worktree if we detached it
-          if (detachedWorktree && child.worktree) {
-            execGit(`git checkout ${entry.branch}`, child.worktree.path);
-          }
-
           logSkip(json, entry.name, entry.branch, SkipReason.MERGE_ERROR, result.output);
           results.push({
             worktree: entry.name,
             branch: entry.branch,
             status: "skipped",
-            message: `${SkipReason.MERGE_ERROR}: ${result.output}`,
+            message: `${SkipReason.MERGE_ERROR}: ${result.output.split("\n")[0]}`,
           });
         }
-      }
-    }
-
-    // Add remaining unprocessed as skipped (if we stopped early due to conflict)
-    const processedNames = new Set(results.map((r) => r.worktree));
-    for (const entry of orderedEntries) {
-      if (!processedNames.has(entry.name)) {
-        logSkip(json, entry.name, entry.branch, SkipReason.EARLIER_CONFLICT);
-        results.push({
-          worktree: entry.name,
-          branch: entry.branch,
-          status: "skipped",
-          message: SkipReason.EARLIER_CONFLICT,
-        });
       }
     }
 
@@ -904,12 +767,20 @@ export const worktreeCollect = (args: ParsedArgs) =>
       const notReady = results.filter((r) => r.status === "not_ready").length;
 
       console.log();
-      console.log(`Done: ${merged} merged, ${conflicts} conflicts, ${skipped} skipped, ${notReady} not ready`);
+      console.log(`Done: ${merged} merged, ${conflicts} conflict${conflicts !== 1 ? "s" : ""}, ${skipped} skipped, ${notReady} not ready`);
 
       if (hadConflict) {
+        const conflictResults = results.filter((r) => r.status === "conflict");
         console.log();
-        console.log("Resolve conflicts manually, then run 'grim wt collect' again.");
-        console.log("Use 'grim wt resolve <name>' for guided resolution.");
+        console.log("To resolve conflicts:");
+        for (const cr of conflictResults) {
+          const wt = worktrees.find((w) => w.name === cr.worktree);
+          if (wt) {
+            console.log(`  cd ${wt.path}`);
+            console.log(`  # fix conflicts, then: git add . && git rebase --continue`);
+            console.log(`  grim wt collect ${cr.worktree}`);
+          }
+        }
       }
     }
 
