@@ -1,7 +1,0 @@
-{
-  "last_failure": "2025-12-30T03:40:10.686461-08:00",
-  "failure_count": 1,
-  "backoff_until": "2025-12-30T03:40:40.686461-08:00",
-  "needs_manual_sync": false,
-  "failure_reason": "git pull failed in worktree: exit status 1\nFrom github.com:kraitsura/grimoire\n * branch            beads-sync -\u003e FETCH_HEAD\nThere are no candidates for merging among the refs that you just fetched.\nGenerally this means that you provided a wildcard refspec which had no\nmatches on the remote end.\n"
-}
