@@ -10,6 +10,7 @@ import {
   WorktreeServiceLive,
   WorktreeStateService,
   WorktreeStateServiceLive,
+  getMainRepoRoot,
 } from "../../services/worktree";
 import type { WorktreeCheckpoint, WorktreeLog } from "../../models/worktree";
 
@@ -45,7 +46,7 @@ export const worktreeCheckpoint = (args: ParsedArgs) =>
         process.exit(1);
       }
 
-      const repoRoot = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
+      const repoRoot = yield* getMainRepoRoot(cwd);
       const state = yield* stateService.getState(repoRoot);
       const entry = state.worktrees.find((w) => w.name === name);
       const checkpoints = (entry?.checkpoints || []) as WorktreeCheckpoint[];
@@ -115,7 +116,7 @@ export const worktreeCheckpoint = (args: ParsedArgs) =>
     }
 
     const info = infoResult.right;
-    const repoRoot = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
+    const repoRoot = yield* getMainRepoRoot(cwd);
 
     // Check for changes in worktree
     let hasChanges = false;

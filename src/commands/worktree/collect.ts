@@ -12,6 +12,7 @@ import {
   WorktreeStateServiceLive,
   AgentSessionService,
   AgentSessionServiceLive,
+  getMainRepoRoot,
 } from "../../services/worktree";
 import type { WorktreeListItem, WorktreeEntry } from "../../models/worktree";
 
@@ -120,6 +121,9 @@ export const worktreeCollect = (args: ParsedArgs) =>
     const sessionService = yield* AgentSessionService;
     const cwd = process.cwd();
 
+    // Get main repo root (works from both main repo and worktrees)
+    const repoRoot = yield* getMainRepoRoot(cwd);
+
     // Detect current worktree/session or use explicit args
     const currentWorktree = process.env.GRIMOIRE_WORKTREE;
     const currentSession = process.env.GRIMOIRE_SESSION_ID;
@@ -134,7 +138,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
     }
 
     const worktrees = worktreesResult.right;
-    const state = yield* stateService.getState(cwd);
+    const state = yield* stateService.getState(repoRoot);
 
     // Find worktrees to collect - either explicit args, or children of current session
     let childEntries: WorktreeEntry[];
@@ -315,7 +319,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
             rebase.output.includes("could not apply");
 
           if (isConflict) {
-            yield* stateService.updateWorktree(cwd, entry.name, {
+            yield* stateService.updateWorktree(repoRoot, entry.name, {
               mergeStatus: "conflict",
             });
 
@@ -384,7 +388,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
         }
 
         // Update merge status
-        yield* stateService.updateWorktree(cwd, entry.name, {
+        yield* stateService.updateWorktree(repoRoot, entry.name, {
           mergeStatus: "merged",
         });
 
@@ -416,7 +420,7 @@ export const worktreeCollect = (args: ParsedArgs) =>
           execGit("git merge --abort", cwd);
           execGit("git rebase --abort", cwd);
 
-          yield* stateService.updateWorktree(cwd, entry.name, {
+          yield* stateService.updateWorktree(repoRoot, entry.name, {
             mergeStatus: "conflict",
           });
 

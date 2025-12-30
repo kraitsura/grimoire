@@ -83,6 +83,37 @@ const getGitRoot = (
   });
 
 /**
+ * Get the main repository root (not worktree root)
+ * Works from main repo, worktree, or any subdirectory
+ */
+const getMainRepoRoot = (
+  cwd: string
+): Effect.Effect<string, NotInGitRepoError> =>
+  Effect.gen(function* () {
+    // Use git-common-dir to detect if in worktree
+    const commonDirResult = yield* execCommand("git rev-parse --git-common-dir", cwd);
+    if (commonDirResult.exitCode !== 0) {
+      return yield* Effect.fail(new NotInGitRepoError({ path: cwd }));
+    }
+
+    const commonDir = commonDirResult.stdout.trim();
+
+    // If commonDir is absolute path, we're in a worktree - extract repo root
+    if (commonDir.startsWith("/")) {
+      // commonDir is like: /Users/.../repo/.git
+      // Return parent directory
+      return commonDir.replace(/\/\.git$/, "");
+    }
+
+    // If relative (like ".git"), we're in main repo - use show-toplevel
+    const toplevelResult = yield* execCommand("git rev-parse --show-toplevel", cwd);
+    if (toplevelResult.exitCode !== 0) {
+      return yield* Effect.fail(new NotInGitRepoError({ path: cwd }));
+    }
+    return toplevelResult.stdout;
+  });
+
+/**
  * Check if a branch exists
  */
 const branchExists = (
@@ -824,3 +855,6 @@ export const WorktreeServiceLive = Layer.succeed(
   WorktreeService,
   makeWorktreeService()
 );
+
+// Export utility for getting main repo root (needed by commands)
+export { getMainRepoRoot };

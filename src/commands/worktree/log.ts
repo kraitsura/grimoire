@@ -17,6 +17,7 @@ import {
   WorktreeStateServiceLive,
   AgentSessionService,
   AgentSessionServiceLive,
+  getMainRepoRoot,
 } from "../../services/worktree";
 import type { WorktreeLog } from "../../models/worktree";
 
@@ -186,7 +187,7 @@ export const worktreeLog = (args: ParsedArgs) =>
     }
 
     // Get repo root and current state
-    const repoRoot = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
+    const repoRoot = yield* getMainRepoRoot(cwd);
 
     const state = yield* stateService.getState(repoRoot);
     const entry = state.worktrees.find((w) => w.name === name);
