@@ -94,6 +94,7 @@ import {
   tagCommand,
   templatesCommand,
   testCommand,
+  tuiCommand,
   versionsCommand,
   worktreeCommand,
 } from "./commands";
@@ -136,6 +137,7 @@ const RESERVED_COMMANDS = new Set([
   "pop",
   "export",
   "import",
+  "tui",
   "worktree",
   "wt",
   "dot",
@@ -350,6 +352,9 @@ Run 'grim' with no arguments to launch interactive mode.
         break;
       case "pop":
         yield* popCommand(parsedArgs);
+        break;
+      case "tui":
+        yield* tuiCommand(parsedArgs);
         break;
       case "worktree":
       case "wt":
