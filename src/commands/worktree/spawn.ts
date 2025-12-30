@@ -135,8 +135,7 @@ Use \`grim wt checkpoint\` to commit changes - it commits ONLY staged files:
 
 CRITICAL - Do NOT commit these orchestration files:
 - .claude-session.log
-- .grimoire-session.json
-- .worktree-info.json
+- .grim/
 
 These are gitignored metadata files. Only stage and commit code files.
 

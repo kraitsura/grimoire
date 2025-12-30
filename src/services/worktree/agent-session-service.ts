@@ -2,13 +2,13 @@
  * Agent Session Service
  *
  * Manages agent session state for spawned Claude processes in worktrees.
- * Session state is stored in .grimoire-session.json within each worktree.
+ * Session state is stored in .grim/session.json within each worktree.
  */
 
 import { Context, Effect, Layer } from "effect";
 import { join } from "path";
 import type { AgentSession, AgentSessionMode, AgentSessionStatus, MutableAgentSession } from "../../models/agent-session";
-import { SESSION_FILE_NAME } from "../../models/agent-session";
+import { WORKTREE_METADATA_DIR, SESSION_FILE_NAME, getSessionFilePath as getSessionFilePathUtil } from "../../models/agent-session";
 
 /**
  * Check if a process is still running
@@ -24,11 +24,63 @@ const isProcessAlive = (pid: number): boolean => {
 };
 
 /**
- * Get session file path for a worktree
+ * Get session file path for a worktree (uses new .grim/ location)
  */
 const getSessionFilePath = (worktreePath: string): string => {
-  return join(worktreePath, SESSION_FILE_NAME);
+  return getSessionFilePathUtil(worktreePath);
 };
+
+/**
+ * Migrate old session file to new location if it exists
+ */
+const migrateSessionFile = (worktreePath: string): Effect.Effect<void, never> =>
+  Effect.gen(function* () {
+    const oldPath = join(worktreePath, ".grimoire-session.json");
+    const newPath = getSessionFilePath(worktreePath);
+    const grimDir = join(worktreePath, WORKTREE_METADATA_DIR);
+
+    // Check if old file exists
+    const oldFile = Bun.file(oldPath);
+    const oldExists = yield* Effect.promise(() => oldFile.exists());
+
+    if (!oldExists) {
+      return; // Nothing to migrate
+    }
+
+    // Create .grim directory
+    yield* Effect.tryPromise({
+      try: async () => {
+        const fs = await import("fs/promises");
+        await fs.mkdir(grimDir, { recursive: true });
+      },
+      catch: () => undefined,
+    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+
+    // Read old file
+    const content = yield* Effect.tryPromise({
+      try: () => oldFile.text(),
+      catch: () => "",
+    }).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+    if (!content) {
+      return; // Old file is empty or unreadable
+    }
+
+    // Write to new location
+    yield* Effect.tryPromise({
+      try: () => Bun.write(newPath, content),
+      catch: () => undefined,
+    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+
+    // Delete old file
+    yield* Effect.tryPromise({
+      try: async () => {
+        const fs = await import("fs/promises");
+        await fs.unlink(oldPath);
+      },
+      catch: () => undefined,
+    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+  });
 
 /**
  * Create session options
@@ -117,6 +169,17 @@ export class AgentSessionService extends Context.Tag("AgentSessionService")<
 const makeAgentSessionService = (): AgentSessionServiceImpl => ({
   createSession: (worktreePath: string, options: CreateSessionOptions) =>
     Effect.gen(function* () {
+      // Create .grim directory if it doesn't exist
+      const grimDir = join(worktreePath, WORKTREE_METADATA_DIR);
+      yield* Effect.tryPromise({
+        try: async () => {
+          const fs = await import("fs/promises");
+          await fs.mkdir(grimDir, { recursive: true });
+        },
+        catch: (error) =>
+          new Error(`Failed to create metadata directory: ${error instanceof Error ? error.message : String(error)}`),
+      });
+
       const sessionPath = getSessionFilePath(worktreePath);
 
       const session: AgentSession = {
@@ -141,6 +204,9 @@ const makeAgentSessionService = (): AgentSessionServiceImpl => ({
 
   getSession: (worktreePath: string) =>
     Effect.gen(function* () {
+      // Auto-migrate old session file if it exists
+      yield* migrateSessionFile(worktreePath);
+
       const sessionPath = getSessionFilePath(worktreePath);
       const file = Bun.file(sessionPath);
 
@@ -164,6 +230,9 @@ const makeAgentSessionService = (): AgentSessionServiceImpl => ({
 
   updateSession: (worktreePath: string, updates: UpdateSessionOptions) =>
     Effect.gen(function* () {
+      // Auto-migrate old session file if it exists
+      yield* migrateSessionFile(worktreePath);
+
       const sessionPath = getSessionFilePath(worktreePath);
       const file = Bun.file(sessionPath);
 
@@ -231,6 +300,9 @@ const makeAgentSessionService = (): AgentSessionServiceImpl => ({
 
   isSessionAlive: (worktreePath: string) =>
     Effect.gen(function* () {
+      // Auto-migrate old session file if it exists
+      yield* migrateSessionFile(worktreePath);
+
       const sessionPath = getSessionFilePath(worktreePath);
       const file = Bun.file(sessionPath);
 
@@ -254,6 +326,9 @@ const makeAgentSessionService = (): AgentSessionServiceImpl => ({
 
   refreshSessionStatus: (worktreePath: string) =>
     Effect.gen(function* () {
+      // Auto-migrate old session file if it exists
+      yield* migrateSessionFile(worktreePath);
+
       const sessionPath = getSessionFilePath(worktreePath);
       const file = Bun.file(sessionPath);
 
