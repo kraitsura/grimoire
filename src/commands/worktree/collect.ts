@@ -111,6 +111,43 @@ function getCurrentBranch(cwd: string): string | null {
 }
 
 /**
+ * Check if a branch is a worktree branch (created via grim wt new)
+ */
+function isWorktreeBranch(repoRoot: string, branch: string, state: { worktrees: readonly WorktreeEntry[] }): boolean {
+  return state.worktrees.some((w) => w.branch === branch);
+}
+
+/**
+ * Get the main branch name (main or master)
+ */
+function getMainBranch(repoRoot: string): string | null {
+  // Check if main exists
+  const mainCheck = execGit("git rev-parse --verify refs/heads/main", repoRoot);
+  if (mainCheck.success) {
+    return "main";
+  }
+
+  // Check if master exists
+  const masterCheck = execGit("git rev-parse --verify refs/heads/master", repoRoot);
+  if (masterCheck.success) {
+    return "master";
+  }
+
+  return null;
+}
+
+/**
+ * Verify that the current HEAD has changed (merge actually happened)
+ */
+function verifyMergeHappened(repoRoot: string, beforeSha: string): boolean {
+  const afterResult = execGit("git rev-parse HEAD", repoRoot);
+  if (!afterResult.success) {
+    return false;
+  }
+  return afterResult.output !== beforeSha;
+}
+
+/**
  * Check if a worktree is completed (agent finished or no agent)
  *
  * A worktree is considered completed if:
@@ -195,10 +232,89 @@ export const worktreeCollect = (args: ParsedArgs) =>
     // Get main repo root (works from both main repo and worktrees)
     const repoRoot = yield* getMainRepoRoot(cwd);
 
+    // Get state early for validation
+    const state = yield* stateService.getState(repoRoot);
+
     // Detect current worktree/session or use explicit args
     const currentWorktree = process.env.GRIMOIRE_WORKTREE;
     const currentSession = process.env.GRIMOIRE_SESSION_ID;
     const explicitWorktrees = args.positional.slice(1); // Skip "collect" subcommand
+
+    // CRITICAL: Validate context for ancestry detection
+    // Explicit collection is always allowed (user knows what they want)
+    // Ancestry detection requires validation to prevent mistakes
+    const isUsingAncestryDetection = explicitWorktrees.length === 0 && !currentWorktree && !currentSession;
+
+    if (isUsingAncestryDetection) {
+      const currentBranch = getCurrentBranch(repoRoot);
+
+      if (!currentBranch) {
+        console.log("Error: Cannot determine current branch (detached HEAD?)");
+        console.log();
+        console.log("Usage:");
+        console.log("  grim wt collect <worktree1> <worktree2> ...  (explicit collection)");
+        console.log("  grim wt collect                               (ancestry detection from main)");
+        console.log("  grim wt collect                               (from spawned agent context)");
+        process.exit(1);
+      }
+
+      // ONLY block ancestry detection from worktree branches
+      // Explicit collection is still allowed for hierarchical scenarios
+      if (isWorktreeBranch(repoRoot, currentBranch, state)) {
+        console.log(`Error: Cannot use ancestry detection from worktree branch '${currentBranch}'`);
+        console.log();
+        console.log("Ancestry detection from a worktree branch is ambiguous and error-prone.");
+        console.log();
+        console.log("Supported scenarios:");
+        console.log(`  1. Collect into main: git checkout main && grim wt collect`);
+        console.log(`  2. Hierarchical collection: grim wt collect child-worktree`);
+        console.log(`     (explicit - works from any branch, including '${currentBranch}')`);
+        console.log();
+        console.log("Example hierarchical workflow:");
+        console.log(`  main → feature-base → feature-impl`);
+        console.log(`  $ git checkout feature-base`);
+        console.log(`  $ grim wt collect feature-impl  # Explicit: merges feature-impl into feature-base`);
+        console.log();
+        const mainBranch = getMainBranch(repoRoot);
+        if (mainBranch) {
+          console.log(`Detected main branch: ${mainBranch}`);
+        }
+        process.exit(1);
+      }
+
+      // Warn if not on main/master (but allow with --force)
+      const mainBranch = getMainBranch(repoRoot);
+      if (mainBranch && currentBranch !== mainBranch && !args.flags.force) {
+        console.log(`Warning: Ancestry detection from '${currentBranch}' instead of '${mainBranch}'`);
+        console.log();
+        console.log("Ancestry detection finds all branches descended from current branch.");
+        console.log("This may not match your intent for worktree collection.");
+        console.log();
+        console.log("Recommended:");
+        console.log(`  1. Collect into ${mainBranch}: git checkout ${mainBranch} && grim wt collect`);
+        console.log(`  2. Explicit collection: grim wt collect <worktree1> <worktree2>`);
+        console.log(`  3. Force ancestry detection: grim wt collect --force`);
+        process.exit(1);
+      }
+    }
+
+    // For explicit collection, validate we can actually do the merge
+    if (explicitWorktrees.length > 0) {
+      const currentBranch = getCurrentBranch(repoRoot);
+      if (!currentBranch) {
+        console.log("Error: Cannot determine current branch (detached HEAD?)");
+        console.log("Collecting requires being on a branch to merge into.");
+        process.exit(1);
+      }
+
+      // Allow explicit collection from any branch, including worktree branches
+      // This supports hierarchical workflows: main → feature-base → feature-impl
+      if (!json && verbose) {
+        const isWorktree = isWorktreeBranch(repoRoot, currentBranch, state);
+        console.log(`Collecting into: ${currentBranch}${isWorktree ? " (worktree branch)" : ""}`);
+        console.log(`Target worktrees: ${explicitWorktrees.join(", ")}`);
+      }
+    }
 
     // Get all worktrees
     const worktreesResult = yield* Effect.either(worktreeService.list(cwd));
@@ -209,7 +325,6 @@ export const worktreeCollect = (args: ParsedArgs) =>
     }
 
     const worktrees = worktreesResult.right;
-    const state = yield* stateService.getState(repoRoot);
 
     // Find worktrees to collect - either explicit args, or children of current session
     let childEntries: WorktreeEntry[];
@@ -242,10 +357,12 @@ export const worktreeCollect = (args: ParsedArgs) =>
         (w) => w.parentWorktree === currentWorktree || w.parentSession === currentSession
       )];
     } else {
-      // NEW: Git ancestry detection - find all worktrees created from current branch
-      const currentBranch = getCurrentBranch(cwd);
+      // Git ancestry detection - find worktrees created from current branch
+      // This only runs if we passed the validation checks above
+      const currentBranch = getCurrentBranch(repoRoot);
 
       if (!currentBranch) {
+        // This shouldn't happen due to validation above, but handle it anyway
         console.log("Error: Cannot determine current branch (detached HEAD?)");
         console.log("Usage: grim wt collect <worktree1> <worktree2> ...");
         console.log("       grim wt collect  (auto-detect from spawned context)");
@@ -256,9 +373,24 @@ export const worktreeCollect = (args: ParsedArgs) =>
         console.log(`Detecting worktrees created from branch: ${currentBranch}`);
       }
 
-      // Find all worktrees whose branches are descendants of current branch
+      // Find worktrees whose branches:
+      // 1. Are descendants of current branch (git ancestry)
+      // 2. Have commits beyond the current branch
+      // 3. Were created AFTER the current branch's latest commit (temporal check)
       childEntries = [];
+
+      // Get the latest commit on current branch for temporal validation
+      const currentHeadResult = execGit("git log -1 --format=%ct", repoRoot);
+      const currentBranchTime = currentHeadResult.success
+        ? parseInt(currentHeadResult.output, 10)
+        : 0;
+
       for (const entry of state.worktrees) {
+        // Skip if this is the current branch itself
+        if (entry.branch === currentBranch) {
+          continue;
+        }
+
         const ancestry = isBranchDescendant(repoRoot, currentBranch, entry.branch);
 
         if (verbose && !json) {
@@ -266,7 +398,19 @@ export const worktreeCollect = (args: ParsedArgs) =>
           console.log(`    Is descendant: ${ancestry.isDescendant}, Has commits: ${ancestry.hasCommits}`);
         }
 
+        // Only include if it's a proper descendant with new commits
         if (ancestry.isDescendant && ancestry.hasCommits) {
+          // Additional temporal check: branch should be created after current branch's state
+          // This prevents collecting unrelated old branches
+          const branchCreatedAt = entry.createdAt ? new Date(entry.createdAt).getTime() / 1000 : 0;
+
+          if (currentBranchTime > 0 && branchCreatedAt > 0 && branchCreatedAt < currentBranchTime) {
+            if (verbose && !json) {
+              console.log(`    Skipped: worktree created before current branch's latest commit`);
+            }
+            continue;
+          }
+
           childEntries.push(entry);
           if (!json) {
             console.log(`  ✓ Found: ${entry.name}`);
@@ -276,6 +420,10 @@ export const worktreeCollect = (args: ParsedArgs) =>
 
       if (childEntries.length === 0 && !json) {
         console.log(`No worktrees found that are descendants of ${currentBranch}`);
+        console.log();
+        console.log("This is expected if:");
+        console.log("  - No worktrees have been created from this branch");
+        console.log("  - Worktrees were already collected");
         console.log();
         console.log("Try: grim wt collect <worktree1> <worktree2> ...");
       }
@@ -505,6 +653,18 @@ export const worktreeCollect = (args: ParsedArgs) =>
         }
       }
 
+      // Capture HEAD before merge to verify it actually happened
+      const beforeMerge = execGit("git rev-parse HEAD", repoRoot);
+      if (!beforeMerge.success) {
+        results.push({
+          worktree: entry.name,
+          branch: entry.branch,
+          status: "skipped",
+          message: "Could not get current HEAD",
+        });
+        continue;
+      }
+
       // Perform the merge (should be fast-forward after rebase)
       let mergeCmd: string;
       switch (strategy) {
@@ -518,12 +678,12 @@ export const worktreeCollect = (args: ParsedArgs) =>
           mergeCmd = `git merge ${entry.branch} --no-edit`;
       }
 
-      const result = execGit(mergeCmd, cwd);
+      const result = execGit(mergeCmd, repoRoot);
 
       if (result.success || (strategy === "squash" && result.output.includes("Squash commit"))) {
         // For squash, we need to commit
         if (strategy === "squash") {
-          const commitResult = execGit(`git commit -m "Merge ${entry.branch} (squash)"`, cwd);
+          const commitResult = execGit(`git commit -m "Merge ${entry.branch} (squash)"`, repoRoot);
           if (!commitResult.success && !commitResult.output.includes("nothing to commit")) {
             results.push({
               worktree: entry.name,
@@ -536,19 +696,44 @@ export const worktreeCollect = (args: ParsedArgs) =>
           }
         }
 
-        // Update merge status
-        yield* stateService.updateWorktree(repoRoot, entry.name, {
-          mergeStatus: "merged",
-        });
+        // CRITICAL: Verify the merge actually happened by checking if HEAD changed
+        const mergeHappened = verifyMergeHappened(repoRoot, beforeMerge.output);
 
-        results.push({
-          worktree: entry.name,
-          branch: entry.branch,
-          status: "merged",
-        });
+        if (!mergeHappened && !result.output.includes("Already up to date")) {
+          // Merge command succeeded but HEAD didn't change - something went wrong
+          results.push({
+            worktree: entry.name,
+            branch: entry.branch,
+            status: "skipped",
+            message: "Merge command succeeded but HEAD unchanged (possible git state issue)",
+          });
 
-        if (!json) {
-          console.log(`  [merged] ${entry.branch}`);
+          if (!json) {
+            console.log(`  [warning] ${entry.branch} - merge reported success but HEAD unchanged`);
+          }
+          continue;
+        }
+
+        // Only update merge status if we verified the merge happened
+        if (mergeHappened || result.output.includes("Already up to date")) {
+          yield* stateService.updateWorktree(repoRoot, entry.name, {
+            mergeStatus: "merged",
+          });
+
+          results.push({
+            worktree: entry.name,
+            branch: entry.branch,
+            status: "merged",
+            message: result.output.includes("Already up to date") ? "Already up to date" : undefined,
+          });
+
+          if (!json) {
+            if (result.output.includes("Already up to date")) {
+              console.log(`  [merged] ${entry.branch} (already up to date)`);
+            } else {
+              console.log(`  [merged] ${entry.branch}`);
+            }
+          }
         }
 
         // Restore worktree if we detached it (only if not deleting)
