@@ -12,6 +12,7 @@ import {
   WorktreeStateServiceLive,
 } from "../../services/worktree";
 import type { WorktreeListItem } from "../../models/worktree";
+import { isInstalled } from "../../utils/dependency-check";
 
 /**
  * Format relative time
@@ -31,9 +32,10 @@ function formatRelativeTime(isoString: string): string {
 }
 
 /**
- * Get issue priority from beads
+ * Get issue priority from beads (returns null if bd not installed)
  */
 function getIssuePriority(issueId: string): number | null {
+  if (!isInstalled("bd")) return null;
   try {
     const output = execSync(`bd show ${issueId} --json`, {
       encoding: "utf8",

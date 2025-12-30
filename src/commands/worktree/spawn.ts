@@ -34,6 +34,7 @@ import {
 } from "../../services/terminal";
 import type { WorktreeInfo } from "../../models/worktree";
 import type { AgentSessionMode } from "../../models/agent-session";
+import { requireDependency } from "../../utils/dependency-check";
 
 /**
  * Check if Claude OAuth token is configured for headless mode
@@ -271,6 +272,9 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       printUsage();
       return;
     }
+
+    // Check that Claude CLI is installed
+    requireDependency("claude", "spawning agents");
 
     // Check for --background / -bg flag (combines -H --srt --prompt)
     const isBackground = args.flags.background === true || args.flags.bg === true;

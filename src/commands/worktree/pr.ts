@@ -11,6 +11,7 @@ import {
   WorktreeStateService,
   WorktreeStateServiceLive,
 } from "../../services/worktree";
+import { requireDependency, checkDependency } from "../../utils/dependency-check";
 
 /**
  * Get current branch name
@@ -38,17 +39,6 @@ function getMainBranch(): string {
   }
 }
 
-/**
- * Check if gh CLI is available
- */
-function isGhInstalled(): boolean {
-  try {
-    execSync("gh --version", { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Fetch beads issue details
@@ -113,11 +103,7 @@ export const worktreePr = (args: ParsedArgs) =>
     }
 
     // Check if gh CLI is installed
-    if (!isGhInstalled()) {
-      console.error("Error: GitHub CLI (gh) is not installed");
-      console.error("Install it from: https://cli.github.com/");
-      process.exit(1);
-    }
+    requireDependency("gh", "creating pull requests");
 
     const service = yield* WorktreeService;
     const stateService = yield* WorktreeStateService;
@@ -153,14 +139,16 @@ export const worktreePr = (args: ParsedArgs) =>
 
     if (!prTitle || !prBody) {
       if (linkedIssue && linkedIssue.match(/^[a-z]+-[a-z0-9]+$/i)) {
-        // Beads issue format
-        const issueDetails = fetchBeadsIssue(linkedIssue);
-        if (issueDetails) {
-          if (!prTitle && issueDetails.title) {
-            prTitle = issueDetails.title;
-          }
-          if (!prBody) {
-            prBody = generatePrBody(linkedIssue, issueDetails.title, issueDetails.description);
+        // Beads issue format - only fetch if bd is installed
+        if (checkDependency("bd", "fetching issue details for PR")) {
+          const issueDetails = fetchBeadsIssue(linkedIssue);
+          if (issueDetails) {
+            if (!prTitle && issueDetails.title) {
+              prTitle = issueDetails.title;
+            }
+            if (!prBody) {
+              prBody = generatePrBody(linkedIssue, issueDetails.title, issueDetails.description);
+            }
           }
         }
       }

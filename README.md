@@ -2,6 +2,72 @@
 
 A prompt engineering toolkit for developers. Store prompts with version control, inject AI agent skills into projects, and manage parallel development with git worktrees.
 
+## Installation
+
+### Requirements
+
+**Required:**
+- **Node.js 18+** or **Bun** - JavaScript runtime
+- **git** - Version control
+
+**Optional (for specific features):**
+
+| Dependency | Feature | Install |
+|------------|---------|---------|
+| [Claude Code](https://claude.ai/claude-code) | Spawn agents in worktrees (`grim wt spawn`) | `npm install -g @anthropic-ai/claude-code` |
+| [Beads](https://github.com/steveyegge/beads) | Issue tracking integration (`grim wt from-issue`) | `curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh \| bash` |
+| [GitHub CLI](https://cli.github.com) | Create PRs from worktrees (`grim wt pr`) | `brew install gh` or [download](https://cli.github.com) |
+| [SRT](https://github.com/anthropic-experimental/sandbox-runtime) | Sandboxed agent execution | `npm install -g @anthropic-ai/sandbox-runtime` |
+| bubblewrap, socat | SRT on Linux | `sudo apt install bubblewrap socat` |
+
+### Quick Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aaryareddy/grimoire/main/install.sh | bash
+```
+
+This script will:
+- Check for required dependencies (git, node/bun)
+- Use your existing bun or npm if available
+- Offer to install bun if neither is found
+- Suggest optional dependencies for full functionality
+
+### Package Managers
+
+**Bun (recommended)**
+```bash
+bun install -g grimoire
+```
+
+**npm**
+```bash
+npm install -g grimoire
+```
+
+**pnpm**
+```bash
+pnpm add -g grimoire
+```
+
+### From Source
+
+```bash
+git clone https://github.com/aaryareddy/grimoire.git
+cd grimoire
+bun install
+bun run build
+bun link
+```
+
+### Verify Installation
+
+```bash
+grimoire --version
+grimoire --help
+```
+
+The CLI is available as both `grimoire` and `grim` (short alias).
+
 ---
 
 ## Features
@@ -224,12 +290,6 @@ grimoire agents create my-agent        # Scaffold agent
 ---
 
 ## Quick Start
-
-### Install
-
-```bash
-bun install -g grimoire
-```
 
 ### Create your first prompt
 

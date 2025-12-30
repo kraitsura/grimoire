@@ -12,6 +12,7 @@ import {
   WorktreeStateServiceLive,
 } from "../../services/worktree";
 import type { WorktreeLog, IssueProvider } from "../../models/worktree";
+import { requireDependency, checkDependency } from "../../utils/dependency-check";
 
 /**
  * Sanitize string for use as branch/worktree name
@@ -89,6 +90,11 @@ export const worktreeFromIssue = (args: ParsedArgs) =>
     // Detect provider
     const provider = detectProvider(issueId);
     console.log(`Issue: ${issueId} (${provider})`);
+
+    // Check for beads dependency if using beads provider
+    if (provider === "beads") {
+      requireDependency("bd", "creating worktrees from beads issues");
+    }
 
     // Try to fetch issue details
     let issueTitle: string | undefined;
