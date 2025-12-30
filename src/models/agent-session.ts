@@ -96,6 +96,18 @@ export interface MutableAgentSession {
 }
 
 /**
- * Session file name
+ * Worktree metadata directory
  */
-export const SESSION_FILE_NAME = ".grimoire-session.json";
+export const WORKTREE_METADATA_DIR = ".grim";
+
+/**
+ * Session file name (within .grim/)
+ */
+export const SESSION_FILE_NAME = "session.json";
+
+/**
+ * Get session file path for a worktree
+ */
+export const getSessionFilePath = (worktreePath: string): string => {
+  return `${worktreePath}/${WORKTREE_METADATA_DIR}/${SESSION_FILE_NAME}`;
+};

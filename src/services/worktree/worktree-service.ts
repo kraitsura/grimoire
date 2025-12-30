@@ -22,6 +22,8 @@ import {
   sanitizeBranchName,
   isProtectedBranch,
   PROTECTED_BRANCHES,
+  WORKTREE_METADATA_DIR,
+  getWorktreeInfoPath,
 } from "../../models/worktree";
 import {
   WorktreeError,
@@ -295,16 +297,82 @@ const runHooks = (
   });
 
 /**
- * Write worktree metadata file
+ * Migrate old worktree info file to new location if it exists
+ */
+const migrateWorktreeInfo = (worktreePath: string): Effect.Effect<void, never> =>
+  Effect.gen(function* () {
+    const oldPath = join(worktreePath, ".worktree-info.json");
+    const newPath = getWorktreeInfoPath(worktreePath);
+    const grimDir = join(worktreePath, WORKTREE_METADATA_DIR);
+
+    // Check if old file exists
+    const oldFile = Bun.file(oldPath);
+    const oldExists = yield* Effect.promise(() => oldFile.exists());
+
+    if (!oldExists) {
+      return; // Nothing to migrate
+    }
+
+    // Create .grim directory
+    yield* Effect.tryPromise({
+      try: async () => {
+        const fs = await import("fs/promises");
+        await fs.mkdir(grimDir, { recursive: true });
+      },
+      catch: () => undefined,
+    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+
+    // Read old file
+    const content = yield* Effect.tryPromise({
+      try: () => oldFile.text(),
+      catch: () => "",
+    }).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+    if (!content) {
+      return; // Old file is empty or unreadable
+    }
+
+    // Write to new location
+    yield* Effect.tryPromise({
+      try: () => Bun.write(newPath, content),
+      catch: () => undefined,
+    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+
+    // Delete old file
+    yield* Effect.tryPromise({
+      try: async () => {
+        const fs = await import("fs/promises");
+        await fs.unlink(oldPath);
+      },
+      catch: () => undefined,
+    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+  });
+
+/**
+ * Write worktree metadata file to .grim/info.json
  */
 const writeMetadataFile = (
   worktreePath: string,
   metadata: WorktreeMetadata
 ): Effect.Effect<void, never> =>
-  Effect.tryPromise({
-    try: () => Bun.write(join(worktreePath, ".worktree-info.json"), JSON.stringify(metadata, null, 2)),
-    catch: () => undefined,
-  }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+  Effect.gen(function* () {
+    // Create .grim directory
+    const grimDir = join(worktreePath, WORKTREE_METADATA_DIR);
+    yield* Effect.tryPromise({
+      try: async () => {
+        const fs = await import("fs/promises");
+        await fs.mkdir(grimDir, { recursive: true });
+      },
+      catch: () => undefined,
+    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+
+    // Write metadata file
+    const metadataPath = getWorktreeInfoPath(worktreePath);
+    yield* Effect.tryPromise({
+      try: () => Bun.write(metadataPath, JSON.stringify(metadata, null, 2)),
+      catch: () => undefined,
+    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+  });
 
 // Service interface
 interface WorktreeServiceImpl {
@@ -834,8 +902,11 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
           return null;
         }
 
-        // Try to read .worktree-info.json
-        const metadataPath = join(cwd, ".worktree-info.json");
+        // Auto-migrate old metadata file if it exists
+        yield* migrateWorktreeInfo(cwd);
+
+        // Try to read .grim/info.json
+        const metadataPath = getWorktreeInfoPath(cwd);
         const result = yield* Effect.tryPromise({
           try: async () => {
             const file = Bun.file(metadataPath);

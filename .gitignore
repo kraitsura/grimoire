@@ -58,8 +58,7 @@ convex/_generated/
 
 # Worktree orchestration metadata (session state, logs)
 .claude-session.log
-.grimoire-session.json
-.worktree-info.json
+.grim/
 
 # bv (beads viewer) local config and caches
 .bv/

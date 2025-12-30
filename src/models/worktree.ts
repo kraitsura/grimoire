@@ -30,7 +30,24 @@ export const WorktreeConfigSchema = Schema.Struct({
 });
 
 /**
- * Worktree metadata stored in .worktree-info.json within each worktree
+ * Worktree metadata directory
+ */
+export const WORKTREE_METADATA_DIR = ".grim";
+
+/**
+ * Worktree info file name (within .grim/)
+ */
+export const WORKTREE_INFO_FILE = "info.json";
+
+/**
+ * Get worktree info file path
+ */
+export const getWorktreeInfoPath = (worktreePath: string): string => {
+  return `${worktreePath}/${WORKTREE_METADATA_DIR}/${WORKTREE_INFO_FILE}`;
+};
+
+/**
+ * Worktree metadata stored in .grim/info.json within each worktree
  */
 export const WorktreeMetadataSchema = Schema.Struct({
   /** Directory name in .worktrees/ */
