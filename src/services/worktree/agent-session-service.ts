@@ -3,6 +3,7 @@
  *
  * Manages agent session state for spawned Claude processes in worktrees.
  * Session state is stored in .grim/session.json within each worktree.
+ * Automatically migrates old .grimoire-session.json files to new location.
  */
 
 import { Context, Effect, Layer } from "effect";

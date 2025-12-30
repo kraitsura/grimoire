@@ -2,7 +2,7 @@
  * Agent Session Types
  *
  * Defines schemas and types for tracking spawned agent sessions in worktrees.
- * Session state is stored per-worktree in .grimoire-session.json
+ * Session state is stored per-worktree in .grim/session.json
  */
 
 import { Schema } from "@effect/schema";
@@ -27,7 +27,7 @@ export const AgentSessionStatusSchema = Schema.Literal(
 );
 
 /**
- * Agent session state stored in .grimoire-session.json
+ * Agent session state stored in .grim/session.json
  *
  * Only tracks process-specific info. Worktree metadata (linkedIssue, etc.)
  * is in the main .state.json file.
