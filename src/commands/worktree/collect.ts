@@ -384,6 +384,9 @@ export const worktreeCollect = (args: ParsedArgs) =>
         continue;
       }
 
+      // Track if we detached the worktree so we can restore it later
+      let detachedWorktree = false;
+
       // Auto-rebase: Update the branch to include current HEAD before merging
       // This prevents conflicts when multiple branches modify the same files
       if (autoRebase) {
@@ -399,9 +402,42 @@ export const worktreeCollect = (args: ParsedArgs) =>
           continue;
         }
 
+        // If the branch is checked out in a worktree, we need to temporarily detach it
+        // so we can checkout the branch in the main repo for rebasing
+        if (child.worktree) {
+          const wtPath = child.worktree.path;
+          const wtBranch = execGit("git rev-parse --abbrev-ref HEAD", wtPath);
+
+          if (wtBranch.success && wtBranch.output === entry.branch) {
+            // Branch is checked out in worktree - detach it temporarily
+            const detach = execGit("git checkout --detach", wtPath);
+            if (detach.success) {
+              detachedWorktree = true;
+              if (verbose && !json) {
+                console.log(`  Temporarily detached ${entry.name} worktree from ${entry.branch}`);
+              }
+            } else {
+              logSkip(json, entry.name, entry.branch, SkipReason.CHECKOUT_FAILED,
+                `Could not detach worktree: ${detach.output}`);
+              results.push({
+                worktree: entry.name,
+                branch: entry.branch,
+                status: "skipped",
+                message: `Could not detach worktree: ${detach.output}`,
+              });
+              continue;
+            }
+          }
+        }
+
         // Checkout the child branch and rebase onto current HEAD
         const checkout = execGit(`git checkout ${entry.branch}`, cwd);
         if (!checkout.success) {
+          // Restore worktree if we detached it
+          if (detachedWorktree && child.worktree) {
+            execGit(`git checkout ${entry.branch}`, child.worktree.path);
+          }
+
           logSkip(json, entry.name, entry.branch, SkipReason.CHECKOUT_FAILED, checkout.output);
           results.push({
             worktree: entry.name,
@@ -417,6 +453,11 @@ export const worktreeCollect = (args: ParsedArgs) =>
           // Rebase failed - abort and report
           execGit("git rebase --abort", cwd);
           execGit(`git checkout ${currentBranch.output}`, cwd);
+
+          // Restore worktree if we detached it
+          if (detachedWorktree && child.worktree) {
+            execGit(`git checkout ${entry.branch}`, child.worktree.path);
+          }
 
           const isConflict = rebase.output.includes("CONFLICT") ||
             rebase.output.includes("could not apply");
@@ -455,6 +496,9 @@ export const worktreeCollect = (args: ParsedArgs) =>
 
         // Switch back to main branch for the merge
         execGit(`git checkout ${currentBranch.output}`, cwd);
+
+        // Note: Don't restore worktree yet - we'll do it after the merge succeeds
+        // This keeps the worktree detached during merge in case something goes wrong
 
         if (!json) {
           console.log(`  [rebased] ${entry.branch}`);
@@ -507,6 +551,14 @@ export const worktreeCollect = (args: ParsedArgs) =>
           console.log(`  [merged] ${entry.branch}`);
         }
 
+        // Restore worktree if we detached it (only if not deleting)
+        if (detachedWorktree && child.worktree && !deleteAfter) {
+          execGit(`git checkout ${entry.branch}`, child.worktree.path);
+          if (verbose && !json) {
+            console.log(`    └─ restored worktree to ${entry.branch}`);
+          }
+        }
+
         // Delete worktree if requested
         if (deleteAfter) {
           yield* Effect.either(worktreeService.remove(cwd, entry.name, { deleteBranch: false }));
@@ -524,6 +576,11 @@ export const worktreeCollect = (args: ParsedArgs) =>
           // Abort the merge to restore clean state
           execGit("git merge --abort", cwd);
           execGit("git rebase --abort", cwd);
+
+          // Restore worktree if we detached it
+          if (detachedWorktree && child.worktree) {
+            execGit(`git checkout ${entry.branch}`, child.worktree.path);
+          }
 
           yield* stateService.updateWorktree(repoRoot, entry.name, {
             mergeStatus: "conflict",
@@ -545,6 +602,11 @@ export const worktreeCollect = (args: ParsedArgs) =>
           hadConflict = true;
           continue; // Continue with next branch instead of stopping
         } else {
+          // Restore worktree if we detached it
+          if (detachedWorktree && child.worktree) {
+            execGit(`git checkout ${entry.branch}`, child.worktree.path);
+          }
+
           logSkip(json, entry.name, entry.branch, SkipReason.MERGE_ERROR, result.output);
           results.push({
             worktree: entry.name,
