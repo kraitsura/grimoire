@@ -88,6 +88,7 @@ import {
   searchCommand,
   showCommand,
   skillsCommand,
+  spawnCommand,
   stashCommand,
   statsCommand,
   syncCommand,
@@ -132,6 +133,7 @@ const RESERVED_COMMANDS = new Set([
   "completion",
   "config",
   "skills",
+  "spawn",
   "plugins",
   "stash",
   "pop",
@@ -157,8 +159,8 @@ const program = Effect.gen(function* () {
   const args = process.argv.slice(2);
   const { command, flags, positional } = parseArgs(args);
 
-  // Handle help flag
-  if (flags.help || flags.h) {
+  // Handle help flag (only show global help if no command specified)
+  if ((flags.help || flags.h) && !command) {
     console.log(`
 Grimoire - A CLI tool for storing, editing, and managing prompts
 
@@ -207,6 +209,7 @@ COMMANDS:
   completion <shell>  Generate shell completions (bash/zsh/fish)
   config llm          Manage LLM provider configuration
   skills              Package manager for agent context
+  spawn               Spawn Claude agent in current directory
   agents              CLI tool subagent management
   plugins             Claude Code plugin management
   stash [name]        Stash clipboard content
@@ -340,6 +343,9 @@ Run 'grim' with no arguments to launch interactive mode.
         break;
       case "skills":
         yield* skillsCommand(parsedArgs);
+        break;
+      case "spawn":
+        yield* spawnCommand(parsedArgs);
         break;
       case "agents":
         yield* agentsCommand(parsedArgs);

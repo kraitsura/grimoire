@@ -582,6 +582,29 @@ grim wt rm <name>                 # Remove worktree
 cd $(grim wt new -o <name>)       # Create and cd in one step
 ```
 
+### Spawning Agents
+
+There are two ways to spawn Claude agents:
+
+**`grim wt spawn <name>` - Create worktree and spawn agent:**
+```bash
+# Smart behavior:
+# - If worktree exists: spawn agent to it
+# - If branch exists (no worktree): create worktree from branch
+# - If neither: create new branch + worktree
+grim wt spawn fix-auth -bg "Fix the auth bug"
+grim wt spawn existing-branch -bg "Continue work"  # Uses existing branch
+```
+
+**`grim spawn` - Spawn agent in current directory (no worktree):**
+```bash
+# Use when you want to spawn in place (current worktree or main repo)
+grim spawn -bg "Implement this feature"
+grim spawn --new-tab                    # Opens in new terminal
+```
+
+Both commands work correctly from inside worktrees or from the main repo.
+
 ### Parallel Agents
 
 When subtasks are independent, run them in parallel:

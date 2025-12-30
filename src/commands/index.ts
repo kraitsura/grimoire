@@ -28,6 +28,7 @@ export { rollbackCommand } from "./rollback";
 export { searchCommand } from "./search";
 export { showCommand } from "./show";
 export { skillsCommand } from "./skills";
+export { spawnCommand } from "./spawn";
 export { pluginsCommand } from "./plugins";
 export { agentsCommand } from "./agents";
 export { statsCommand } from "./stats";

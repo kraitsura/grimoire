@@ -5,11 +5,16 @@
  * 1. Creates a new worktree (reusing grim wt new logic)
  * 2. Generates SRT config scoped to the worktree
  * 3. Launches Claude Code in a sandboxed environment
+ *
+ * Smart behavior:
+ * - If worktree exists: spawn agent to it
+ * - If branch exists without worktree: create worktree for that branch
+ * - Works correctly when called from inside a worktree
  */
 
 import { Effect } from "effect";
 import { spawn, spawnSync } from "child_process";
-import { join } from "path";
+import { join, basename } from "path";
 import { randomUUID } from "crypto";
 import { appendFileSync } from "fs";
 import type { ParsedArgs } from "../../cli/parser";
@@ -20,6 +25,7 @@ import {
   WorktreeStateServiceLive,
   AgentSessionService,
   AgentSessionServiceLive,
+  getMainRepoRoot,
 } from "../../services/worktree";
 import {
   SrtService,
@@ -354,6 +360,18 @@ export const worktreeSpawn = (args: ParsedArgs) =>
     const terminalService = yield* TerminalService;
     const cwd = process.cwd();
 
+    // Get the main repo root (works even from inside a worktree)
+    const repoRootResult = yield* Effect.either(
+      getMainRepoRoot(cwd).pipe(
+        Effect.catchAll(() => Effect.fail({ _tag: "NotInGitRepoError" as const }))
+      )
+    );
+    if (repoRootResult._tag === "Left") {
+      console.log("Error: Not in a git repository");
+      process.exit(1);
+    }
+    const repoRoot = repoRootResult.right;
+
     // Step 1: Check SRT availability (only if --srt explicitly requested)
     if (useSrt && !noSandbox) {
       const platformInfo = yield* srtService.checkPlatform();
@@ -370,8 +388,8 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       }
     }
 
-    // Step 2: Check if worktree exists, create if needed
-    const existingResult = yield* Effect.either(worktreeService.get(cwd, name));
+    // Step 2: Check if worktree exists, or if branch exists (create worktree for it)
+    const existingResult = yield* Effect.either(worktreeService.get(repoRoot, name));
     let worktree: WorktreeInfo;
     let isExisting = false;
 
@@ -381,17 +399,38 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       isExisting = true;
       console.log(`Using existing worktree '${name}'...`);
     } else {
-      // Create the worktree
-      console.log(`Creating worktree '${name}'...`);
+      // Check if branch exists (we can create worktree from it without creating branch)
+      const branchCheckResult = yield* Effect.tryPromise({
+        try: async () => {
+          const proc = Bun.spawn(
+            ["sh", "-c", `git rev-parse --verify refs/heads/${branchName}`],
+            { cwd: repoRoot, stdout: "pipe", stderr: "pipe" }
+          );
+          const exitCode = await proc.exited;
+          return exitCode === 0;
+        },
+        catch: () => false,
+      }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+
+      // Determine if we should create the branch
+      // - If branch exists: use it (don't try to create)
+      // - If branch doesn't exist: create it if createBranch is true
+      const shouldCreateBranch = !branchCheckResult && createBranch;
+
+      if (branchCheckResult) {
+        console.log(`Creating worktree '${name}' from existing branch '${branchName}'...`);
+      } else {
+        console.log(`Creating worktree '${name}'...`);
+      }
 
       const createResult = yield* Effect.either(
-        worktreeService.create(cwd, {
+        worktreeService.create(repoRoot, {
           branch: branchName,
           name,
           linkedIssue,
           skipCopy,
           skipHooks,
-          createBranch,
+          createBranch: shouldCreateBranch,
           createdBy: "agent",
           sessionId: randomUUID(),
         })
@@ -428,7 +467,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
       const now = new Date().toISOString();
 
       // Update the new worktree with parent info
-      yield* worktreeStateService.updateWorktree(cwd, name, {
+      yield* worktreeStateService.updateWorktree(repoRoot, name, {
         parentSession: parentSessionId,
         parentWorktree: parentWorktreeName,
         spawnedAt: now,
@@ -437,7 +476,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
 
       // If we have a parent worktree name, add this as a child
       if (parentWorktreeName) {
-        yield* worktreeStateService.addChildWorktree(cwd, parentWorktreeName, name);
+        yield* worktreeStateService.addChildWorktree(repoRoot, parentWorktreeName, name);
         console.log(`  Parent: ${parentWorktreeName}`);
       }
     }
@@ -450,7 +489,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
         prompt,
         useSrt,
         dangerouslySkipPermissions,
-        cwd,
+        cwd: repoRoot,
       });
       return;
     }
@@ -473,7 +512,7 @@ export const worktreeSpawn = (args: ParsedArgs) =>
 
     if (useSandbox) {
       console.log("Generating sandbox configuration...");
-      const resolved = yield* srtConfigService.resolveConfig(worktree.path, cwd);
+      const resolved = yield* srtConfigService.resolveConfig(worktree.path, repoRoot);
       console.log(`  Write access: ${worktree.path}`);
       console.log(`  Network: ${resolved.config.network.allowedDomains.slice(0, 3).join(", ")}...`);
       console.log();

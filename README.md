@@ -155,10 +155,16 @@ Manage git worktrees for parallel development. Spawn isolated Claude sessions, t
 ```bash
 grimoire wt new feature-branch              # Create worktree
 cd $(grimoire wt new -o feature-branch)     # Create and cd into worktree
-grimoire wt spawn task -bg "Fix the bug"    # Background agent
+grimoire wt spawn task -bg "Fix the bug"    # Background agent in new worktree
+grimoire spawn -bg "Implement feature"      # Background agent in current dir
 grimoire wt status                          # View all worktrees
 ```
 
+**Spawn options:**
+- `grim wt spawn <name>` - Creates worktree + spawns agent. Smart behavior: uses existing worktree/branch if present.
+- `grim spawn` - Spawns agent in current directory (no worktree creation). Works from main repo or inside worktrees.
+
+Features:
 - Link worktrees to issues
 - Progress logging and checkpoints
 - Claim/release for exclusive access
@@ -181,6 +187,18 @@ grim wt list                      # Show all worktrees
 grim wt status                    # Rich status view
 grim wt rm <name>                 # Remove worktree
 cd $(grim wt new -o <name>)       # Create and cd in one step
+\`\`\`
+
+### Spawning Agents
+Two options for spawning Claude agents:
+
+\`\`\`bash
+# grim wt spawn - Creates worktree + spawns agent
+# Smart: uses existing worktree/branch if present
+grim wt spawn fix-auth -bg "Fix the auth bug"
+
+# grim spawn - Spawns agent in current directory (no worktree)
+grim spawn -bg "Implement this feature"
 \`\`\`
 
 ### Parallel Agents
@@ -234,6 +252,18 @@ grim wt list                      # Show all worktrees
 grim wt status                    # Rich status view
 grim wt rm <name>                 # Remove worktree
 cd $(grim wt new -o <name>)       # Create and cd in one step
+\`\`\`
+
+### Spawning Agents
+Two options for spawning Claude agents:
+
+\`\`\`bash
+# grim wt spawn - Creates worktree + spawns agent
+# Smart: uses existing worktree/branch if present
+grim wt spawn fix-auth -bg "Fix the auth bug"
+
+# grim spawn - Spawns agent in current directory (no worktree)
+grim spawn -bg "Implement this feature"
 \`\`\`
 
 ### Parallel Agents
