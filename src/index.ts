@@ -85,6 +85,7 @@ import {
   reindexCommand,
   rmCommand,
   rollbackCommand,
+  scoutCommand,
   searchCommand,
   showCommand,
   skillsCommand,
@@ -98,6 +99,8 @@ import {
   tuiCommand,
   versionsCommand,
   worktreeCommand,
+  listPromptNamesForCompletion,
+  listWorktreeNamesForCompletion,
 } from "./commands";
 
 /**
@@ -144,6 +147,7 @@ const RESERVED_COMMANDS = new Set([
   "wt",
   "dot",
   "enhance",
+  "scout",
 ]);
 
 /**
@@ -210,6 +214,7 @@ COMMANDS:
   config llm          Manage LLM provider configuration
   skills              Package manager for agent context
   spawn               Spawn Claude agent in current directory
+  scout               Spawn lightweight exploration agent
   agents              CLI tool subagent management
   plugins             Claude Code plugin management
   stash [name]        Stash clipboard content
@@ -230,6 +235,18 @@ Run 'grim' with no arguments to launch interactive mode.
   // Handle version flag
   if (flags.version || flags.v) {
     console.log("grim (grimoire) version 0.1.0");
+    return;
+  }
+
+  // Handle completion helper flags (hidden, for shell tab completion)
+  // These must be fast and fail silently - run directly without MainLive
+  if (flags["cmplt-prompts"]) {
+    yield* Effect.promise(() => Effect.runPromise(listPromptNamesForCompletion));
+    return;
+  }
+
+  if (flags["cmplt-worktrees"]) {
+    yield* Effect.promise(() => Effect.runPromise(listWorktreeNamesForCompletion));
     return;
   }
 
@@ -365,6 +382,9 @@ Run 'grim' with no arguments to launch interactive mode.
       case "worktree":
       case "wt":
         yield* worktreeCommand(parsedArgs);
+        break;
+      case "scout":
+        yield* scoutCommand(parsedArgs);
         break;
       default:
         console.log(`Unknown command: ${command}`);

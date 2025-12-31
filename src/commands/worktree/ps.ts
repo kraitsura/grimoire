@@ -144,6 +144,41 @@ async function getDirtyCount(worktreePath: string): Promise<number> {
   }
 }
 
+interface DiffStats {
+  insertions: number;
+  deletions: number;
+}
+
+/**
+ * Get diff stats (insertions/deletions) for uncommitted changes
+ */
+async function getDiffStats(worktreePath: string): Promise<DiffStats> {
+  try {
+    const proc = Bun.spawn(["git", "diff", "--numstat"], {
+      cwd: worktreePath,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = await new Response(proc.stdout).text();
+    if (!output.trim()) return { insertions: 0, deletions: 0 };
+
+    let insertions = 0;
+    let deletions = 0;
+    for (const line of output.split("\n")) {
+      const parts = line.split("\t");
+      if (parts.length >= 2) {
+        const ins = parseInt(parts[0], 10);
+        const del = parseInt(parts[1], 10);
+        if (!isNaN(ins)) insertions += ins;
+        if (!isNaN(del)) deletions += del;
+      }
+    }
+    return { insertions, deletions };
+  } catch {
+    return { insertions: 0, deletions: 0 };
+  }
+}
+
 interface WorktreeData {
   worktree: WorktreeListItem;
   session: AgentSession | null;
@@ -152,6 +187,7 @@ interface WorktreeData {
   mergeStatus?: string;
   managed: boolean;
   parentWorktree?: string;
+  diff: DiffStats;
 }
 
 /**
@@ -169,22 +205,18 @@ function getAgentDisplay(session: AgentSession | null, alive: boolean): string {
 }
 
 /**
- * Get synthesized status
+ * Get synthesized status with Unicode symbols
  */
 function getStatus(data: WorktreeData, alive: boolean): string {
-  if (alive) return "> running";
-  if (data.dirty > 0 && data.commits === 0) return "! uncommitted";
+  if (alive) return "\u25B6 running";      // ▶
+  if (data.dirty > 0 && data.commits === 0) return "\u26A0 uncommitted"; // ⚠
   if (data.commits > 0 && data.dirty > 0) return "+ committed";
-  if (data.commits > 0 && data.dirty === 0) return "* clean";
-  return "- empty";
+  if (data.commits > 0 && data.dirty === 0) return "\u2713 clean";  // ✓
+  return "\u25CB empty";  // ○
 }
 
-// NOTE: Unicode symbols (⚠ ✓ ▶ ○) would be ideal but Bun's bundler has a bug
-// that causes double UTF-8 encoding. Tracking: https://github.com/oven-sh/bun/issues
-// When fixed, restore Unicode for better visual clarity.
-
 /**
- * Get collect status
+ * Get collect status with Unicode
  */
 function getCollectStatus(data: WorktreeData, alive: boolean): string {
   if (data.commits === 0 && data.dirty === 0) return "-";
@@ -192,17 +224,38 @@ function getCollectStatus(data: WorktreeData, alive: boolean): string {
   if (data.commits === 0) return "blocked";
   if (data.dirty > 0) return "blocked";
   if (data.mergeStatus === "conflict") return "blocked";
-  return "ready";
+  return "\u2713";  // ✓
+}
+
+/**
+ * Format diff stats as +N/-M
+ */
+function formatDiff(diff: DiffStats): string {
+  if (diff.insertions === 0 && diff.deletions === 0) return "-";
+  const parts: string[] = [];
+  if (diff.insertions > 0) parts.push(`+${diff.insertions}`);
+  if (diff.deletions > 0) parts.push(`-${diff.deletions}`);
+  return parts.join("/");
+}
+
+/**
+ * Format diff stats as +N/-M
+ */
+function formatDiff(diff: DiffStats): string {
+  if (diff.insertions === 0 && diff.deletions === 0) return "-";
+  const parts: string[] = [];
+  if (diff.insertions > 0) parts.push(`+${diff.insertions}`);
+  if (diff.deletions > 0) parts.push(`-${diff.deletions}`);
+  return parts.join("/");
 }
 
 // Column widths
 const COL = {
   name: 16,
-  agent: 14,
-  dirty: 7,
-  commits: 9,
-  status: 16,
-  collect: 10,
+  agent: 12,
+  diff: 10,
+  status: 14,
+  collect: 8,
 };
 
 /**
@@ -276,6 +329,7 @@ export const worktreePs = (args: ParsedArgs) =>
           // Get git stats
           const dirty = await getDirtyCount(wt.path);
           const commits = await getCommitsVsBase(wt.path, mainBranch);
+          const diff = await getDiffStats(wt.path);
 
           // Get merge status from state
           const entry = state.worktrees.find((w) => w.name === wt.name);
@@ -284,7 +338,7 @@ export const worktreePs = (args: ParsedArgs) =>
           // Get parent worktree from state
           const parentWorktree = entry?.parentWorktree;
 
-          return { worktree: wt, session, dirty, commits, mergeStatus, managed: wt.managed !== false, parentWorktree };
+          return { worktree: wt, session, dirty, commits, mergeStatus, managed: wt.managed !== false, parentWorktree, diff };
         })
       )
     );
@@ -351,6 +405,10 @@ export const worktreePs = (args: ParsedArgs) =>
             },
             dirty: data.dirty,
             commits: data.commits,
+            diff: {
+              insertions: data.diff.insertions,
+              deletions: data.diff.deletions,
+            },
             status: getStatus(data, alive),
             collect: getCollectStatus(data, alive),
           };
@@ -367,7 +425,7 @@ export const worktreePs = (args: ParsedArgs) =>
           uncommitted: filteredData.filter((d) => d.dirty > 0).length,
           ready: filteredData.filter(
             (d) =>
-              getCollectStatus(d, d.session?.status === "running") === "ready"
+              getCollectStatus(d, d.session?.status === "running") === "\u2713"
           ).length,
         },
       };
@@ -391,14 +449,14 @@ export const worktreePs = (args: ParsedArgs) =>
 
     // Table header
     console.log(
-      `${pad("WORKTREE", COL.name)}${pad("AGENT", COL.agent)}${pad("DIRTY", COL.dirty)}${pad("COMMITS", COL.commits)}${pad("STATUS", COL.status)}COLLECT`
+      `${pad("WORKTREE", COL.name)}${pad("AGENT", COL.agent)}${pad("DIFF", COL.diff)}${pad("STATUS", COL.status)}COLLECT`
     );
 
     // Table rows
     for (const data of filteredData) {
       const alive = data.session?.status === "running";
       console.log(
-        `${pad(data.worktree.name, COL.name)}${pad(getAgentDisplay(data.session, alive), COL.agent)}${pad(data.dirty.toString(), COL.dirty)}${pad(data.commits.toString(), COL.commits)}${pad(getStatus(data, alive), COL.status)}${getCollectStatus(data, alive)}`
+        `${pad(data.worktree.name, COL.name)}${pad(getAgentDisplay(data.session, alive), COL.agent)}${pad(formatDiff(data.diff), COL.diff)}${pad(getStatus(data, alive), COL.status)}${getCollectStatus(data, alive)}`
       );
     }
 
@@ -421,7 +479,7 @@ export const worktreePs = (args: ParsedArgs) =>
 
     // Ready to collect
     const readyWorktrees = filteredData.filter(
-      (d) => getCollectStatus(d, d.session?.status === "running") === "ready"
+      (d) => getCollectStatus(d, d.session?.status === "running") === "\u2713"
     );
     if (readyWorktrees.length > 0) {
       const names = readyWorktrees.map((d) => d.worktree.name).join(" ");
@@ -432,7 +490,7 @@ export const worktreePs = (args: ParsedArgs) =>
     const dirtyWorktrees = filteredData.filter((d) => d.dirty > 0);
     if (dirtyWorktrees.length > 0) {
       const details = dirtyWorktrees
-        .map((d) => `${d.worktree.name} (${d.dirty} dirty)`)
+        .map((d) => `${d.worktree.name} (${formatDiff(d.diff)})`)
         .join(", ");
       console.log(`Needs commit: ${details}`);
     }

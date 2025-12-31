@@ -27,6 +27,7 @@ export { rmCommand } from "./rm";
 export { rollbackCommand } from "./rollback";
 export { searchCommand } from "./search";
 export { showCommand } from "./show";
+export { scoutCommand } from "./scout";
 export { skillsCommand } from "./skills";
 export { spawnCommand } from "./spawn";
 export { pluginsCommand } from "./plugins";
@@ -41,3 +42,7 @@ export { stashCommand } from "./stash";
 export { popCommand } from "./pop";
 export { tuiCommand } from "./tui";
 export { worktreeCommand } from "./worktree";
+export {
+  listPromptNamesForCompletion,
+  listWorktreeNamesForCompletion,
+} from "./completion-helpers";
