@@ -3,9 +3,9 @@
  */
 
 import { Effect, Context } from "effect";
-import { FormatService, StorageService } from "../services";
-import type { ParsedArgs } from "../cli/parser";
-import type { FormattingConfig, LintIssue } from "../services";
+import { FormatService, StorageService } from "../../services";
+import type { ParsedArgs } from "../../cli/parser";
+import type { FormattingConfig, LintIssue } from "../../services";
 
 /**
  * Default formatting configuration

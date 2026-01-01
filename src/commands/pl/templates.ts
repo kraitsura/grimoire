@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect";
-import { StorageService, EditorService } from "../services";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService, EditorService } from "../../services";
+import type { ParsedArgs } from "../../cli/parser";
 
 export const templatesCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {

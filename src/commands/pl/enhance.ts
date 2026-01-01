@@ -10,9 +10,9 @@ import {
   StorageService,
   EnhancementService,
   TokenCounterService,
-} from "../services";
-import { BUILTIN_TEMPLATES, getDefaultTemplate } from "../models/enhancement-template";
-import type { ParsedArgs } from "../cli/parser";
+} from "../../services";
+import { BUILTIN_TEMPLATES, getDefaultTemplate } from "../../models/enhancement-template";
+import type { ParsedArgs } from "../../cli/parser";
 
 const USAGE = `Usage: grimoire enhance <prompt-name> [OPTIONS]
 

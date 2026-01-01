@@ -58,104 +58,36 @@ const loadGrimoireEnv = () => {
 
 // Load .env file before anything else
 loadGrimoireEnv();
+
 import {
-  addCommand,
-  agentsCommand,
-  promptCommand,
-  aliasCommand,
-  archiveCommand,
-  benchmarkCommand,
-  branchCommand,
-  compareCommand,
-  completionCommand,
-  configCommand,
-  copyCommand,
-  costCommand,
-  dotCommand,
-  enhanceCommand,
-  exportCommand,
-  favoriteCommand,
-  formatCommand,
-  historyCommand,
-  importCommand,
-  listCommand,
-  pinCommand,
-  pluginsCommand,
-  popCommand,
-  reindexCommand,
-  rmCommand,
-  rollbackCommand,
-  scoutCommand,
-  searchCommand,
-  showCommand,
-  skillsCommand,
-  spawnCommand,
-  stashCommand,
-  statsCommand,
-  syncCommand,
-  tagCommand,
-  templatesCommand,
-  testCommand,
-  tuiCommand,
-  versionsCommand,
+  plCommand,
+  stCommand,
   worktreeCommand,
+  configCommand,
+  spawnCommand,
+  completionCommand,
   listPromptNamesForCompletion,
   listWorktreeNamesForCompletion,
 } from "./commands";
 
 /**
- * Reserved command names that cannot be used as prompt names
+ * Reserved command names - only 6 top-level commands
  */
 const RESERVED_COMMANDS = new Set([
-  "add",
-  "agents",
-  "list",
-  "show",
-  "rm",
-  "delete",
-  "copy",
-  "search",
-  "tag",
-  "stats",
-  "benchmark",
-  "compare",
-  "cost",
-  "test",
-  "reindex",
-  "templates",
-  "history",
-  "versions",
-  "rollback",
-  "archive",
-  "branch",
-  "alias",
-  "favorite",
-  "pin",
-  "format",
-  "sync",
-  "completion",
-  "config",
-  "skills",
-  "spawn",
-  "plugins",
-  "stash",
-  "pop",
-  "export",
-  "import",
-  "tui",
-  "worktree",
-  "wt",
-  "dot",
-  "enhance",
-  "scout",
+  "pl",        // Prompt Library
+  "wt",        // Worktree (alias)
+  "worktree",  // Worktree
+  "st",        // Skills/Tools
+  "config",    // Configuration
+  "spawn",     // Spawn agent
+  "completion", // Shell completions
 ]);
 
 /**
  * Main program logic
  *
  * Parses command-line arguments and routes to appropriate handler:
- * - No args or -i/--interactive flag: Launch interactive mode
- * - Command with args: Route to command handler (future implementation)
+ * - No args: Launch interactive mode
  * - Help flag: Show help message
  * - Version flag: Show version
  */
@@ -169,63 +101,46 @@ const program = Effect.gen(function* () {
 Grimoire - A CLI tool for storing, editing, and managing prompts
 
 USAGE:
-  grim [OPTIONS] [COMMAND]
-  grim <prompt-name> [OPTIONS]    Create or edit a prompt
+  grim [COMMAND] [OPTIONS]
 
   (Also available as 'grimoire')
 
-PROMPT OPTIONS:
-  -c, --content <text>    Set content directly (no vim)
-  -p, --paste             Paste clipboard content
-  -t, --tags <tags>       Set tags (comma-separated)
-  -i, --interactive       Use Ink editor instead of vim
-  --name <new-name>       Rename prompt (edit mode only)
-  --add-tag <tag>         Add a tag (edit mode only)
-  --remove-tag <tag>      Remove a tag (edit mode only)
+COMMANDS:
+  pl          Prompt Library - manage prompts
+  wt          Worktree - git worktree management
+  st          Skills/Tools - manage skills, plugins, agents
+  config      Configuration and settings
+  spawn       Spawn Claude agent in current directory
+  completion  Generate shell completions (bash/zsh/fish)
+
+PROMPT LIBRARY (grim pl):
+  grim pl                     Launch interactive TUI
+  grim pl <name>              Create or edit a prompt
+  grim pl list                List all prompts
+  grim pl show <name>         Show prompt details
+  grim pl --help              See all pl subcommands
+
+WORKTREE (grim wt):
+  grim wt ps                  Show worktree status
+  grim wt new <name>          Create new worktree
+  grim wt spawn <name>        Create worktree + spawn agent
+  grim wt --help              See all wt subcommands
+
+SKILLS/TOOLS (grim st):
+  grim st skills [cmd]        Manage agent skills
+  grim st plugins [cmd]       Manage Claude plugins
+  grim st agents [cmd]        Manage subagent definitions
+  grim st add <source>        Add from GitHub/marketplace
 
 GLOBAL OPTIONS:
   -h, --help              Show this help message
   -v, --version           Show version information
 
-COMMANDS:
-  add <source>        Add skills/plugins from GitHub or marketplace
-  list                List all prompts
-  show <name>         Show prompt details
-  rm <name>           Delete a prompt
-  copy <name>         Copy prompt to clipboard
-  dot [path]          Browse and edit dotfiles (TUI)
-  benchmark <file>    Run automated test suite
-  compare <p1> <p2>   A/B test prompts with same input
-  cost <name>         Estimate token costs for a prompt
-  test <name>         Test a prompt with an LLM
-  enhance <name>      AI-powered prompt enhancement
-  search <query>      Search prompts
-  reindex             Rebuild search index
-  stats [name]        Show statistics
-  tag <name> [tags]   Manage tags
-  templates           List templates
-  history <name>      Show edit history
-  versions <name>     List versions
-  favorite [name]     Manage favorite prompts
-  pin [name]          Manage pinned prompts
-  format [name]       Format prompt content
-  sync                Sync with remote repository
-  completion <shell>  Generate shell completions (bash/zsh/fish)
-  config llm          Manage LLM provider configuration
-  skills              Package manager for agent context
-  spawn               Spawn Claude agent in current directory
-  scout               Spawn lightweight exploration agent
-  agents              CLI tool subagent management
-  plugins             Claude Code plugin management
-  stash [name]        Stash clipboard content
-  pop [name]          Pop from stash to clipboard
-  wt, worktree        Git worktree management
-
 EXAMPLES:
-  grim my-prompt              # Open vim to create/edit 'my-prompt'
-  grim my-prompt -c "Hello"   # Create with content directly
-  grim my-prompt -p           # Create from clipboard
-  grim my-prompt -t api,gpt   # Create with tags
+  grim pl my-prompt           # Create/edit prompt
+  grim pl list                # List prompts
+  grim wt spawn fix-bug       # Create worktree + spawn agent
+  grim st skills enable beads # Enable beads skill
 
 Run 'grim' with no arguments to launch interactive mode.
     `);
@@ -234,7 +149,7 @@ Run 'grim' with no arguments to launch interactive mode.
 
   // Handle version flag
   if (flags.version || flags.v) {
-    console.log("grim (grimoire) version 0.1.0");
+    console.log("grim (grimoire) version 0.2.0");
     return;
   }
 
@@ -250,8 +165,8 @@ Run 'grim' with no arguments to launch interactive mode.
     return;
   }
 
-  // Launch interactive mode if no args or explicit -i flag (without a prompt name)
-  if (args.length === 0 || (flags.interactive && !command)) {
+  // Launch interactive mode if no args
+  if (args.length === 0) {
     yield* runInteractive();
     return;
   }
@@ -260,131 +175,34 @@ Run 'grim' with no arguments to launch interactive mode.
   if (command) {
     const parsedArgs = { command, flags, positional };
 
-    // If command is not a reserved command, treat it as a prompt name
+    // Unknown command - show help
     if (!RESERVED_COMMANDS.has(command)) {
-      yield* promptCommand(parsedArgs);
-      return;
+      console.log(`Unknown command: ${command}`);
+      console.log("");
+      console.log("Available commands: pl, wt, st, config, spawn, completion");
+      console.log("Use 'grim --help' for usage information.");
+      process.exit(1);
     }
 
     switch (command) {
-      case "add":
-        yield* Effect.promise(() => addCommand(parsedArgs));
-        break;
-      case "list":
-        yield* listCommand(parsedArgs);
-        break;
-      case "show":
-        yield* showCommand(parsedArgs);
-        break;
-      case "rm":
-      case "delete":
-        yield* rmCommand(parsedArgs);
-        break;
-      case "copy":
-        yield* copyCommand(parsedArgs);
-        break;
-      case "dot":
-        yield* Effect.promise(() => dotCommand(parsedArgs));
-        break;
-      case "enhance":
-        yield* enhanceCommand(parsedArgs);
-        break;
-      case "benchmark":
-        yield* benchmarkCommand(parsedArgs);
-        break;
-      case "cost":
-        yield* costCommand(parsedArgs);
-        break;
-      case "test":
-        yield* testCommand(parsedArgs);
-        break;
-      case "search":
-        yield* searchCommand(parsedArgs);
-        break;
-      case "reindex":
-        yield* reindexCommand(parsedArgs);
-        break;
-      case "stats":
-        yield* statsCommand(parsedArgs);
-        break;
-      case "tag":
-        yield* tagCommand(parsedArgs);
-        break;
-      case "templates":
-        yield* templatesCommand(parsedArgs);
-        break;
-      case "export":
-        yield* exportCommand(parsedArgs);
-        break;
-      case "import":
-        yield* importCommand(parsedArgs);
-        break;
-      case "history":
-        yield* historyCommand(parsedArgs);
-        break;
-      case "versions":
-        yield* versionsCommand(parsedArgs);
-        break;
-      case "rollback":
-        yield* rollbackCommand(parsedArgs);
-        break;
-      case "archive":
-        yield* archiveCommand(parsedArgs);
-        break;
-      case "branch":
-        yield* branchCommand(parsedArgs);
-        break;
-      case "alias":
-        yield* aliasCommand(parsedArgs);
-        break;
-      case "compare":
-        yield* compareCommand(parsedArgs);
-        break;
-      case "favorite":
-        yield* favoriteCommand(parsedArgs);
-        break;
-      case "pin":
-        yield* pinCommand(parsedArgs);
-        break;
-      case "format":
-        yield* formatCommand(parsedArgs);
-        break;
-      case "sync":
-        yield* syncCommand(parsedArgs);
-        break;
-      case "completion":
-        yield* completionCommand(parsedArgs);
-        break;
-      case "config":
-        yield* configCommand(parsedArgs);
-        break;
-      case "skills":
-        yield* skillsCommand(parsedArgs);
-        break;
-      case "spawn":
-        yield* spawnCommand(parsedArgs);
-        break;
-      case "agents":
-        yield* agentsCommand(parsedArgs);
-        break;
-      case "plugins":
-        yield* pluginsCommand(parsedArgs);
-        break;
-      case "stash":
-        yield* stashCommand(parsedArgs);
-        break;
-      case "pop":
-        yield* popCommand(parsedArgs);
-        break;
-      case "tui":
-        yield* tuiCommand(parsedArgs);
+      case "pl":
+        yield* plCommand(parsedArgs);
         break;
       case "worktree":
       case "wt":
         yield* worktreeCommand(parsedArgs);
         break;
-      case "scout":
-        yield* scoutCommand(parsedArgs);
+      case "st":
+        yield* stCommand(parsedArgs);
+        break;
+      case "config":
+        yield* configCommand(parsedArgs);
+        break;
+      case "spawn":
+        yield* spawnCommand(parsedArgs);
+        break;
+      case "completion":
+        yield* completionCommand(parsedArgs);
         break;
       default:
         console.log(`Unknown command: ${command}`);

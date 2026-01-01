@@ -9,8 +9,8 @@
  */
 
 import { Effect } from "effect";
-import { ArchiveService } from "../services/archive-service";
-import type { ParsedArgs } from "../cli/parser";
+import { ArchiveService } from "../../services/archive-service";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Format relative date for display

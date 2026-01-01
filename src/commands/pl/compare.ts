@@ -3,11 +3,11 @@
  */
 
 import { Effect } from "effect";
-import { StorageService } from "../services";
-import { LLMService } from "../services/llm-service";
-import { TokenCounterService } from "../services/token-counter-service";
-import type { ParsedArgs } from "../cli/parser";
-import type { LLMResponse } from "../services/llm-service";
+import { StorageService } from "../../services";
+import { LLMService } from "../../services/llm-service";
+import { TokenCounterService } from "../../services/token-counter-service";
+import type { ParsedArgs } from "../../cli/parser";
+import type { LLMResponse } from "../../services/llm-service";
 
 interface ComparisonResult {
   promptName: string;

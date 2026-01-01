@@ -11,9 +11,9 @@
  */
 
 import { Effect } from "effect";
-import { StorageService, BranchService, VersionService } from "../services";
-import type { ParsedArgs } from "../cli/parser";
-import type { Branch } from "../services/branch-service";
+import { StorageService, BranchService, VersionService } from "../../services";
+import type { ParsedArgs } from "../../cli/parser";
+import type { Branch } from "../../services/branch-service";
 
 /**
  * ANSI color codes

@@ -4,9 +4,9 @@
 
 import { Effect } from "effect";
 import { Schema } from "@effect/schema";
-import { StorageService, VersionService } from "../services";
-import { RollbackCommandArgsSchema, ValidationError } from "../models";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService, VersionService } from "../../services";
+import { RollbackCommandArgsSchema, ValidationError } from "../../models";
+import type { ParsedArgs } from "../../cli/parser";
 import * as readline from "node:readline";
 
 /**

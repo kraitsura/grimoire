@@ -4,9 +4,9 @@
 
 import { Effect } from "effect";
 import { Schema } from "@effect/schema";
-import { StorageService } from "../services";
-import { ShowCommandArgsSchema, ValidationError } from "../models";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService } from "../../services";
+import { ShowCommandArgsSchema, ValidationError } from "../../models";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Parse raw CLI args into structured format for schema validation

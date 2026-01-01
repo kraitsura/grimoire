@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect";
-import { StatsService, StorageService } from "../services";
-import type { ParsedArgs } from "../cli/parser";
+import { StatsService, StorageService } from "../../services";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Stats command handler

@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect";
-import { SearchService } from "../services";
-import type { ParsedArgs } from "../cli/parser";
+import { SearchService } from "../../services";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Reindex command handler

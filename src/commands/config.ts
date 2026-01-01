@@ -14,6 +14,7 @@ import { ConfigCommandArgsSchema, ValidationError } from "../models";
 import type { ParsedArgs } from "../cli/parser";
 import * as readline from "readline";
 import { ModelSelector, getDefaultModelForProvider } from "../cli/components/ModelSelector";
+import { dotCommand } from "./dot";
 
 // Supported providers
 const PROVIDERS = ["openai", "anthropic", "google", "ollama"] as const;
@@ -48,18 +49,42 @@ const parseConfigArgs = (args: ParsedArgs) => {
  */
 export const configCommand = (args: ParsedArgs) =>
   Effect.gen(function* () {
+    const subcommand = args.positional[0];
+
+    // Route to dot subcommand
+    if (subcommand === "dot") {
+      // Pass remaining args to dotCommand
+      yield* Effect.promise(() =>
+        dotCommand({
+          command: "dot",
+          flags: args.flags,
+          positional: args.positional.slice(1),
+        })
+      );
+      return;
+    }
+
     // Check for help case first (no subcommand or invalid subcommand)
-    if (!args.positional[0] || args.positional[0] !== "llm") {
-      console.log("Usage: grimoire config llm <list|add|test|doctor|remove> [provider]");
-      console.log("\nManage LLM provider configuration.");
-      console.log("\nSubcommands:");
-      console.log("  list              List configured providers");
-      console.log("  add <provider>    Add or update provider API key");
-      console.log("  test [provider]   Quick API key validation");
-      console.log("  doctor [provider] Full diagnostic with model tests");
-      console.log("  remove <provider> Remove provider configuration");
-      console.log("\nProviders: openai, anthropic, google, ollama");
-      console.log("\nKeys are stored in ~/.grimoire/.env with secure permissions (0600).");
+    if (!subcommand || (subcommand !== "llm" && subcommand !== "dot")) {
+      console.log("Configuration and Settings\n");
+      console.log("USAGE:");
+      console.log("  grim config <subcommand> [options]\n");
+      console.log("SUBCOMMANDS:");
+      console.log("  llm             Manage LLM provider configuration");
+      console.log("  dot             Browse and edit dotfiles interactively\n");
+      console.log("LLM CONFIGURATION:");
+      console.log("  grim config llm list              List configured providers");
+      console.log("  grim config llm add <provider>    Add or update API key");
+      console.log("  grim config llm test [provider]   Quick API key validation");
+      console.log("  grim config llm doctor [provider] Full diagnostic with model tests");
+      console.log("  grim config llm remove <provider> Remove provider\n");
+      console.log("DOTFILES:");
+      console.log("  grim config dot                   Open dotfile explorer");
+      console.log("  grim config dot /path             Open in specific directory");
+      console.log("  grim config dot --editor=code     Use VS Code as editor");
+      console.log("  grim config dot --set-editor=zed  Set default editor\n");
+      console.log("Providers: openai, anthropic, google, ollama");
+      console.log("Keys are stored in ~/.grimoire/.env with secure permissions (0600).");
       return;
     }
 

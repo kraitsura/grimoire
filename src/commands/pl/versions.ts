@@ -20,8 +20,8 @@
  */
 
 import { Effect } from "effect";
-import { StorageService, RetentionService } from "../services";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService, RetentionService } from "../../services";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * ANSI color codes

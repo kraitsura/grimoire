@@ -1,9 +1,9 @@
 import { Effect } from "effect";
 import { Schema } from "@effect/schema";
-import { StorageService } from "../services";
-import { ListCommandArgsSchema, ValidationError } from "../models";
-import type { ParsedArgs } from "../cli/parser";
-import type { Prompt } from "../models";
+import { StorageService } from "../../services";
+import { ListCommandArgsSchema, ValidationError } from "../../models";
+import type { ParsedArgs } from "../../cli/parser";
+import type { Prompt } from "../../models";
 
 /**
  * Parse raw CLI args into structured format for schema validation

@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect";
-import { TokenCounterService, StorageService } from "../services";
-import type { ParsedArgs } from "../cli/parser";
+import { TokenCounterService, StorageService } from "../../services";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Model pricing information (per 1M tokens)

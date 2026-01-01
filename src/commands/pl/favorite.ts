@@ -9,8 +9,8 @@
  */
 
 import { Effect } from "effect";
-import { StorageService, SqlService } from "../services";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService, SqlService } from "../../services";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Database row structure for prompts table

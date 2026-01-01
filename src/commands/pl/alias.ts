@@ -8,8 +8,8 @@
  */
 
 import { Effect } from "effect";
-import { AliasService } from "../services/alias-service";
-import type { ParsedArgs } from "../cli/parser";
+import { AliasService } from "../../services/alias-service";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Alias command implementation

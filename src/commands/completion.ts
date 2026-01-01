@@ -1,5 +1,13 @@
 /**
  * Completion Command - Generate shell completion scripts
+ *
+ * Updated for new 6-command structure:
+ * - pl: Prompt Library
+ * - wt: Worktree management
+ * - st: Skills/Tools
+ * - config: Configuration
+ * - spawn: Spawn agent
+ * - completion: Shell completions
  */
 
 import { Effect } from "effect";
@@ -51,34 +59,78 @@ _grimoire() {
   cmd="\${COMP_WORDS[1]}"
   subcmd="\${COMP_WORDS[2]}"
 
-  # All available commands
-  local commands="list add show edit rm copy test cost search reindex stats tag templates export import history versions rollback archive branch alias compare favorite pin format sync completion config skills spawn plugins stash pop tui worktree wt dot enhance agents"
+  # Top-level commands (6 only)
+  local commands="pl wt st config spawn completion"
+
+  # Prompt Library subcommands
+  local pl_cmds="list show rm copy search tag history versions rollback archive branch alias favorite pin format export import reindex stats templates test cost compare benchmark enhance sync stash pop"
 
   # Worktree subcommands
   local wt_cmds="ps new spawn kill children wait collect commit merge pr auth from-issue list ls status rm remove path exec open clean adopt config each log logs checkpoint checkpoints claim release handoff available"
+
+  # Skills/Tools subcommands
+  local st_cmds="skills plugins agents add"
+
+  # Skills subcommands
+  local skills_cmds="init add enable disable list info search sync doctor update validate"
+
+  # Plugins subcommands
+  local plugins_cmds="list add info"
+
+  # Agents subcommands
+  local agents_cmds="list create info"
+
+  # Config subcommands
+  local config_cmds="llm dot"
 
   # Worktree subcommands that need worktree name completion
   local wt_name_cmds="rm remove kill open path exec log logs claim release handoff merge commit pr adopt spawn status"
 
   case "$prev" in
     grimoire|grim)
-      # Complete with commands + dynamic prompt names
+      COMPREPLY=($(compgen -W "$commands" -- "$cur"))
+      return 0
+      ;;
+    pl)
+      # Complete with pl subcommands + dynamic prompt names
       local prompts
       prompts=$(grimoire --cmplt-prompts 2>/dev/null)
-      COMPREPLY=($(compgen -W "$commands $prompts" -- "$cur"))
+      COMPREPLY=($(compgen -W "$pl_cmds $prompts" -- "$cur"))
       return 0
       ;;
     wt|worktree)
       COMPREPLY=($(compgen -W "$wt_cmds" -- "$cur"))
       return 0
       ;;
-    templates)
-      COMPREPLY=($(compgen -W "list show vars create apply" -- "$cur"))
+    st)
+      COMPREPLY=($(compgen -W "$st_cmds" -- "$cur"))
       return 0
       ;;
     config)
-      COMPREPLY=($(compgen -W "llm" -- "$cur"))
+      COMPREPLY=($(compgen -W "$config_cmds" -- "$cur"))
       return 0
+      ;;
+    completion)
+      COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
+      return 0
+      ;;
+    skills)
+      if [[ "$cmd" == "st" ]]; then
+        COMPREPLY=($(compgen -W "$skills_cmds" -- "$cur"))
+        return 0
+      fi
+      ;;
+    plugins)
+      if [[ "$cmd" == "st" ]]; then
+        COMPREPLY=($(compgen -W "$plugins_cmds" -- "$cur"))
+        return 0
+      fi
+      ;;
+    agents)
+      if [[ "$cmd" == "st" ]]; then
+        COMPREPLY=($(compgen -W "$agents_cmds" -- "$cur"))
+        return 0
+      fi
       ;;
     llm)
       if [[ "$cmd" == "config" ]]; then
@@ -86,25 +138,30 @@ _grimoire() {
         return 0
       fi
       ;;
-    completion)
-      COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
-      return 0
+    # pl subcommand completions
+    templates)
+      if [[ "$cmd" == "pl" ]]; then
+        COMPREPLY=($(compgen -W "list show vars create apply" -- "$cur"))
+        return 0
+      fi
       ;;
     archive)
-      COMPREPLY=($(compgen -W "list show restore delete" -- "$cur"))
-      return 0
+      if [[ "$cmd" == "pl" ]]; then
+        COMPREPLY=($(compgen -W "list show restore delete" -- "$cur"))
+        return 0
+      fi
       ;;
     branch)
-      COMPREPLY=($(compgen -W "list create switch merge delete" -- "$cur"))
-      return 0
+      if [[ "$cmd" == "pl" ]]; then
+        COMPREPLY=($(compgen -W "list create switch merge delete" -- "$cur"))
+        return 0
+      fi
       ;;
     favorite|pin)
-      COMPREPLY=($(compgen -W "list add remove" -- "$cur"))
-      return 0
-      ;;
-    skills)
-      COMPREPLY=($(compgen -W "init add enable disable list info search sync doctor update validate" -- "$cur"))
-      return 0
+      if [[ "$cmd" == "pl" ]]; then
+        COMPREPLY=($(compgen -W "list add remove" -- "$cur"))
+        return 0
+      fi
       ;;
     *)
       # Check if we're completing a worktree subcommand that needs a name
@@ -117,6 +174,17 @@ _grimoire() {
             return 0
           fi
         done
+      fi
+      # Check if we're completing a pl subcommand that needs a prompt name
+      if [[ "$cmd" == "pl" ]]; then
+        case "$subcmd" in
+          show|rm|copy|test|cost|history|versions|rollback|enhance|format)
+            local prompts
+            prompts=$(grimoire --cmplt-prompts 2>/dev/null)
+            COMPREPLY=($(compgen -W "$prompts" -- "$cur"))
+            return 0
+            ;;
+        esac
       fi
       ;;
   esac
@@ -134,58 +202,49 @@ function generateZshCompletion(): string {
   return `#compdef grimoire grim
 
 _grimoire() {
-  local -a commands prompts worktrees
+  local -a commands
 
+  # Top-level commands only (6)
   commands=(
+    'pl:Prompt Library - manage prompts'
+    'wt:Worktree - git worktree management'
+    'st:Skills/Tools - manage skills, plugins, agents'
+    'config:Configuration and settings'
+    'spawn:Spawn Claude agent in current directory'
+    'completion:Generate shell completions'
+  )
+
+  local -a pl_cmds=(
     'list:List all prompts'
-    'add:Add a new prompt or skill'
     'show:Show prompt details'
-    'edit:Edit a prompt'
     'rm:Delete a prompt'
     'copy:Copy prompt to clipboard'
-    'test:Test a prompt with an LLM'
-    'cost:Estimate token costs'
     'search:Search prompts'
-    'reindex:Rebuild search index'
-    'stats:Show statistics'
     'tag:Manage tags'
-    'templates:Manage templates'
-    'export:Export prompts'
-    'import:Import prompts'
     'history:Show edit history'
     'versions:List versions'
     'rollback:Rollback to version'
     'archive:Manage archived prompts'
     'branch:Manage prompt branches'
     'alias:Manage aliases'
-    'compare:A/B test prompts'
     'favorite:Manage favorites'
     'pin:Manage pinned prompts'
     'format:Format prompt content'
+    'export:Export prompts'
+    'import:Import prompts'
+    'reindex:Rebuild search index'
+    'stats:Show statistics'
+    'templates:Manage templates'
+    'test:Test prompt with LLM'
+    'cost:Estimate token costs'
+    'compare:A/B test prompts'
+    'benchmark:Run test suite'
+    'enhance:AI-powered enhancement'
     'sync:Sync with remote'
-    'completion:Generate shell completions'
-    'config:Configure settings'
-    'skills:Manage agent skills'
-    'spawn:Spawn Claude agent'
-    'plugins:Manage Claude plugins'
     'stash:Stash clipboard content'
     'pop:Pop from stash'
-    'tui:Launch TUI mode'
-    'wt:Git worktree management'
-    'worktree:Git worktree management'
-    'dot:Browse dotfiles'
-    'enhance:AI-powered prompt enhancement'
-    'agents:Manage subagents'
   )
 
-  local -a templates_cmds=(list show vars create apply)
-  local -a config_cmds=(llm)
-  local -a config_llm_cmds=(list add test remove)
-  local -a completion_cmds=(bash zsh fish)
-  local -a archive_cmds=(list show restore delete)
-  local -a branch_cmds=(list create switch merge delete)
-  local -a fav_cmds=(list add remove)
-  local -a skills_cmds=(init add enable disable list info search sync doctor update validate)
   local -a wt_cmds=(
     'ps:Show worktree status'
     'new:Create new worktree'
@@ -206,46 +265,98 @@ _grimoire() {
     'release:Release worktree lock'
     'handoff:Handoff worktree'
   )
+
+  local -a st_cmds=(
+    'skills:Manage agent skills'
+    'plugins:Manage Claude plugins'
+    'agents:Manage subagent definitions'
+    'add:Add from GitHub or marketplace'
+  )
+
+  local -a skills_cmds=(init add enable disable list info search sync doctor update validate)
+  local -a plugins_cmds=(list add info)
+  local -a agents_cmds=(list create info)
+  local -a config_cmds=(llm dot)
+  local -a config_llm_cmds=(list add test remove)
+  local -a completion_cmds=(bash zsh fish)
+  local -a archive_cmds=(list show restore delete)
+  local -a branch_cmds=(list create switch merge delete)
+  local -a fav_cmds=(list add remove)
+  local -a templates_cmds=(list show vars create apply)
+
   # Worktree subcommands that need name completion
   local -a wt_name_cmds=(rm remove kill open path exec log logs claim release handoff merge commit pr adopt spawn status)
 
+  # pl subcommands that need prompt name completion
+  local -a pl_name_cmds=(show rm copy test cost history versions rollback enhance format)
+
   _arguments -C \\
     '1: :->command' \\
-    '*:: :->args'
+    '*:: :->args' && return
 
-  case $state in
+  case \$state in
     command)
-      _describe 'commands' commands
-      # Also complete prompt names
-      prompts=(\${(f)"\$(grimoire --cmplt-prompts 2>/dev/null)"})
-      (( \${#prompts} )) && compadd -a prompts
+      _describe -t commands 'commands' commands
       ;;
     args)
       case \$words[1] in
+        pl)
+          if (( CURRENT == 2 )); then
+            _describe -t subcommands 'subcommands' pl_cmds
+            # Also complete prompt names dynamically
+            local -a _prompts
+            _prompts=("\${(@f)\$(grimoire --cmplt-prompts 2>/dev/null)}")
+            if [[ -n "\$_prompts[1]" ]]; then
+              _describe -t prompts 'prompts' _prompts
+            fi
+          elif (( CURRENT == 3 )); then
+            # Check if subcommand needs prompt name
+            case \$words[2] in
+              show|rm|copy|test|cost|history|versions|rollback|enhance|format)
+                local -a _prompts
+                _prompts=("\${(@f)\$(grimoire --cmplt-prompts 2>/dev/null)}")
+                [[ -n "\$_prompts[1]" ]] && _describe -t prompts 'prompts' _prompts
+                ;;
+              templates) _describe -t subcommands 'subcommands' templates_cmds ;;
+              archive) _describe -t subcommands 'subcommands' archive_cmds ;;
+              branch) _describe -t subcommands 'subcommands' branch_cmds ;;
+              favorite|pin) _describe -t subcommands 'subcommands' fav_cmds ;;
+            esac
+          fi
+          ;;
         wt|worktree)
           if (( CURRENT == 2 )); then
-            _describe 'subcommands' wt_cmds
+            _describe -t subcommands 'subcommands' wt_cmds
           elif (( CURRENT == 3 )); then
             # Check if subcommand needs worktree name
-            if (( \${wt_name_cmds[(Ie)\$words[2]]} )); then
-              worktrees=(\${(f)"\$(grimoire --cmplt-worktrees 2>/dev/null)"})
-              (( \${#worktrees} )) && compadd -a worktrees
-            fi
+            case \$words[2] in
+              rm|remove|kill|open|path|exec|log|logs|claim|release|handoff|merge|commit|pr|adopt|spawn|status)
+                local -a _worktrees
+                _worktrees=("\${(@f)\$(grimoire --cmplt-worktrees 2>/dev/null)}")
+                [[ -n "\$_worktrees[1]" ]] && _describe -t worktrees 'worktrees' _worktrees
+                ;;
+            esac
           fi
           ;;
-        templates) _describe 'subcommands' templates_cmds ;;
+        st)
+          if (( CURRENT == 2 )); then
+            _describe -t subcommands 'subcommands' st_cmds
+          elif (( CURRENT == 3 )); then
+            case \$words[2] in
+              skills) _describe -t subcommands 'subcommands' skills_cmds ;;
+              plugins) _describe -t subcommands 'subcommands' plugins_cmds ;;
+              agents) _describe -t subcommands 'subcommands' agents_cmds ;;
+            esac
+          fi
+          ;;
         config)
           if (( CURRENT == 2 )); then
-            _describe 'subcommands' config_cmds
+            _describe -t subcommands 'subcommands' config_cmds
           elif [[ \$words[2] == "llm" ]] && (( CURRENT == 3 )); then
-            _describe 'subcommands' config_llm_cmds
+            _describe -t subcommands 'subcommands' config_llm_cmds
           fi
           ;;
-        completion) _describe 'shells' completion_cmds ;;
-        archive) _describe 'subcommands' archive_cmds ;;
-        branch) _describe 'subcommands' branch_cmds ;;
-        favorite|pin) _describe 'subcommands' fav_cmds ;;
-        skills) _describe 'subcommands' skills_cmds ;;
+        completion) _describe -t shells 'shells' completion_cmds ;;
       esac
       ;;
   esac
@@ -259,7 +370,7 @@ compdef _grimoire grimoire grim
  * Generate fish completion script
  */
 function generateFishCompletion(): string {
-  return `# Grimoire fish completion with dynamic values
+  return `# Grimoire fish completion - 6 command structure
 
 # Helper function to get prompt names dynamically
 function __grimoire_prompts
@@ -271,8 +382,21 @@ function __grimoire_worktrees
   grimoire --cmplt-worktrees 2>/dev/null
 end
 
-# Helper to check if we need worktree name completion
-function __grimoire_needs_worktree
+# Check if we're in a pl context needing prompt name completion
+function __grimoire_pl_needs_prompt
+  set -l cmd (commandline -opc)
+  if test (count $cmd) -ge 3
+    if test "$cmd[2]" = pl
+      if contains -- $cmd[3] show rm copy test cost history versions rollback enhance format
+        return 0
+      end
+    end
+  end
+  return 1
+end
+
+# Check if we're in a wt context needing worktree name completion
+function __grimoire_wt_needs_worktree
   set -l cmd (commandline -opc)
   if test (count $cmd) -ge 3
     if contains -- $cmd[2] wt worktree
@@ -284,118 +408,110 @@ function __grimoire_needs_worktree
   return 1
 end
 
+# Check if in st skills context
+function __grimoire_st_skills
+  set -l cmd (commandline -opc)
+  test (count $cmd) -ge 2; and test "$cmd[2]" = st; and test (count $cmd) -ge 3; and test "$cmd[3]" = skills
+end
+
+# Check if in st plugins context
+function __grimoire_st_plugins
+  set -l cmd (commandline -opc)
+  test (count $cmd) -ge 2; and test "$cmd[2]" = st; and test (count $cmd) -ge 3; and test "$cmd[3]" = plugins
+end
+
+# Check if in st agents context
+function __grimoire_st_agents
+  set -l cmd (commandline -opc)
+  test (count $cmd) -ge 2; and test "$cmd[2]" = st; and test (count $cmd) -ge 3; and test "$cmd[3]" = agents
+end
+
 # Disable file completion by default
 complete -c grimoire -f
 complete -c grim -f
 
-# Main commands
-complete -c grimoire -n "__fish_use_subcommand" -a list -d "List all prompts"
-complete -c grimoire -n "__fish_use_subcommand" -a add -d "Add a new prompt or skill"
-complete -c grimoire -n "__fish_use_subcommand" -a show -d "Show prompt details"
-complete -c grimoire -n "__fish_use_subcommand" -a edit -d "Edit a prompt"
-complete -c grimoire -n "__fish_use_subcommand" -a rm -d "Delete a prompt"
-complete -c grimoire -n "__fish_use_subcommand" -a copy -d "Copy prompt to clipboard"
-complete -c grimoire -n "__fish_use_subcommand" -a test -d "Test a prompt with an LLM"
-complete -c grimoire -n "__fish_use_subcommand" -a cost -d "Estimate token costs"
-complete -c grimoire -n "__fish_use_subcommand" -a search -d "Search prompts"
-complete -c grimoire -n "__fish_use_subcommand" -a reindex -d "Rebuild search index"
-complete -c grimoire -n "__fish_use_subcommand" -a stats -d "Show statistics"
-complete -c grimoire -n "__fish_use_subcommand" -a tag -d "Manage tags"
-complete -c grimoire -n "__fish_use_subcommand" -a templates -d "Manage templates"
-complete -c grimoire -n "__fish_use_subcommand" -a export -d "Export prompts"
-complete -c grimoire -n "__fish_use_subcommand" -a import -d "Import prompts"
-complete -c grimoire -n "__fish_use_subcommand" -a history -d "Show edit history"
-complete -c grimoire -n "__fish_use_subcommand" -a versions -d "List versions"
-complete -c grimoire -n "__fish_use_subcommand" -a rollback -d "Rollback to version"
-complete -c grimoire -n "__fish_use_subcommand" -a archive -d "Manage archived prompts"
-complete -c grimoire -n "__fish_use_subcommand" -a branch -d "Manage prompt branches"
-complete -c grimoire -n "__fish_use_subcommand" -a alias -d "Manage aliases"
-complete -c grimoire -n "__fish_use_subcommand" -a compare -d "A/B test prompts"
-complete -c grimoire -n "__fish_use_subcommand" -a favorite -d "Manage favorites"
-complete -c grimoire -n "__fish_use_subcommand" -a pin -d "Manage pinned prompts"
-complete -c grimoire -n "__fish_use_subcommand" -a format -d "Format prompt content"
-complete -c grimoire -n "__fish_use_subcommand" -a sync -d "Sync with remote"
-complete -c grimoire -n "__fish_use_subcommand" -a completion -d "Generate shell completions"
-complete -c grimoire -n "__fish_use_subcommand" -a config -d "Configure settings"
-complete -c grimoire -n "__fish_use_subcommand" -a skills -d "Manage agent skills"
+# Top-level commands (6 only)
+complete -c grimoire -n "__fish_use_subcommand" -a pl -d "Prompt Library - manage prompts"
+complete -c grimoire -n "__fish_use_subcommand" -a wt -d "Worktree - git worktree management"
+complete -c grimoire -n "__fish_use_subcommand" -a st -d "Skills/Tools - manage skills, plugins, agents"
+complete -c grimoire -n "__fish_use_subcommand" -a config -d "Configuration and settings"
 complete -c grimoire -n "__fish_use_subcommand" -a spawn -d "Spawn Claude agent"
-complete -c grimoire -n "__fish_use_subcommand" -a plugins -d "Manage Claude plugins"
-complete -c grimoire -n "__fish_use_subcommand" -a stash -d "Stash clipboard content"
-complete -c grimoire -n "__fish_use_subcommand" -a pop -d "Pop from stash"
-complete -c grimoire -n "__fish_use_subcommand" -a tui -d "Launch TUI mode"
-complete -c grimoire -n "__fish_use_subcommand" -a wt -d "Git worktree management"
-complete -c grimoire -n "__fish_use_subcommand" -a worktree -d "Git worktree management"
-complete -c grimoire -n "__fish_use_subcommand" -a dot -d "Browse dotfiles"
-complete -c grimoire -n "__fish_use_subcommand" -a enhance -d "AI-powered prompt enhancement"
-complete -c grimoire -n "__fish_use_subcommand" -a agents -d "Manage subagents"
+complete -c grimoire -n "__fish_use_subcommand" -a completion -d "Generate shell completions"
 
-# Dynamic prompt name completion (first argument that's not a command)
-complete -c grimoire -n "__fish_use_subcommand" -a "(__grimoire_prompts)" -d "Prompt"
+# pl subcommands
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a list -d "List all prompts"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a show -d "Show prompt details"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a rm -d "Delete a prompt"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a copy -d "Copy to clipboard"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a search -d "Search prompts"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a tag -d "Manage tags"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a history -d "Show edit history"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a versions -d "List versions"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a rollback -d "Rollback to version"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a archive -d "Manage archived prompts"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a branch -d "Manage prompt branches"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a alias -d "Manage aliases"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a favorite -d "Manage favorites"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a pin -d "Manage pinned prompts"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a format -d "Format prompt content"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a export -d "Export prompts"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a import -d "Import prompts"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a reindex -d "Rebuild search index"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a stats -d "Show statistics"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a templates -d "Manage templates"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a test -d "Test prompt with LLM"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a cost -d "Estimate token costs"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a compare -d "A/B test prompts"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a benchmark -d "Run test suite"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a enhance -d "AI-powered enhancement"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a sync -d "Sync with remote"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a stash -d "Stash clipboard content"
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a pop -d "Pop from stash"
+# Dynamic prompt names for pl
+complete -c grimoire -n "__fish_seen_subcommand_from pl" -a "(__grimoire_prompts)" -d "Prompt"
+complete -c grimoire -n "__grimoire_pl_needs_prompt" -a "(__grimoire_prompts)" -d "Prompt"
 
-# Subcommands
-complete -c grimoire -n "__fish_seen_subcommand_from templates" -a "list show vars create apply"
-complete -c grimoire -n "__fish_seen_subcommand_from config" -a "llm"
-complete -c grimoire -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
-complete -c grimoire -n "__fish_seen_subcommand_from archive" -a "list show restore delete"
-complete -c grimoire -n "__fish_seen_subcommand_from branch" -a "list create switch merge delete"
-complete -c grimoire -n "__fish_seen_subcommand_from favorite pin" -a "list add remove"
-complete -c grimoire -n "__fish_seen_subcommand_from skills" -a "init add enable disable list info search sync doctor update validate"
-
-# Worktree subcommands
+# wt subcommands
 complete -c grimoire -n "__fish_seen_subcommand_from wt worktree" -a "ps new spawn kill children wait collect commit merge pr auth from-issue list ls status rm remove path exec open clean adopt config each log logs checkpoint checkpoints claim release handoff available"
+complete -c grimoire -n "__grimoire_wt_needs_worktree" -a "(__grimoire_worktrees)" -d "Worktree"
 
-# Dynamic worktree name completion for subcommands that need it
-complete -c grimoire -n "__grimoire_needs_worktree" -a "(__grimoire_worktrees)" -d "Worktree"
+# st subcommands
+complete -c grimoire -n "__fish_seen_subcommand_from st" -a skills -d "Manage agent skills"
+complete -c grimoire -n "__fish_seen_subcommand_from st" -a plugins -d "Manage Claude plugins"
+complete -c grimoire -n "__fish_seen_subcommand_from st" -a agents -d "Manage subagent definitions"
+complete -c grimoire -n "__fish_seen_subcommand_from st" -a add -d "Add from GitHub/marketplace"
+complete -c grimoire -n "__grimoire_st_skills" -a "init add enable disable list info search sync doctor update validate"
+complete -c grimoire -n "__grimoire_st_plugins" -a "list add info"
+complete -c grimoire -n "__grimoire_st_agents" -a "list create info"
 
-# Duplicate all for grim alias
-complete -c grim -n "__fish_use_subcommand" -a list -d "List all prompts"
-complete -c grim -n "__fish_use_subcommand" -a add -d "Add a new prompt or skill"
-complete -c grim -n "__fish_use_subcommand" -a show -d "Show prompt details"
-complete -c grim -n "__fish_use_subcommand" -a edit -d "Edit a prompt"
-complete -c grim -n "__fish_use_subcommand" -a rm -d "Delete a prompt"
-complete -c grim -n "__fish_use_subcommand" -a copy -d "Copy prompt to clipboard"
-complete -c grim -n "__fish_use_subcommand" -a test -d "Test a prompt with an LLM"
-complete -c grim -n "__fish_use_subcommand" -a cost -d "Estimate token costs"
-complete -c grim -n "__fish_use_subcommand" -a search -d "Search prompts"
-complete -c grim -n "__fish_use_subcommand" -a reindex -d "Rebuild search index"
-complete -c grim -n "__fish_use_subcommand" -a stats -d "Show statistics"
-complete -c grim -n "__fish_use_subcommand" -a tag -d "Manage tags"
-complete -c grim -n "__fish_use_subcommand" -a templates -d "Manage templates"
-complete -c grim -n "__fish_use_subcommand" -a export -d "Export prompts"
-complete -c grim -n "__fish_use_subcommand" -a import -d "Import prompts"
-complete -c grim -n "__fish_use_subcommand" -a history -d "Show edit history"
-complete -c grim -n "__fish_use_subcommand" -a versions -d "List versions"
-complete -c grim -n "__fish_use_subcommand" -a rollback -d "Rollback to version"
-complete -c grim -n "__fish_use_subcommand" -a archive -d "Manage archived prompts"
-complete -c grim -n "__fish_use_subcommand" -a branch -d "Manage prompt branches"
-complete -c grim -n "__fish_use_subcommand" -a alias -d "Manage aliases"
-complete -c grim -n "__fish_use_subcommand" -a compare -d "A/B test prompts"
-complete -c grim -n "__fish_use_subcommand" -a favorite -d "Manage favorites"
-complete -c grim -n "__fish_use_subcommand" -a pin -d "Manage pinned prompts"
-complete -c grim -n "__fish_use_subcommand" -a format -d "Format prompt content"
-complete -c grim -n "__fish_use_subcommand" -a sync -d "Sync with remote"
-complete -c grim -n "__fish_use_subcommand" -a completion -d "Generate shell completions"
-complete -c grim -n "__fish_use_subcommand" -a config -d "Configure settings"
-complete -c grim -n "__fish_use_subcommand" -a skills -d "Manage agent skills"
+# config subcommands
+complete -c grimoire -n "__fish_seen_subcommand_from config" -a llm -d "Configure LLM settings"
+complete -c grimoire -n "__fish_seen_subcommand_from config" -a dot -d "Browse dotfiles"
+
+# completion shells
+complete -c grimoire -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
+
+# Duplicate for grim alias
+complete -c grim -n "__fish_use_subcommand" -a pl -d "Prompt Library - manage prompts"
+complete -c grim -n "__fish_use_subcommand" -a wt -d "Worktree - git worktree management"
+complete -c grim -n "__fish_use_subcommand" -a st -d "Skills/Tools - manage skills, plugins, agents"
+complete -c grim -n "__fish_use_subcommand" -a config -d "Configuration and settings"
 complete -c grim -n "__fish_use_subcommand" -a spawn -d "Spawn Claude agent"
-complete -c grim -n "__fish_use_subcommand" -a plugins -d "Manage Claude plugins"
-complete -c grim -n "__fish_use_subcommand" -a stash -d "Stash clipboard content"
-complete -c grim -n "__fish_use_subcommand" -a pop -d "Pop from stash"
-complete -c grim -n "__fish_use_subcommand" -a tui -d "Launch TUI mode"
-complete -c grim -n "__fish_use_subcommand" -a wt -d "Git worktree management"
-complete -c grim -n "__fish_use_subcommand" -a worktree -d "Git worktree management"
-complete -c grim -n "__fish_use_subcommand" -a dot -d "Browse dotfiles"
-complete -c grim -n "__fish_use_subcommand" -a enhance -d "AI-powered prompt enhancement"
-complete -c grim -n "__fish_use_subcommand" -a agents -d "Manage subagents"
-complete -c grim -n "__fish_use_subcommand" -a "(__grimoire_prompts)" -d "Prompt"
-complete -c grim -n "__fish_seen_subcommand_from templates" -a "list show vars create apply"
-complete -c grim -n "__fish_seen_subcommand_from config" -a "llm"
-complete -c grim -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
-complete -c grim -n "__fish_seen_subcommand_from archive" -a "list show restore delete"
-complete -c grim -n "__fish_seen_subcommand_from branch" -a "list create switch merge delete"
-complete -c grim -n "__fish_seen_subcommand_from favorite pin" -a "list add remove"
-complete -c grim -n "__fish_seen_subcommand_from skills" -a "init add enable disable list info search sync doctor update validate"
+complete -c grim -n "__fish_use_subcommand" -a completion -d "Generate shell completions"
+
+complete -c grim -n "__fish_seen_subcommand_from pl" -a "list show rm copy search tag history versions rollback archive branch alias favorite pin format export import reindex stats templates test cost compare benchmark enhance sync stash pop"
+complete -c grim -n "__fish_seen_subcommand_from pl" -a "(__grimoire_prompts)" -d "Prompt"
+complete -c grim -n "__grimoire_pl_needs_prompt" -a "(__grimoire_prompts)" -d "Prompt"
+
 complete -c grim -n "__fish_seen_subcommand_from wt worktree" -a "ps new spawn kill children wait collect commit merge pr auth from-issue list ls status rm remove path exec open clean adopt config each log logs checkpoint checkpoints claim release handoff available"
-complete -c grim -n "__grimoire_needs_worktree" -a "(__grimoire_worktrees)" -d "Worktree"
+complete -c grim -n "__grimoire_wt_needs_worktree" -a "(__grimoire_worktrees)" -d "Worktree"
+
+complete -c grim -n "__fish_seen_subcommand_from st" -a "skills plugins agents add"
+complete -c grim -n "__grimoire_st_skills" -a "init add enable disable list info search sync doctor update validate"
+complete -c grim -n "__grimoire_st_plugins" -a "list add info"
+complete -c grim -n "__grimoire_st_agents" -a "list create info"
+
+complete -c grim -n "__fish_seen_subcommand_from config" -a "llm dot"
+complete -c grim -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
 `;
 }

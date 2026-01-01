@@ -4,9 +4,9 @@
 
 import { Effect } from "effect";
 import { Schema } from "@effect/schema";
-import { SearchService, type SearchOptions, type SearchResult } from "../services/search-service";
-import { SearchCommandArgsSchema, ValidationError } from "../models";
-import type { ParsedArgs } from "../cli/parser";
+import { SearchService, type SearchOptions, type SearchResult } from "../../services/search-service";
+import { SearchCommandArgsSchema, ValidationError } from "../../models";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Apply ANSI highlighting to text based on highlight ranges

@@ -20,10 +20,10 @@
 
 import { Effect } from "effect";
 import { Schema } from "@effect/schema";
-import { StorageService, VersionService } from "../services";
-import { HistoryCommandArgsSchema, ValidationError } from "../models";
-import type { ParsedArgs } from "../cli/parser";
-import type { PromptVersion } from "../services/version-service";
+import { StorageService, VersionService } from "../../services";
+import { HistoryCommandArgsSchema, ValidationError } from "../../models";
+import type { ParsedArgs } from "../../cli/parser";
+import type { PromptVersion } from "../../services/version-service";
 
 /**
  * ANSI color codes

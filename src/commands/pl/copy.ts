@@ -10,9 +10,9 @@
 
 import { Effect } from "effect";
 import { Schema } from "@effect/schema";
-import { StorageService, Clipboard } from "../services";
-import { CopyCommandArgsSchema, ValidationError } from "../models";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService, Clipboard } from "../../services";
+import { CopyCommandArgsSchema, ValidationError } from "../../models";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Parse variables from command line arguments

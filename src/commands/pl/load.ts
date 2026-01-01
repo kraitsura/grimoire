@@ -12,9 +12,9 @@
 
 import { Effect } from "effect";
 import { Schema } from "@effect/schema";
-import { StorageService, EditorService, Clipboard } from "../services";
-import { PromptCommandArgsSchema, ValidationError } from "../models";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService, EditorService, Clipboard } from "../../services";
+import { PromptCommandArgsSchema, ValidationError } from "../../models";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Parse raw CLI args into structured format for the unified prompt command

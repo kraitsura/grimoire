@@ -7,10 +7,10 @@
 
 import { Effect } from "effect";
 import * as yaml from "js-yaml";
-import { StorageService } from "../services";
-import { LLMService } from "../services/llm-service";
-import { TokenCounterService } from "../services/token-counter-service";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService } from "../../services";
+import { LLMService } from "../../services/llm-service";
+import { TokenCounterService } from "../../services/token-counter-service";
+import type { ParsedArgs } from "../../cli/parser";
 import { Data } from "effect";
 
 /**

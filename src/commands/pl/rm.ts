@@ -6,9 +6,9 @@
 
 import { Effect } from "effect";
 import { Schema } from "@effect/schema";
-import { StorageService } from "../services";
-import { RmCommandArgsSchema, ValidationError } from "../models";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService } from "../../services";
+import { RmCommandArgsSchema, ValidationError } from "../../models";
+import type { ParsedArgs } from "../../cli/parser";
 import * as readline from "node:readline";
 
 /**

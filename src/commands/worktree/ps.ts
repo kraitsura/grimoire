@@ -238,17 +238,6 @@ function formatDiff(diff: DiffStats): string {
   return parts.join("/");
 }
 
-/**
- * Format diff stats as +N/-M
- */
-function formatDiff(diff: DiffStats): string {
-  if (diff.insertions === 0 && diff.deletions === 0) return "-";
-  const parts: string[] = [];
-  if (diff.insertions > 0) parts.push(`+${diff.insertions}`);
-  if (diff.deletions > 0) parts.push(`-${diff.deletions}`);
-  return parts.join("/");
-}
-
 // Column widths
 const COL = {
   name: 16,

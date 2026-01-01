@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect";
-import { StorageService, TagService } from "../services";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService, TagService } from "../../services";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Tag command handler

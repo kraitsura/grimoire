@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect";
-import { RemoteSyncService } from "../services";
-import type { ParsedArgs } from "../cli/parser";
+import { RemoteSyncService } from "../../services";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Helper to format relative time

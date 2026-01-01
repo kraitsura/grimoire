@@ -4,9 +4,9 @@
 
 import { Effect } from "effect";
 import { Schema } from "@effect/schema";
-import { ImportService, type ConflictStrategy } from "../services/import-service";
-import { ImportCommandArgsSchema, ValidationError } from "../models";
-import type { ParsedArgs } from "../cli/parser";
+import { ImportService, type ConflictStrategy } from "../../services/import-service";
+import { ImportCommandArgsSchema, ValidationError } from "../../models";
+import type { ParsedArgs } from "../../cli/parser";
 
 /**
  * Format import preview for display

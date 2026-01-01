@@ -4,9 +4,9 @@
 
 import { Effect, Stream, pipe } from "effect";
 import { Schema } from "@effect/schema";
-import { StorageService, LLMService, TokenCounterService, ConfigService } from "../services";
-import { TestCommandArgsSchema, ValidationError } from "../models";
-import type { ParsedArgs } from "../cli/parser";
+import { StorageService, LLMService, TokenCounterService, ConfigService } from "../../services";
+import { TestCommandArgsSchema, ValidationError } from "../../models";
+import type { ParsedArgs } from "../../cli/parser";
 
 const USAGE = `Usage: grimoire test <prompt-name> [OPTIONS]
 
