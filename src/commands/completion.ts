@@ -1,12 +1,12 @@
 /**
  * Completion Command - Generate shell completion scripts
  *
- * Updated for new 6-command structure:
+ * 5 namespaces + completion utility:
  * - pl: Prompt Library
- * - wt: Worktree management
+ * - ag: Agents (current directory context)
+ * - wt: Worktree (isolated workspace context)
  * - st: Skills/Tools
  * - config: Configuration
- * - spawn: Spawn agent
  * - completion: Shell completions
  */
 
@@ -59,14 +59,20 @@ _grimoire() {
   cmd="\${COMP_WORDS[1]}"
   subcmd="\${COMP_WORDS[2]}"
 
-  # Top-level commands (6 only)
-  local commands="pl wt st config spawn completion"
+  # Top-level commands (5 namespaces + completion)
+  local commands="pl ag wt st config completion"
 
   # Prompt Library subcommands
   local pl_cmds="list show rm copy search tag history versions rollback archive branch alias favorite pin format export import reindex stats templates test cost compare benchmark enhance sync stash pop"
 
+  # Agent subcommands (current directory context)
+  local ag_cmds="spawn scout ps kill wait"
+
+  # Agent scout subcommands
+  local ag_scout_cmds="list ls show cancel clear watch"
+
   # Worktree subcommands
-  local wt_cmds="ps new spawn kill children wait collect commit merge pr auth from-issue list ls status rm remove path exec open clean adopt config each log logs checkpoint checkpoints claim release handoff available"
+  local wt_cmds="ps new spawn scout kill children wait collect commit merge pr auth from-issue list ls status rm remove path exec open clean adopt config each log logs checkpoint checkpoints claim release handoff available"
 
   # Skills/Tools subcommands
   local st_cmds="skills plugins agents add"
@@ -84,7 +90,7 @@ _grimoire() {
   local config_cmds="llm dot"
 
   # Worktree subcommands that need worktree name completion
-  local wt_name_cmds="rm remove kill open path exec log logs claim release handoff merge commit pr adopt spawn status"
+  local wt_name_cmds="rm remove kill open path exec log logs claim release handoff merge commit pr adopt spawn scout status"
 
   case "$prev" in
     grimoire|grim)
@@ -96,6 +102,10 @@ _grimoire() {
       local prompts
       prompts=$(grimoire --cmplt-prompts 2>/dev/null)
       COMPREPLY=($(compgen -W "$pl_cmds $prompts" -- "$cur"))
+      return 0
+      ;;
+    ag)
+      COMPREPLY=($(compgen -W "$ag_cmds" -- "$cur"))
       return 0
       ;;
     wt|worktree)
@@ -129,6 +139,12 @@ _grimoire() {
     agents)
       if [[ "$cmd" == "st" ]]; then
         COMPREPLY=($(compgen -W "$agents_cmds" -- "$cur"))
+        return 0
+      fi
+      ;;
+    scout)
+      if [[ "$cmd" == "ag" ]]; then
+        COMPREPLY=($(compgen -W "$ag_scout_cmds" -- "$cur"))
         return 0
       fi
       ;;
@@ -204,15 +220,25 @@ function generateZshCompletion(): string {
 _grimoire() {
   local -a commands
 
-  # Top-level commands only (6)
+  # Top-level commands (5 namespaces + completion)
   commands=(
     'pl:Prompt Library - manage prompts'
-    'wt:Worktree - git worktree management'
+    'ag:Agents - spawn agents in current directory'
+    'wt:Worktree - isolated workspaces + agents'
     'st:Skills/Tools - manage skills, plugins, agents'
     'config:Configuration and settings'
-    'spawn:Spawn Claude agent in current directory'
     'completion:Generate shell completions'
   )
+
+  local -a ag_cmds=(
+    'spawn:Spawn worker agent'
+    'scout:Spawn exploration agent'
+    'ps:Show running agents'
+    'kill:Kill an agent'
+    'wait:Wait for agent'
+  )
+
+  local -a ag_scout_cmds=(list ls show cancel clear watch)
 
   local -a pl_cmds=(
     'list:List all prompts'
@@ -249,6 +275,7 @@ _grimoire() {
     'ps:Show worktree status'
     'new:Create new worktree'
     'spawn:Create worktree and spawn agent'
+    'scout:Scout in worktree context'
     'kill:Kill agent in worktree'
     'rm:Remove worktree'
     'list:List worktrees'
@@ -324,6 +351,15 @@ _grimoire() {
             esac
           fi
           ;;
+        ag)
+          if (( CURRENT == 2 )); then
+            _describe -t subcommands 'subcommands' ag_cmds
+          elif (( CURRENT == 3 )); then
+            case \$words[2] in
+              scout) _describe -t subcommands 'subcommands' ag_scout_cmds ;;
+            esac
+          fi
+          ;;
         wt|worktree)
           if (( CURRENT == 2 )); then
             _describe -t subcommands 'subcommands' wt_cmds
@@ -370,7 +406,7 @@ compdef _grimoire grimoire grim
  * Generate fish completion script
  */
 function generateFishCompletion(): string {
-  return `# Grimoire fish completion - 6 command structure
+  return `# Grimoire fish completion - 5 namespaces + completion
 
 # Helper function to get prompt names dynamically
 function __grimoire_prompts
@@ -400,12 +436,18 @@ function __grimoire_wt_needs_worktree
   set -l cmd (commandline -opc)
   if test (count $cmd) -ge 3
     if contains -- $cmd[2] wt worktree
-      if contains -- $cmd[3] rm remove kill open path exec log logs claim release handoff merge commit pr adopt spawn status
+      if contains -- $cmd[3] rm remove kill open path exec log logs claim release handoff merge commit pr adopt spawn scout status
         return 0
       end
     end
   end
   return 1
+end
+
+# Check if in ag scout context
+function __grimoire_ag_scout
+  set -l cmd (commandline -opc)
+  test (count $cmd) -ge 2; and test "$cmd[2]" = ag; and test (count $cmd) -ge 3; and test "$cmd[3]" = scout
 end
 
 # Check if in st skills context
@@ -430,13 +472,21 @@ end
 complete -c grimoire -f
 complete -c grim -f
 
-# Top-level commands (6 only)
+# Top-level commands (5 namespaces + completion)
 complete -c grimoire -n "__fish_use_subcommand" -a pl -d "Prompt Library - manage prompts"
-complete -c grimoire -n "__fish_use_subcommand" -a wt -d "Worktree - git worktree management"
+complete -c grimoire -n "__fish_use_subcommand" -a ag -d "Agents - spawn in current directory"
+complete -c grimoire -n "__fish_use_subcommand" -a wt -d "Worktree - isolated workspaces + agents"
 complete -c grimoire -n "__fish_use_subcommand" -a st -d "Skills/Tools - manage skills, plugins, agents"
 complete -c grimoire -n "__fish_use_subcommand" -a config -d "Configuration and settings"
-complete -c grimoire -n "__fish_use_subcommand" -a spawn -d "Spawn Claude agent"
 complete -c grimoire -n "__fish_use_subcommand" -a completion -d "Generate shell completions"
+
+# ag subcommands
+complete -c grimoire -n "__fish_seen_subcommand_from ag" -a spawn -d "Spawn worker agent"
+complete -c grimoire -n "__fish_seen_subcommand_from ag" -a scout -d "Spawn exploration agent"
+complete -c grimoire -n "__fish_seen_subcommand_from ag" -a ps -d "Show running agents"
+complete -c grimoire -n "__fish_seen_subcommand_from ag" -a kill -d "Kill an agent"
+complete -c grimoire -n "__fish_seen_subcommand_from ag" -a wait -d "Wait for agent"
+complete -c grimoire -n "__grimoire_ag_scout" -a "list ls show cancel clear watch"
 
 # pl subcommands
 complete -c grimoire -n "__fish_seen_subcommand_from pl" -a list -d "List all prompts"
@@ -472,7 +522,7 @@ complete -c grimoire -n "__fish_seen_subcommand_from pl" -a "(__grimoire_prompts
 complete -c grimoire -n "__grimoire_pl_needs_prompt" -a "(__grimoire_prompts)" -d "Prompt"
 
 # wt subcommands
-complete -c grimoire -n "__fish_seen_subcommand_from wt worktree" -a "ps new spawn kill children wait collect commit merge pr auth from-issue list ls status rm remove path exec open clean adopt config each log logs checkpoint checkpoints claim release handoff available"
+complete -c grimoire -n "__fish_seen_subcommand_from wt worktree" -a "ps new spawn scout kill children wait collect commit merge pr auth from-issue list ls status rm remove path exec open clean adopt config each log logs checkpoint checkpoints claim release handoff available"
 complete -c grimoire -n "__grimoire_wt_needs_worktree" -a "(__grimoire_worktrees)" -d "Worktree"
 
 # st subcommands
@@ -493,17 +543,20 @@ complete -c grimoire -n "__fish_seen_subcommand_from completion" -a "bash zsh fi
 
 # Duplicate for grim alias
 complete -c grim -n "__fish_use_subcommand" -a pl -d "Prompt Library - manage prompts"
-complete -c grim -n "__fish_use_subcommand" -a wt -d "Worktree - git worktree management"
+complete -c grim -n "__fish_use_subcommand" -a ag -d "Agents - spawn in current directory"
+complete -c grim -n "__fish_use_subcommand" -a wt -d "Worktree - isolated workspaces + agents"
 complete -c grim -n "__fish_use_subcommand" -a st -d "Skills/Tools - manage skills, plugins, agents"
 complete -c grim -n "__fish_use_subcommand" -a config -d "Configuration and settings"
-complete -c grim -n "__fish_use_subcommand" -a spawn -d "Spawn Claude agent"
 complete -c grim -n "__fish_use_subcommand" -a completion -d "Generate shell completions"
+
+complete -c grim -n "__fish_seen_subcommand_from ag" -a "spawn scout ps kill wait"
+complete -c grim -n "__grimoire_ag_scout" -a "list ls show cancel clear watch"
 
 complete -c grim -n "__fish_seen_subcommand_from pl" -a "list show rm copy search tag history versions rollback archive branch alias favorite pin format export import reindex stats templates test cost compare benchmark enhance sync stash pop"
 complete -c grim -n "__fish_seen_subcommand_from pl" -a "(__grimoire_prompts)" -d "Prompt"
 complete -c grim -n "__grimoire_pl_needs_prompt" -a "(__grimoire_prompts)" -d "Prompt"
 
-complete -c grim -n "__fish_seen_subcommand_from wt worktree" -a "ps new spawn kill children wait collect commit merge pr auth from-issue list ls status rm remove path exec open clean adopt config each log logs checkpoint checkpoints claim release handoff available"
+complete -c grim -n "__fish_seen_subcommand_from wt worktree" -a "ps new spawn scout kill children wait collect commit merge pr auth from-issue list ls status rm remove path exec open clean adopt config each log logs checkpoint checkpoints claim release handoff available"
 complete -c grim -n "__grimoire_wt_needs_worktree" -a "(__grimoire_worktrees)" -d "Worktree"
 
 complete -c grim -n "__fish_seen_subcommand_from st" -a "skills plugins agents add"

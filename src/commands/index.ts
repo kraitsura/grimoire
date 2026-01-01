@@ -2,12 +2,12 @@
  * CLI Command Handlers
  */
 
-// Top-level commands (6 total)
+// Top-level commands (5 namespaces)
 export { plCommand } from "./pl";
+export { agCommand } from "./ag";
 export { stCommand } from "./st";
 export { worktreeCommand } from "./worktree";
 export { configCommand } from "./config";
-export { spawnCommand } from "./spawn";
 export { completionCommand } from "./completion";
 
 // Completion helpers

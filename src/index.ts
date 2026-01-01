@@ -61,25 +61,25 @@ loadGrimoireEnv();
 
 import {
   plCommand,
+  agCommand,
   stCommand,
   worktreeCommand,
   configCommand,
-  spawnCommand,
   completionCommand,
   listPromptNamesForCompletion,
   listWorktreeNamesForCompletion,
 } from "./commands";
 
 /**
- * Reserved command names - only 6 top-level commands
+ * Reserved command names - 5 namespaces + completion utility
  */
 const RESERVED_COMMANDS = new Set([
   "pl",        // Prompt Library
+  "ag",        // Agents (current directory)
   "wt",        // Worktree (alias)
   "worktree",  // Worktree
   "st",        // Skills/Tools
   "config",    // Configuration
-  "spawn",     // Spawn agent
   "completion", // Shell completions
 ]);
 
@@ -107,29 +107,33 @@ USAGE:
 
 COMMANDS:
   pl          Prompt Library - manage prompts
-  wt          Worktree - git worktree management
+  ag          Agents - spawn agents in current directory
+  wt          Worktree - isolated workspaces + agents
   st          Skills/Tools - manage skills, plugins, agents
   config      Configuration and settings
-  spawn       Spawn Claude agent in current directory
   completion  Generate shell completions (bash/zsh/fish)
 
-PROMPT LIBRARY (grim pl):
+PROMPTS (grim pl):
   grim pl                     Launch interactive TUI
   grim pl <name>              Create or edit a prompt
   grim pl list                List all prompts
-  grim pl show <name>         Show prompt details
-  grim pl --help              See all pl subcommands
+  grim pl --help              See all subcommands
 
-WORKTREE (grim wt):
+AGENTS (grim ag):
+  grim ag spawn "task"        Spawn worker agent (current dir)
+  grim ag scout "question"    Spawn exploration agent
+  grim ag ps                  Show running agents
+  grim ag --help              See all subcommands
+
+WORKTREES (grim wt):
+  grim wt spawn <name> "task" Create worktree + spawn agent
+  grim wt scout <name> "q"    Scout in worktree context
   grim wt ps                  Show worktree status
-  grim wt new <name>          Create new worktree
-  grim wt spawn <name>        Create worktree + spawn agent
-  grim wt --help              See all wt subcommands
+  grim wt --help              See all subcommands
 
 SKILLS/TOOLS (grim st):
   grim st skills [cmd]        Manage agent skills
   grim st plugins [cmd]       Manage Claude plugins
-  grim st agents [cmd]        Manage subagent definitions
   grim st add <source>        Add from GitHub/marketplace
 
 GLOBAL OPTIONS:
@@ -137,10 +141,10 @@ GLOBAL OPTIONS:
   -v, --version           Show version information
 
 EXAMPLES:
-  grim pl my-prompt           # Create/edit prompt
-  grim pl list                # List prompts
-  grim wt spawn fix-bug       # Create worktree + spawn agent
-  grim st skills enable beads # Enable beads skill
+  grim ag spawn -bg "Implement auth"   # Background agent
+  grim ag scout "How does X work?"     # Explore codebase
+  grim wt spawn fix-bug "Fix the bug"  # Isolated worktree + agent
+  grim pl my-prompt                    # Create/edit prompt
 
 Run 'grim' with no arguments to launch interactive mode.
     `);
@@ -179,7 +183,7 @@ Run 'grim' with no arguments to launch interactive mode.
     if (!RESERVED_COMMANDS.has(command)) {
       console.log(`Unknown command: ${command}`);
       console.log("");
-      console.log("Available commands: pl, wt, st, config, spawn, completion");
+      console.log("Available commands: pl, ag, wt, st, config, completion");
       console.log("Use 'grim --help' for usage information.");
       process.exit(1);
     }
@@ -187,6 +191,9 @@ Run 'grim' with no arguments to launch interactive mode.
     switch (command) {
       case "pl":
         yield* plCommand(parsedArgs);
+        break;
+      case "ag":
+        yield* agCommand(parsedArgs);
         break;
       case "worktree":
       case "wt":
@@ -197,9 +204,6 @@ Run 'grim' with no arguments to launch interactive mode.
         break;
       case "config":
         yield* configCommand(parsedArgs);
-        break;
-      case "spawn":
-        yield* spawnCommand(parsedArgs);
         break;
       case "completion":
         yield* completionCommand(parsedArgs);
