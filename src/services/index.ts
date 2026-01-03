@@ -288,6 +288,9 @@ export {
   AgentStateWriteError,
   AgentCacheError,
 } from "./agents/agent-service";
+
+// Re-export Profile services
+export { ProfileService, ProfileServiceLive } from "./profile/profile-service";
 export {
   MarketplaceDetectionService,
   MarketplaceDetectionServiceLive,
@@ -456,6 +459,7 @@ import { ClaudeCliServiceLive as ClaudeCliServiceLiveImport } from "./plugins/cl
 import { MarketplaceDetectionServiceLive as MarketplaceDetectionServiceLiveImport } from "./plugins/marketplace-detection-service";
 import { MarketplaceServiceLive as MarketplaceServiceLiveImport } from "./plugins/marketplace-service";
 import { AgentServiceLive as AgentServiceLiveImport } from "./agents/agent-service";
+import { ProfileServiceLive as ProfileServiceLiveImport } from "./profile/profile-service";
 
 /**
  * LLM Layer - Provides LLM services with all providers
@@ -540,7 +544,8 @@ const IndependentServices = Layer.mergeAll(
   AgentAdapterServiceLiveImport,
   CliInstallerServiceLiveImport,
   SkillValidationServiceLiveImport,
-  AgentServiceLiveImport
+  AgentServiceLiveImport,
+  ProfileServiceLiveImport
 );
 
 // SkillEngineService needs SkillCache, SkillState, AgentAdapter, CliInstaller

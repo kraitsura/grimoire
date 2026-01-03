@@ -37,3 +37,5 @@ export * from "./agent-errors";
 export * from "./worktree";
 export * from "./worktree-errors";
 export * from "./enhancement-template";
+export * from "./profile";
+export * from "./profile-errors";
