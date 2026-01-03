@@ -1,18 +1,15 @@
 /**
  * Profile Domain Types
  *
- * Defines schemas and types for harness profile management.
- * Profiles are configuration snapshots that can be switched, diffed, and shared.
- *
- * Inspired by bridle's profile management system.
+ * Profiles are harness-agnostic configuration bundles that users can
+ * apply to any supported AI coding assistant. Users have full control
+ * over which harnesses receive which profiles.
  */
 
 import { Schema } from "@effect/schema";
 
 /**
  * Supported harness identifiers
- *
- * These correspond to AI coding assistants that can be configured.
  */
 export const HarnessIdSchema = Schema.Literal(
   "claude-code",  // Anthropic Claude Code CLI (~/.claude)
@@ -45,13 +42,13 @@ export const HARNESS_CONFIG_PATHS: Record<string, string> = {
 export const McpServerTypeSchema = Schema.Literal("stdio", "sse", "http");
 
 /**
- * MCP server configuration extracted from harness config
+ * MCP server configuration
  */
-export const McpServerInfoSchema = Schema.Struct({
+export const McpServerConfigSchema = Schema.Struct({
   /** Server name/identifier */
   name: Schema.String.pipe(Schema.minLength(1)),
 
-  /** Whether the server is enabled */
+  /** Whether the server is enabled by default */
   enabled: Schema.Boolean,
 
   /** Server type (stdio, sse, http) */
@@ -71,70 +68,68 @@ export const McpServerInfoSchema = Schema.Struct({
 });
 
 /**
- * Resource summary for directory-based resources (skills, commands, agents)
+ * Model preferences for a profile
  */
-export const ResourceSummarySchema = Schema.Struct({
-  /** Names/identifiers of resources found */
-  items: Schema.Array(Schema.String),
+export const ModelPreferencesSchema = Schema.Struct({
+  /** Default model to use */
+  default: Schema.optional(Schema.String),
 
-  /** Whether the resource directory exists */
-  directoryExists: Schema.Boolean,
+  /** Per-harness model overrides */
+  harness: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
 });
 
 /**
- * Profile information extracted from harness configuration
- *
- * This represents the complete state of a harness configuration,
- * including model settings, MCP servers, skills, commands, etc.
+ * Profile metadata stored in profile.json
  */
-export const ProfileInfoSchema = Schema.Struct({
-  /** Profile name (e.g., "default", "work", "personal") */
+export const ProfileMetadataSchema = Schema.Struct({
+  /** Profile name */
   name: Schema.String.pipe(Schema.minLength(1)),
 
-  /** Harness identifier */
-  harnessId: HarnessIdSchema,
+  /** Human-readable description */
+  description: Schema.optional(Schema.String),
 
-  /** Whether this profile is currently active */
-  isActive: Schema.Boolean,
+  /** Creation timestamp (ISO 8601) */
+  created: Schema.String,
 
-  /** Absolute path to profile storage */
-  path: Schema.String,
+  /** Last modified timestamp (ISO 8601) */
+  updated: Schema.String,
 
-  /** MCP servers configured */
-  mcpServers: Schema.Array(McpServerInfoSchema),
+  /** Harnesses this profile is currently applied to */
+  appliedTo: Schema.Array(HarnessIdSchema),
 
-  /** Skills installed/enabled */
-  skills: ResourceSummarySchema,
+  /** Model preferences */
+  modelPreferences: Schema.optional(ModelPreferencesSchema),
 
-  /** Commands installed */
-  commands: ResourceSummarySchema,
-
-  /** Plugins installed (harness-specific) */
-  plugins: Schema.optional(ResourceSummarySchema),
-
-  /** Agents defined (harness-specific) */
-  agents: Schema.optional(ResourceSummarySchema),
-
-  /** Rules file path (for Cursor) */
-  rulesFile: Schema.optional(Schema.String),
-
-  /** Theme setting */
+  /** Theme preference */
   theme: Schema.optional(Schema.String),
 
-  /** Model setting */
-  model: Schema.optional(Schema.String),
+  /** Tags for organization */
+  tags: Schema.optional(Schema.Array(Schema.String)),
+});
 
-  /** API provider (anthropic, openai, etc.) */
-  provider: Schema.optional(Schema.String),
+/**
+ * Full profile with all contents
+ */
+export const ProfileSchema = Schema.Struct({
+  /** Profile metadata */
+  metadata: ProfileMetadataSchema,
 
-  /** Errors encountered during extraction */
-  extractionErrors: Schema.Array(Schema.String),
+  /** Skills included in this profile */
+  skills: Schema.Array(Schema.String),
+
+  /** Commands included in this profile */
+  commands: Schema.Array(Schema.String),
+
+  /** MCP server configurations */
+  mcpServers: Schema.Array(McpServerConfigSchema),
+
+  /** Agents included in this profile */
+  agents: Schema.optional(Schema.Array(Schema.String)),
 });
 
 /**
  * Profile name validation pattern
  * Must be kebab-case: lowercase letters, numbers, hyphens
- * No leading/trailing hyphens, no consecutive hyphens
  */
 export const ProfileNameSchema = Schema.String.pipe(
   Schema.pattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -165,63 +160,81 @@ export const HarnessInfoSchema = Schema.Struct({
   /** Path to harness configuration */
   configPath: Schema.optional(Schema.String),
 
-  /** Active profile name */
-  activeProfile: Schema.optional(Schema.String),
+  /** Profile currently applied (if any) */
+  appliedProfile: Schema.optional(Schema.String),
 });
 
 /**
- * Profile configuration stored in ~/.grimoire/config.json
- *
- * Tracks active profiles and user preferences for profile management.
+ * Profile list item (summary for list display)
  */
-export const ProfileConfigSchema = Schema.Struct({
-  /** Active profile per harness: { "claude-code": "work", "opencode": "default" } */
-  active: Schema.Record({ key: Schema.String, value: Schema.String }),
+export const ProfileListItemSchema = Schema.Struct({
+  /** Profile name */
+  name: Schema.String,
 
-  /** Whether to create profile marker files in harness config dirs */
+  /** Description */
+  description: Schema.optional(Schema.String),
+
+  /** Number of skills */
+  skillCount: Schema.Number,
+
+  /** Number of commands */
+  commandCount: Schema.Number,
+
+  /** Number of MCP servers */
+  mcpServerCount: Schema.Number,
+
+  /** Harnesses applied to */
+  appliedTo: Schema.Array(HarnessIdSchema),
+
+  /** Last updated */
+  updated: Schema.String,
+});
+
+/**
+ * Global profile configuration
+ */
+export const ProfileGlobalConfigSchema = Schema.Struct({
+  /** Whether to create marker files in harness config dirs */
   profileMarker: Schema.Boolean,
 
-  /** Editor to use for profile editing (falls back to $EDITOR) */
+  /** Editor for profile editing (falls back to $EDITOR) */
   editor: Schema.optional(Schema.String),
 
-  /** Default harness to show in TUI */
+  /** Default harness for TUI */
   defaultHarness: Schema.optional(HarnessIdSchema),
 });
 
 /**
- * Diff result for comparing profiles
+ * Diff item for comparing profiles
  */
 export const ProfileDiffItemSchema = Schema.Struct({
-  /** What changed (model, theme, mcp, skill, etc.) */
+  /** Category (skill, command, mcp, model, etc.) */
   category: Schema.String,
 
-  /** Specific key that changed */
-  key: Schema.String,
-
-  /** Value in first profile (undefined if added) */
-  left: Schema.optional(Schema.String),
-
-  /** Value in second profile (undefined if removed) */
-  right: Schema.optional(Schema.String),
+  /** Specific item that changed */
+  item: Schema.String,
 
   /** Change type */
   changeType: Schema.Literal("added", "removed", "modified"),
+
+  /** Details about the change */
+  details: Schema.optional(Schema.String),
 });
 
 /**
- * Complete diff between two profiles
+ * Diff result between profile and harness config
  */
 export const ProfileDiffSchema = Schema.Struct({
-  /** Left profile name */
-  leftName: Schema.String,
+  /** Profile name */
+  profileName: Schema.String,
 
-  /** Right profile name (or "current" for live config) */
-  rightName: Schema.String,
+  /** Harness being compared */
+  harnessId: HarnessIdSchema,
 
   /** Individual differences */
   differences: Schema.Array(ProfileDiffItemSchema),
 
-  /** Whether profiles are identical */
+  /** Whether they are identical */
   identical: Schema.Boolean,
 });
 
@@ -232,94 +245,43 @@ export const ProfileBackupSchema = Schema.Struct({
   /** Harness that was backed up */
   harnessId: HarnessIdSchema,
 
+  /** Profile that triggered the backup */
+  profileName: Schema.String,
+
   /** Timestamp of backup */
   timestamp: Schema.String,
 
   /** Path to backup directory */
   path: Schema.String,
 
-  /** Reason for backup (e.g., "switch", "manual") */
+  /** Reason (apply, remove, etc.) */
   reason: Schema.optional(Schema.String),
 });
 
 // Type exports
 
-/**
- * Harness identifier
- */
 export type HarnessId = Schema.Schema.Type<typeof HarnessIdSchema>;
-
-/**
- * MCP server type
- */
 export type McpServerType = Schema.Schema.Type<typeof McpServerTypeSchema>;
-
-/**
- * MCP server information
- */
-export type McpServerInfo = Schema.Schema.Type<typeof McpServerInfoSchema>;
-
-/**
- * Resource summary
- */
-export type ResourceSummary = Schema.Schema.Type<typeof ResourceSummarySchema>;
-
-/**
- * Profile information
- */
-export type ProfileInfo = Schema.Schema.Type<typeof ProfileInfoSchema>;
-
-/**
- * Profile name (validated)
- */
+export type McpServerConfig = Schema.Schema.Type<typeof McpServerConfigSchema>;
+export type ModelPreferences = Schema.Schema.Type<typeof ModelPreferencesSchema>;
+export type ProfileMetadata = Schema.Schema.Type<typeof ProfileMetadataSchema>;
+export type Profile = Schema.Schema.Type<typeof ProfileSchema>;
 export type ProfileName = Schema.Schema.Type<typeof ProfileNameSchema>;
-
-/**
- * Harness installation status
- */
 export type HarnessStatus = Schema.Schema.Type<typeof HarnessStatusSchema>;
-
-/**
- * Harness information
- */
 export type HarnessInfo = Schema.Schema.Type<typeof HarnessInfoSchema>;
-
-/**
- * Profile configuration
- */
-export type ProfileConfig = Schema.Schema.Type<typeof ProfileConfigSchema>;
-
-/**
- * Profile diff item
- */
+export type ProfileListItem = Schema.Schema.Type<typeof ProfileListItemSchema>;
+export type ProfileGlobalConfig = Schema.Schema.Type<typeof ProfileGlobalConfigSchema>;
 export type ProfileDiffItem = Schema.Schema.Type<typeof ProfileDiffItemSchema>;
-
-/**
- * Profile diff result
- */
 export type ProfileDiff = Schema.Schema.Type<typeof ProfileDiffSchema>;
-
-/**
- * Profile backup metadata
- */
 export type ProfileBackup = Schema.Schema.Type<typeof ProfileBackupSchema>;
 
 // Default values
 
 /**
- * Default profile configuration
+ * Default global profile configuration
  */
-export const DEFAULT_PROFILE_CONFIG: ProfileConfig = {
-  active: {},
+export const DEFAULT_PROFILE_CONFIG: ProfileGlobalConfig = {
   profileMarker: true,
-};
-
-/**
- * Default empty resource summary
- */
-export const EMPTY_RESOURCE_SUMMARY: ResourceSummary = {
-  items: [],
-  directoryExists: false,
 };
 
 /**
@@ -336,6 +298,11 @@ export const BACKUPS_DIR = "backups";
  * Profile marker file prefix
  */
 export const PROFILE_MARKER_PREFIX = "GRIMOIRE_PROFILE_";
+
+/**
+ * Profile metadata filename
+ */
+export const PROFILE_METADATA_FILE = "profile.json";
 
 /**
  * Validate a profile name
@@ -360,4 +327,23 @@ export function sanitizeProfileName(name: string): string {
  */
 export function getProfileMarkerName(profileName: string): string {
   return `${PROFILE_MARKER_PREFIX}${profileName}`;
+}
+
+/**
+ * Create empty profile metadata
+ */
+export function createEmptyProfile(name: string, description?: string): Profile {
+  const now = new Date().toISOString();
+  return {
+    metadata: {
+      name,
+      description,
+      created: now,
+      updated: now,
+      appliedTo: [],
+    },
+    skills: [],
+    commands: [],
+    mcpServers: [],
+  };
 }

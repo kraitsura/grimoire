@@ -15,7 +15,6 @@ import type { ParsedArgs } from "../cli/parser";
 import * as readline from "readline";
 import { ModelSelector, getDefaultModelForProvider } from "../cli/components/ModelSelector";
 import { dotCommand } from "./dot";
-import { profileCommand } from "./config/profile";
 
 // Supported providers
 const PROVIDERS = ["openai", "anthropic", "google", "ollama"] as const;
@@ -65,27 +64,14 @@ export const configCommand = (args: ParsedArgs) =>
       return;
     }
 
-    // Route to profile subcommand
-    if (subcommand === "profile") {
-      yield* profileCommand(args);
-      return;
-    }
-
     // Check for help case first (no subcommand or invalid subcommand)
-    if (!subcommand || (subcommand !== "llm" && subcommand !== "dot" && subcommand !== "profile")) {
+    if (!subcommand || (subcommand !== "llm" && subcommand !== "dot")) {
       console.log("Configuration and Settings\n");
       console.log("USAGE:");
       console.log("  grim config <subcommand> [options]\n");
       console.log("SUBCOMMANDS:");
       console.log("  llm             Manage LLM provider configuration");
-      console.log("  profile         Manage harness configuration profiles");
       console.log("  dot             Browse and edit dotfiles interactively\n");
-      console.log("PROFILE MANAGEMENT:");
-      console.log("  grim config profile list              List all profiles");
-      console.log("  grim config profile create <h> <n>    Create profile");
-      console.log("  grim config profile switch <h> <n>    Switch to profile");
-      console.log("  grim config profile show <h> <n>      Show profile details");
-      console.log("  grim config profile delete <h> <n>    Delete profile\n");
       console.log("LLM CONFIGURATION:");
       console.log("  grim config llm list              List configured providers");
       console.log("  grim config llm add <provider>    Add or update API key");

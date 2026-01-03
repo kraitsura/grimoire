@@ -1,32 +1,27 @@
 /**
  * Profile Service
  *
- * Core service for managing harness configuration profiles.
- * Handles creating, listing, switching, and deleting profiles.
- *
- * Profiles are stored in ~/.grimoire/profiles/{harnessId}/{profileName}/
+ * Manages harness-agnostic configuration profiles.
+ * Profiles can be applied to any supported AI coding assistant.
  */
 
 import { Context, Effect, Layer } from "effect";
 import { join } from "path";
 import { homedir } from "os";
-import { mkdir, readdir, rm, cp, access, writeFile, readFile } from "fs/promises";
+import { mkdir, readdir, rm, writeFile, readFile, access } from "fs/promises";
 import type {
   HarnessId,
-  ProfileInfo,
-  ProfileConfig,
-  ResourceSummary,
-  McpServerInfo,
+  Profile,
+  ProfileListItem,
+  ProfileGlobalConfig,
 } from "../../models/profile";
 import {
   HARNESS_CONFIG_PATHS,
   PROFILES_DIR,
-  BACKUPS_DIR,
-  PROFILE_MARKER_PREFIX,
+  PROFILE_METADATA_FILE,
   DEFAULT_PROFILE_CONFIG,
-  EMPTY_RESOURCE_SUMMARY,
   isValidProfileName,
-  getProfileMarkerName,
+  createEmptyProfile,
 } from "../../models/profile";
 import {
   ProfileNotFoundError,
@@ -34,9 +29,6 @@ import {
   InvalidProfileNameError,
   HarnessNotInstalledError,
   UnknownHarnessError,
-  ProfileSwitchError,
-  ProfileBackupError,
-  CannotDeleteActiveProfileError,
   ProfileConfigError,
 } from "../../models/profile-errors";
 
@@ -61,14 +53,16 @@ const getGrimoireDir = (): string => join(homedir(), ".grimoire");
 const getProfilesDir = (): string => join(getGrimoireDir(), PROFILES_DIR);
 
 /**
- * Get backups storage directory
+ * Get profile directory path
  */
-const getBackupsDir = (): string => join(getGrimoireDir(), BACKUPS_DIR);
+const getProfilePath = (profileName: string): string =>
+  join(getProfilesDir(), profileName);
 
 /**
- * Get profile config path
+ * Get profile metadata file path
  */
-const getProfileConfigPath = (): string => join(getGrimoireDir(), "profile-config.json");
+const getProfileMetadataPath = (profileName: string): string =>
+  join(getProfilePath(profileName), PROFILE_METADATA_FILE);
 
 /**
  * Check if path exists
@@ -83,25 +77,37 @@ const pathExists = (path: string): Effect.Effect<boolean, never> =>
   }).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
 /**
- * Read profile config
+ * List directory contents, returning empty array if not exists
  */
-const readProfileConfig = (): Effect.Effect<ProfileConfig, ProfileConfigError> =>
+const listDir = (path: string): Effect.Effect<string[], never> =>
+  Effect.tryPromise({
+    try: async () => {
+      const entries = await readdir(path);
+      return entries.filter((e) => !e.startsWith("."));
+    },
+    catch: () => [] as string[],
+  }).pipe(Effect.catchAll(() => Effect.succeed([] as string[])));
+
+/**
+ * Read profile from disk
+ */
+const readProfile = (profileName: string): Effect.Effect<Profile, ProfileNotFoundError | ProfileConfigError> =>
   Effect.gen(function* () {
-    const configPath = getProfileConfigPath();
-    const exists = yield* pathExists(configPath);
+    const metadataPath = getProfileMetadataPath(profileName);
+    const exists = yield* pathExists(metadataPath);
 
     if (!exists) {
-      return { ...DEFAULT_PROFILE_CONFIG };
+      return yield* Effect.fail(new ProfileNotFoundError({ harnessId: "", profileName }));
     }
 
     try {
-      const content = yield* Effect.promise(() => readFile(configPath, "utf-8"));
-      const parsed = JSON.parse(content) as ProfileConfig;
-      return { ...DEFAULT_PROFILE_CONFIG, ...parsed };
+      const content = yield* Effect.promise(() => readFile(metadataPath, "utf-8"));
+      const profile = JSON.parse(content) as Profile;
+      return profile;
     } catch (error) {
       return yield* Effect.fail(
         new ProfileConfigError({
-          path: configPath,
+          path: metadataPath,
           reason: error instanceof Error ? error.message : String(error),
         })
       );
@@ -109,20 +115,22 @@ const readProfileConfig = (): Effect.Effect<ProfileConfig, ProfileConfigError> =
   });
 
 /**
- * Write profile config
+ * Write profile to disk
  */
-const writeProfileConfig = (config: ProfileConfig): Effect.Effect<void, ProfileConfigError> =>
+const writeProfile = (profile: Profile): Effect.Effect<void, ProfileConfigError> =>
   Effect.gen(function* () {
-    const configPath = getProfileConfigPath();
-    const grimoireDir = getGrimoireDir();
+    const profilePath = getProfilePath(profile.metadata.name);
+    const metadataPath = getProfileMetadataPath(profile.metadata.name);
 
     try {
-      yield* Effect.promise(() => mkdir(grimoireDir, { recursive: true }));
-      yield* Effect.promise(() => writeFile(configPath, JSON.stringify(config, null, 2) + "\n"));
+      yield* Effect.promise(() => mkdir(profilePath, { recursive: true }));
+      yield* Effect.promise(() => mkdir(join(profilePath, "skills"), { recursive: true }));
+      yield* Effect.promise(() => mkdir(join(profilePath, "commands"), { recursive: true }));
+      yield* Effect.promise(() => writeFile(metadataPath, JSON.stringify(profile, null, 2) + "\n"));
     } catch (error) {
       return yield* Effect.fail(
         new ProfileConfigError({
-          path: configPath,
+          path: metadataPath,
           reason: error instanceof Error ? error.message : String(error),
         })
       );
@@ -161,144 +169,67 @@ const getHarnessConfigPath = (
     return resolvedPath;
   });
 
-/**
- * Get profile storage path
- */
-const getProfilePath = (harnessId: HarnessId, profileName: string): string =>
-  join(getProfilesDir(), harnessId, profileName);
-
-/**
- * List directory contents, returning empty array if not exists
- */
-const listDir = (path: string): Effect.Effect<string[], never> =>
-  Effect.tryPromise({
-    try: async () => {
-      const entries = await readdir(path);
-      return entries.filter((e) => !e.startsWith("."));
-    },
-    catch: () => [] as string[],
-  }).pipe(Effect.catchAll(() => Effect.succeed([] as string[])));
-
-/**
- * Extract resource summary from a directory
- */
-const extractResourceSummary = (
-  basePath: string,
-  subdir: string
-): Effect.Effect<ResourceSummary, never> =>
-  Effect.gen(function* () {
-    const dirPath = join(basePath, subdir);
-    const exists = yield* pathExists(dirPath);
-
-    if (!exists) {
-      return { ...EMPTY_RESOURCE_SUMMARY };
-    }
-
-    const items = yield* listDir(dirPath);
-    // Filter for markdown files and remove extensions for display
-    const names = items
-      .filter((f) => f.endsWith(".md"))
-      .map((f) => f.replace(/\.md$/, ""));
-
-    return {
-      items: names,
-      directoryExists: true,
-    };
-  });
-
-/**
- * Extract basic profile info (without full extraction)
- */
-const extractBasicProfileInfo = (
-  harnessId: HarnessId,
-  profileName: string,
-  profilePath: string,
-  isActive: boolean
-): Effect.Effect<ProfileInfo, never> =>
-  Effect.gen(function* () {
-    const skills = yield* extractResourceSummary(profilePath, "skills");
-    const commands = yield* extractResourceSummary(profilePath, "commands");
-    const agents = yield* extractResourceSummary(profilePath, "agents");
-
-    return {
-      name: profileName,
-      harnessId,
-      isActive,
-      path: profilePath,
-      mcpServers: [], // Full extraction done separately
-      skills,
-      commands,
-      agents: agents.directoryExists ? agents : undefined,
-      extractionErrors: [],
-    };
-  });
-
 // Service interface
 interface ProfileServiceImpl {
   /**
-   * List all profiles for a harness
+   * List all profiles
    */
-  readonly list: (
-    harnessId: HarnessId
-  ) => Effect.Effect<ProfileInfo[], UnknownHarnessError | ProfileConfigError>;
+  readonly list: () => Effect.Effect<ProfileListItem[], ProfileConfigError>;
 
   /**
-   * Get a specific profile
+   * Get a profile by name
    */
-  readonly get: (
-    harnessId: HarnessId,
-    profileName: string
-  ) => Effect.Effect<ProfileInfo, ProfileNotFoundError | ProfileConfigError>;
+  readonly get: (name: string) => Effect.Effect<Profile, ProfileNotFoundError | ProfileConfigError>;
 
   /**
    * Create a new profile
    */
   readonly create: (
-    harnessId: HarnessId,
-    profileName: string,
-    options?: { fromCurrent?: boolean }
+    name: string,
+    options?: { description?: string; fromHarness?: HarnessId }
   ) => Effect.Effect<
-    void,
-    | ProfileAlreadyExistsError
-    | InvalidProfileNameError
-    | UnknownHarnessError
-    | HarnessNotInstalledError
-    | ProfileConfigError
+    Profile,
+    ProfileAlreadyExistsError | InvalidProfileNameError | HarnessNotInstalledError | UnknownHarnessError | ProfileConfigError
   >;
 
   /**
    * Delete a profile
    */
-  readonly delete: (
-    harnessId: HarnessId,
-    profileName: string
-  ) => Effect.Effect<
-    void,
-    ProfileNotFoundError | CannotDeleteActiveProfileError | ProfileConfigError
-  >;
+  readonly delete: (name: string) => Effect.Effect<void, ProfileNotFoundError | ProfileConfigError>;
 
   /**
-   * Get the active profile for a harness
+   * Update profile metadata
    */
-  readonly getActive: (
-    harnessId: HarnessId
-  ) => Effect.Effect<string | undefined, ProfileConfigError>;
+  readonly update: (
+    name: string,
+    updates: { description?: string; tags?: string[] }
+  ) => Effect.Effect<Profile, ProfileNotFoundError | ProfileConfigError>;
 
   /**
-   * Set the active profile (internal use - switch does the actual switching)
+   * Apply a profile to harnesses
    */
-  readonly setActive: (
-    harnessId: HarnessId,
-    profileName: string | undefined
-  ) => Effect.Effect<void, ProfileConfigError>;
+  readonly apply: (
+    name: string,
+    harnesses: HarnessId[]
+  ) => Effect.Effect<void, ProfileNotFoundError | HarnessNotInstalledError | UnknownHarnessError | ProfileConfigError>;
 
   /**
-   * List all harnesses with their profiles
+   * Remove a profile from harnesses
    */
-  readonly listAll: () => Effect.Effect<
-    Array<{ harnessId: HarnessId; profiles: ProfileInfo[] }>,
-    ProfileConfigError
-  >;
+  readonly remove: (
+    name: string,
+    harnesses: HarnessId[]
+  ) => Effect.Effect<void, ProfileNotFoundError | ProfileConfigError>;
+
+  /**
+   * Get harnesses a profile is applied to
+   */
+  readonly getAppliedHarnesses: (name: string) => Effect.Effect<HarnessId[], ProfileNotFoundError | ProfileConfigError>;
+
+  /**
+   * List all available harnesses with their status
+   */
+  readonly listHarnesses: () => Effect.Effect<Array<{ id: HarnessId; installed: boolean; configPath: string }>, never>;
 }
 
 // Service tag
@@ -309,164 +240,178 @@ export class ProfileService extends Context.Tag("ProfileService")<
 
 // Service implementation
 const makeProfileService = (): ProfileServiceImpl => ({
-  list: (harnessId: HarnessId) =>
+  list: () =>
     Effect.gen(function* () {
-      // Validate harness ID
-      if (!HARNESS_CONFIG_PATHS[harnessId]) {
-        return yield* Effect.fail(
-          new UnknownHarnessError({
-            harnessId,
-            validHarnesses: Object.keys(HARNESS_CONFIG_PATHS),
-          })
-        );
-      }
+      const profilesDir = getProfilesDir();
+      const profileNames = yield* listDir(profilesDir);
 
-      const config = yield* readProfileConfig();
-      const activeProfile = config.active[harnessId];
-      const harnessProfilesDir = join(getProfilesDir(), harnessId);
-      const profileNames = yield* listDir(harnessProfilesDir);
-
-      const profiles: ProfileInfo[] = [];
+      const items: ProfileListItem[] = [];
       for (const name of profileNames) {
-        const profilePath = join(harnessProfilesDir, name);
-        const isActive = name === activeProfile;
-        const info = yield* extractBasicProfileInfo(harnessId, name, profilePath, isActive);
-        profiles.push(info);
-      }
-
-      return profiles;
-    }),
-
-  get: (harnessId: HarnessId, profileName: string) =>
-    Effect.gen(function* () {
-      const profilePath = getProfilePath(harnessId, profileName);
-      const exists = yield* pathExists(profilePath);
-
-      if (!exists) {
-        return yield* Effect.fail(
-          new ProfileNotFoundError({ harnessId, profileName })
+        const profileResult = yield* readProfile(name).pipe(
+          Effect.map((profile) => ({
+            name: profile.metadata.name,
+            description: profile.metadata.description,
+            skillCount: profile.skills.length,
+            commandCount: profile.commands.length,
+            mcpServerCount: profile.mcpServers.length,
+            appliedTo: profile.metadata.appliedTo,
+            updated: profile.metadata.updated,
+          })),
+          Effect.catchAll(() => Effect.succeed(null))
         );
+
+        if (profileResult) {
+          items.push(profileResult);
+        }
       }
 
-      const config = yield* readProfileConfig();
-      const isActive = config.active[harnessId] === profileName;
-      return yield* extractBasicProfileInfo(harnessId, profileName, profilePath, isActive);
+      return items;
     }),
 
-  create: (harnessId: HarnessId, profileName: string, options?: { fromCurrent?: boolean }) =>
+  get: (name: string) => readProfile(name),
+
+  create: (name: string, options?: { description?: string; fromHarness?: HarnessId }) =>
     Effect.gen(function* () {
       // Validate profile name
-      if (!isValidProfileName(profileName)) {
+      if (!isValidProfileName(name)) {
         return yield* Effect.fail(
           new InvalidProfileNameError({
-            name: profileName,
+            name,
             reason: "Must be kebab-case: lowercase letters, numbers, and hyphens only",
           })
         );
       }
 
       // Check if profile already exists
-      const profilePath = getProfilePath(harnessId, profileName);
+      const profilePath = getProfilePath(name);
       const exists = yield* pathExists(profilePath);
 
       if (exists) {
         return yield* Effect.fail(
-          new ProfileAlreadyExistsError({ harnessId, profileName })
+          new ProfileAlreadyExistsError({ harnessId: "", profileName: name })
         );
       }
 
-      // Create profile directory
-      yield* Effect.promise(() => mkdir(profilePath, { recursive: true }));
+      // Create profile
+      const profile = createEmptyProfile(name, options?.description);
 
-      if (options?.fromCurrent) {
-        // Copy from current harness config
-        const harnessPath = yield* getHarnessConfigPath(harnessId);
-
-        try {
-          // Copy entire config directory to profile
-          yield* Effect.promise(() =>
-            cp(harnessPath, profilePath, { recursive: true })
-          );
-        } catch (error) {
-          // Clean up on failure
-          yield* Effect.promise(() => rm(profilePath, { recursive: true, force: true }));
-          throw error;
-        }
-      } else {
-        // Create empty profile with basic structure
-        yield* Effect.promise(() => mkdir(join(profilePath, "skills"), { recursive: true }));
-        yield* Effect.promise(() => mkdir(join(profilePath, "commands"), { recursive: true }));
+      // If creating from a harness, we would extract config here
+      // For now, just create empty profile
+      if (options?.fromHarness) {
+        // Validate harness exists
+        yield* getHarnessConfigPath(options.fromHarness);
+        // TODO: Extract skills, commands, MCP servers from harness
+        // This will be implemented in grimoire-21f8
       }
+
+      yield* writeProfile(profile);
+      return profile;
     }),
 
-  delete: (harnessId: HarnessId, profileName: string) =>
+  delete: (name: string) =>
     Effect.gen(function* () {
-      const profilePath = getProfilePath(harnessId, profileName);
+      const profilePath = getProfilePath(name);
       const exists = yield* pathExists(profilePath);
 
       if (!exists) {
         return yield* Effect.fail(
-          new ProfileNotFoundError({ harnessId, profileName })
+          new ProfileNotFoundError({ harnessId: "", profileName: name })
         );
       }
 
-      // Check if this is the active profile
-      const config = yield* readProfileConfig();
-      if (config.active[harnessId] === profileName) {
-        return yield* Effect.fail(
-          new CannotDeleteActiveProfileError({ harnessId, profileName })
-        );
-      }
-
-      // Delete the profile directory
       yield* Effect.promise(() => rm(profilePath, { recursive: true, force: true }));
     }),
 
-  getActive: (harnessId: HarnessId) =>
+  update: (name: string, updates: { description?: string; tags?: string[] }) =>
     Effect.gen(function* () {
-      const config = yield* readProfileConfig();
-      return config.active[harnessId];
+      const profile = yield* readProfile(name);
+
+      const updatedProfile: Profile = {
+        ...profile,
+        metadata: {
+          ...profile.metadata,
+          description: updates.description ?? profile.metadata.description,
+          tags: updates.tags ?? profile.metadata.tags,
+          updated: new Date().toISOString(),
+        },
+      };
+
+      yield* writeProfile(updatedProfile);
+      return updatedProfile;
     }),
 
-  setActive: (harnessId: HarnessId, profileName: string | undefined) =>
+  apply: (name: string, harnesses: HarnessId[]) =>
     Effect.gen(function* () {
-      const config = yield* readProfileConfig();
+      const profile = yield* readProfile(name);
 
-      // Create new active map (config.active is readonly from schema)
-      const newActive = { ...config.active };
-      if (profileName === undefined) {
-        delete newActive[harnessId];
-      } else {
-        newActive[harnessId] = profileName;
+      // Validate all harnesses exist
+      for (const harnessId of harnesses) {
+        yield* getHarnessConfigPath(harnessId);
       }
 
-      yield* writeProfileConfig({ ...config, active: newActive });
+      // Update profile metadata with applied harnesses
+      const newAppliedTo = [...new Set([...profile.metadata.appliedTo, ...harnesses])];
+
+      const updatedProfile: Profile = {
+        ...profile,
+        metadata: {
+          ...profile.metadata,
+          appliedTo: newAppliedTo as HarnessId[],
+          updated: new Date().toISOString(),
+        },
+      };
+
+      yield* writeProfile(updatedProfile);
+
+      // TODO: Actually copy skills/commands/MCP to harness configs
+      // This will be implemented in grimoire-1k32
     }),
 
-  listAll: () =>
+  remove: (name: string, harnesses: HarnessId[]) =>
     Effect.gen(function* () {
-      const config = yield* readProfileConfig();
-      const results: Array<{ harnessId: HarnessId; profiles: ProfileInfo[] }> = [];
+      const profile = yield* readProfile(name);
 
-      for (const harnessId of Object.keys(HARNESS_CONFIG_PATHS) as HarnessId[]) {
-        const harnessProfilesDir = join(getProfilesDir(), harnessId);
-        const profileNames = yield* listDir(harnessProfilesDir);
-        const activeProfile = config.active[harnessId];
+      // Remove harnesses from applied list
+      const newAppliedTo = profile.metadata.appliedTo.filter(
+        (h) => !harnesses.includes(h)
+      );
 
-        const profiles: ProfileInfo[] = [];
-        for (const name of profileNames) {
-          const profilePath = join(harnessProfilesDir, name);
-          const isActive = name === activeProfile;
-          const info = yield* extractBasicProfileInfo(harnessId, name, profilePath, isActive);
-          profiles.push(info);
-        }
+      const updatedProfile: Profile = {
+        ...profile,
+        metadata: {
+          ...profile.metadata,
+          appliedTo: newAppliedTo,
+          updated: new Date().toISOString(),
+        },
+      };
 
-        if (profiles.length > 0) {
-          results.push({ harnessId, profiles });
-        }
+      yield* writeProfile(updatedProfile);
+
+      // TODO: Remove profile's skills/commands/MCP from harness configs
+      // This will be implemented in grimoire-1k32
+    }),
+
+  getAppliedHarnesses: (name: string) =>
+    Effect.gen(function* () {
+      const profile = yield* readProfile(name);
+      return [...profile.metadata.appliedTo];
+    }),
+
+  listHarnesses: () =>
+    Effect.gen(function* () {
+      const harnesses: Array<{ id: HarnessId; installed: boolean; configPath: string }> = [];
+
+      for (const [id, configPath] of Object.entries(HARNESS_CONFIG_PATHS)) {
+        const resolvedPath = resolvePath(configPath);
+        const installed = yield* pathExists(resolvedPath);
+        harnesses.push({
+          id: id as HarnessId,
+          installed,
+          configPath: resolvedPath,
+        });
       }
 
-      return results;
+      return harnesses;
     }),
 });
 

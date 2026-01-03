@@ -69,9 +69,10 @@ import {
   listPromptNamesForCompletion,
   listWorktreeNamesForCompletion,
 } from "./commands";
+import { profileCommand } from "./commands/profile";
 
 /**
- * Reserved command names - 5 namespaces + completion utility
+ * Reserved command names - 6 namespaces + completion utility
  */
 const RESERVED_COMMANDS = new Set([
   "pl",        // Prompt Library
@@ -80,6 +81,7 @@ const RESERVED_COMMANDS = new Set([
   "worktree",  // Worktree
   "st",        // Skills/Tools
   "config",    // Configuration
+  "profile",   // Profile management
   "completion", // Shell completions
 ]);
 
@@ -204,6 +206,9 @@ Run 'grim' with no arguments to launch interactive mode.
         break;
       case "config":
         yield* configCommand(parsedArgs);
+        break;
+      case "profile":
+        yield* profileCommand(parsedArgs);
         break;
       case "completion":
         yield* completionCommand(parsedArgs);
