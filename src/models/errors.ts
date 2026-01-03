@@ -89,3 +89,11 @@ export class StashItemNotFoundError extends Data.TaggedError("StashItemNotFoundE
 export class StashEmptyError extends Data.TaggedError("StashEmptyError")<{
   message: string;
 }> {}
+
+/**
+ * Error for Scout operations
+ */
+export class ScoutError extends Data.TaggedError("ScoutError")<{
+  message: string;
+  cause?: unknown;
+}> {}

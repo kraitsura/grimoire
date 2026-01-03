@@ -10,11 +10,11 @@
  * - Run multiple background agents from different worktrees
  */
 
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
 import { spawn, spawnSync } from "child_process";
 import { join, basename } from "path";
 import { randomUUID } from "crypto";
-import { appendFileSync } from "fs";
+import { appendFileSync, unlink } from "fs";
 import type { ParsedArgs } from "../cli/parser";
 import {
   AgentSessionService,
@@ -401,43 +401,60 @@ export const spawnCommand = (args: ParsedArgs) =>
       prompt,
     });
 
-    yield* Effect.promise(
-      () =>
-        new Promise<void>((resolve) => {
-          child.on("close", (code) => {
-            const cleanupPromises: Promise<unknown>[] = [
-              Effect.runPromise(
-                agentSessionService.updateSession(cwd, {
-                  status: code === 0 ? "stopped" : "crashed",
-                  endedAt: new Date().toISOString(),
-                  exitCode: code ?? undefined,
-                })
-              ).catch(() => {}),
-            ];
-            if (configPath) {
-              cleanupPromises.push(
-                import("fs/promises").then((fs) => fs.unlink(configPath).catch(() => {}))
-              );
-            }
-            Promise.all(cleanupPromises).finally(() => {
-              process.exitCode = code ?? 0;
-              resolve();
+    // Wait for the child process to complete and handle cleanup
+    const exitResult = yield* Effect.async<{ type: "close"; code: number | null } | { type: "error"; error: Error }>((resume) => {
+      child.on("close", (code) => {
+        resume(Effect.succeed({ type: "close" as const, code }));
+      });
+      child.on("error", (err) => {
+        resume(Effect.succeed({ type: "error" as const, error: err }));
+      });
+    });
+
+    // Perform cleanup based on exit result
+    if (exitResult.type === "error") {
+      console.error(`Error launching Claude: ${exitResult.error.message}`);
+      console.error("Make sure 'claude' CLI is installed and in your PATH");
+
+      // Update session status (ignore errors during cleanup)
+      yield* Effect.catchAll(
+        agentSessionService.updateSession(cwd, {
+          status: "crashed",
+          endedAt: new Date().toISOString(),
+        }),
+        () => Effect.void
+      );
+
+      process.exitCode = 1;
+    } else {
+      const code = exitResult.code;
+
+      // Run cleanup effects in parallel
+      const cleanupEffects: Effect.Effect<void, never>[] = [
+        Effect.catchAll(
+          agentSessionService.updateSession(cwd, {
+            status: code === 0 ? "stopped" : "crashed",
+            endedAt: new Date().toISOString(),
+            exitCode: code ?? undefined,
+          }),
+          () => Effect.void
+        ),
+      ];
+
+      if (configPath) {
+        cleanupEffects.push(
+          Effect.async<void>((resume) => {
+            unlink(configPath, () => {
+              resume(Effect.void);
             });
-          });
-          child.on("error", (err) => {
-            console.error(`Error launching Claude: ${err.message}`);
-            console.error("Make sure 'claude' CLI is installed and in your PATH");
-            Effect.runPromise(
-              agentSessionService.updateSession(cwd, {
-                status: "crashed",
-                endedAt: new Date().toISOString(),
-              })
-            ).catch(() => {});
-            process.exitCode = 1;
-            resolve();
-          });
-        })
-    );
+          })
+        );
+      }
+
+      yield* Effect.all(cleanupEffects, { concurrency: "unbounded" });
+
+      process.exitCode = code ?? 0;
+    }
   }).pipe(
     Effect.provide(SrtServiceLive),
     Effect.provide(SrtConfigServiceLive),

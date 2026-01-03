@@ -6,7 +6,8 @@
 
 import { Context, Effect, Layer } from "effect";
 import { spawn, spawnSync } from "child_process";
-import { appendFileSync, readFileSync, existsSync } from "fs";
+import * as fs from "fs/promises";
+import * as path from "path";
 import {
   type ScoutEntry,
   type ScoutFindings,
@@ -14,7 +15,10 @@ import {
   type ScoutDepth,
   DEFAULT_SCOUT_OPTIONS,
   getScoutLogPath,
+  getScoutStatePath,
+  getScoutFindingsPath,
 } from "../../models/scout";
+import { ScoutError } from "../../models/errors";
 import { ScoutStateService, ScoutStateServiceLive } from "./scout-state-service";
 import { generateScoutPrompt, parseFindingsFromOutput } from "./scout-prompt";
 import {
@@ -22,7 +26,14 @@ import {
   SrtServiceLive,
   SrtConfigService,
   SrtConfigServiceLive,
+  SrtConfigWriteError,
+  SrtConfigParseError,
 } from "../srt";
+
+/**
+ * Errors that can occur during scout operations
+ */
+type ScoutSpawnError = ScoutError | SrtConfigWriteError | SrtConfigParseError;
 
 /**
  * Service interface
@@ -36,7 +47,7 @@ interface ScoutServiceImpl {
     name: string,
     question: string,
     options?: ScoutOptions
-  ) => Effect.Effect<ScoutEntry>;
+  ) => Effect.Effect<ScoutEntry, ScoutSpawnError>;
 
   /**
    * List all scouts
@@ -132,54 +143,62 @@ const modelFlags: Record<string, string[]> = {
 };
 
 /**
- * Poll for scout completion and parse findings
+ * Helper to check if a file exists (async)
  */
-function pollForCompletion(
+const fileExists = async (filePath: string): Promise<boolean> => {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Poll for scout completion and parse findings (async)
+ */
+async function pollForCompletion(
   projectPath: string,
   name: string,
   logFile: string,
   question: string,
   startedAt: string,
   timeoutMs: number
-): void {
+): Promise<void> {
   const startTime = Date.now();
   const pollInterval = 2000;
 
-  // We need to run the state updates without the full service layer
-  // So we'll use a simpler approach - directly manipulate the state files
-  const { readFileSync: readFs, writeFileSync: writeFs, existsSync: existsFs } = require("fs");
-  const { getScoutStatePath, getScoutFindingsPath } = require("../../models/scout");
-
-  const readState = () => {
+  const readState = async () => {
     const statePath = getScoutStatePath(projectPath);
-    if (!existsFs(statePath)) return { version: 1, scouts: {} };
+    if (!(await fileExists(statePath))) return { version: 1, scouts: {} };
     try {
-      return JSON.parse(readFs(statePath, "utf-8"));
+      const content = await fs.readFile(statePath, "utf-8");
+      return JSON.parse(content);
     } catch {
       return { version: 1, scouts: {} };
     }
   };
 
-  const writeState = (state: any) => {
+  const writeState = async (state: unknown) => {
     const statePath = getScoutStatePath(projectPath);
-    writeFs(statePath, JSON.stringify(state, null, 2));
+    await fs.writeFile(statePath, JSON.stringify(state, null, 2));
   };
 
-  const checkCompletion = () => {
+  const checkCompletion = async (): Promise<void> => {
     // Check if timed out
     if (Date.now() - startTime > timeoutMs) {
-      const state = readState();
+      const state = await readState();
       if (state.scouts[name]) {
         state.scouts[name].status = "failed";
         state.scouts[name].completedAt = new Date().toISOString();
         state.scouts[name].error = "Timed out";
-        writeState(state);
+        await writeState(state);
       }
       return;
     }
 
     // Get current state
-    const state = readState();
+    const state = await readState();
     const entry = state.scouts[name];
     if (!entry || entry.status !== "running") {
       return; // Already completed or cancelled
@@ -191,8 +210,8 @@ function pollForCompletion(
       const completedAt = new Date().toISOString();
 
       try {
-        if (existsFs(logFile)) {
-          const log = readFs(logFile, "utf-8");
+        if (await fileExists(logFile)) {
+          const log = await fs.readFile(logFile, "utf-8");
           const parsed = parseFindingsFromOutput(log);
 
           if (parsed) {
@@ -206,35 +225,68 @@ function pollForCompletion(
             };
 
             const findingsPath = getScoutFindingsPath(projectPath, name);
-            const { dirname } = require("path");
-            const { mkdirSync } = require("fs");
-            const dir = dirname(findingsPath);
-            if (!existsFs(dir)) {
-              mkdirSync(dir, { recursive: true });
+            const dir = path.dirname(findingsPath);
+            if (!(await fileExists(dir))) {
+              await fs.mkdir(dir, { recursive: true });
             }
-            writeFs(findingsPath, JSON.stringify(findings, null, 2));
+            await fs.writeFile(findingsPath, JSON.stringify(findings, null, 2));
           }
         }
 
         state.scouts[name].status = "done";
         state.scouts[name].completedAt = completedAt;
-        writeState(state);
+        await writeState(state);
       } catch (err) {
         state.scouts[name].status = "failed";
         state.scouts[name].completedAt = completedAt;
         state.scouts[name].error = String(err);
-        writeState(state);
+        await writeState(state);
       }
 
       return;
     }
 
     // Still running - continue polling
-    setTimeout(checkCompletion, pollInterval);
+    setTimeout(() => {
+      checkCompletion().catch(() => {
+        // Silently ignore polling errors
+      });
+    }, pollInterval);
   };
 
-  setTimeout(checkCompletion, pollInterval);
+  setTimeout(() => {
+    checkCompletion().catch(() => {
+      // Silently ignore polling errors
+    });
+  }, pollInterval);
 }
+
+/**
+ * Effect wrapper for async file existence check
+ */
+const fileExistsEffect = (filePath: string): Effect.Effect<boolean> =>
+  Effect.tryPromise({
+    try: () => fileExists(filePath),
+    catch: () => false as const,
+  }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+
+/**
+ * Effect wrapper for async file read
+ */
+const readFileEffect = (filePath: string): Effect.Effect<string, Error> =>
+  Effect.tryPromise({
+    try: () => fs.readFile(filePath, "utf-8"),
+    catch: (error) => new Error(`Failed to read file: ${error}`),
+  });
+
+/**
+ * Effect wrapper for async file append
+ */
+const appendFileEffect = (filePath: string, content: string): Effect.Effect<void, Error> =>
+  Effect.tryPromise({
+    try: () => fs.appendFile(filePath, content),
+    catch: (error) => new Error(`Failed to append to file: ${error}`),
+  });
 
 /**
  * Service implementation factory
@@ -256,7 +308,9 @@ const makeScoutService = (
       if (!auth.hasToken) {
         console.error("Error: Scout requires OAuth token for headless mode");
         console.error("Run: claude setup-token");
-        throw new Error("No OAuth token");
+        return yield* Effect.fail(
+          new ScoutError({ message: "No OAuth token. Run 'claude setup-token' to authenticate." })
+        );
       }
 
       // Initialize directories
@@ -265,7 +319,9 @@ const makeScoutService = (
       // Check if scout already exists
       const existing = yield* stateService.get(projectPath, name);
       if (existing && existing.status === "running") {
-        throw new Error(`Scout "${name}" is already running`);
+        return yield* Effect.fail(
+          new ScoutError({ message: `Scout "${name}" is already running` })
+        );
       }
 
       // Merge options with defaults
@@ -317,13 +373,19 @@ const makeScoutService = (
         // Get base config and restrict to read-only
         const resolved = yield* srtConfigService.resolveConfig(projectPath, projectPath);
 
-        // Override to be more restrictive for scouts
-        resolved.config.filesystem.allowedWritePaths = [
-          `${projectPath}/.grim/scouts`,
-          "/tmp",
-        ];
+        // Create a modified config with restricted write paths for scouts
+        const scoutConfig = {
+          ...resolved.config,
+          filesystem: {
+            ...resolved.config.filesystem,
+            allowWrite: [
+              `${projectPath}/.grim/scouts`,
+              "/tmp",
+            ],
+          },
+        };
 
-        const configPath = yield* srtService.writeConfigFile(resolved.config);
+        const configPath = yield* srtService.writeConfigFile(scoutConfig);
         const claudeCommand = `claude ${argsStr}`;
         const srtCommand = srtService.wrapCommand(claudeCommand, configPath);
         fullCommand = `${srtCommand} > ${shellEscape(logFile)} 2>&1`;
@@ -331,13 +393,13 @@ const makeScoutService = (
         fullCommand = `claude ${argsStr} > ${shellEscape(logFile)} 2>&1`;
       }
 
-      // Write initial log entry
-      appendFileSync(
+      // Write initial log entry (async)
+      yield* appendFileEffect(
         logFile,
         `=== Scout "${name}" started at ${startedAt} ===\n` +
           `Question: ${question}\n` +
           `Options: ${JSON.stringify(resolvedOptions)}\n\n`
-      );
+      ).pipe(Effect.catchAll(() => Effect.void));
 
       // Spawn process
       const spawnEnv = { ...process.env };
@@ -355,10 +417,13 @@ const makeScoutService = (
 
       child.unref();
 
-      // Update entry with PID
-      entry.status = "running";
-      entry.pid = child.pid;
-      yield* stateService.upsert(projectPath, entry);
+      // Update entry with PID (create new object since ScoutEntry is readonly)
+      const runningEntry: ScoutEntry = {
+        ...entry,
+        status: "running",
+        pid: child.pid,
+      };
+      yield* stateService.upsert(projectPath, runningEntry);
 
       // Set up completion handler via polling
       setTimeout(() => {
@@ -372,7 +437,7 @@ const makeScoutService = (
         );
       }, 1000);
 
-      return entry;
+      return runningEntry;
     }),
 
   list: (projectPath: string) => stateService.list(projectPath),
@@ -392,26 +457,31 @@ const makeScoutService = (
 
       if (entry.status === "done" || entry.status === "failed") {
         const logFile = getScoutLogPath(projectPath, name);
-        if (existsSync(logFile)) {
-          const log = readFileSync(logFile, "utf-8");
-          const parsed = parseFindingsFromOutput(log);
-          if (parsed) {
-            const findings: ScoutFindings = {
-              name,
-              question: entry.question,
-              exploredAt: entry.completedAt || entry.startedAt,
-              duration: entry.completedAt
-                ? Math.round(
-                    (new Date(entry.completedAt).getTime() -
-                      new Date(entry.startedAt).getTime()) /
-                      1000
-                  )
-                : 0,
-              ...parsed,
-              rawLog: log,
-            };
-            yield* stateService.saveFindings(projectPath, findings);
-            return findings;
+        const exists = yield* fileExistsEffect(logFile);
+        if (exists) {
+          const logResult = yield* readFileEffect(logFile).pipe(
+            Effect.catchAll(() => Effect.succeed(null))
+          );
+          if (logResult) {
+            const parsed = parseFindingsFromOutput(logResult);
+            if (parsed) {
+              const findings: ScoutFindings = {
+                name,
+                question: entry.question,
+                exploredAt: entry.completedAt || entry.startedAt,
+                duration: entry.completedAt
+                  ? Math.round(
+                      (new Date(entry.completedAt).getTime() -
+                        new Date(entry.startedAt).getTime()) /
+                        1000
+                    )
+                  : 0,
+                ...parsed,
+                rawLog: logResult,
+              };
+              yield* stateService.saveFindings(projectPath, findings);
+              return findings;
+            }
           }
         }
       }
