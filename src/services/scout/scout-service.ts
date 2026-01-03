@@ -4,7 +4,7 @@
  * Core service for spawning and managing scout agents.
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Context, Duration, Effect, Layer } from "effect";
 import { spawn, spawnSync } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -155,111 +155,161 @@ const fileExists = async (filePath: string): Promise<boolean> => {
 };
 
 /**
- * Poll for scout completion and parse findings (async)
+ * Polling state for the completion loop
  */
-async function pollForCompletion(
+interface PollState {
+  readonly done: boolean;
+  readonly startTime: number;
+}
+
+/**
+ * Read scout state from file
+ */
+const readScoutState = (
+  projectPath: string
+): Effect.Effect<{ version: number; scouts: Record<string, ScoutEntry> }> =>
+  Effect.gen(function* () {
+    const statePath = getScoutStatePath(projectPath);
+    const exists = yield* fileExistsEffect(statePath);
+    if (!exists) {
+      return { version: 1, scouts: {} };
+    }
+    const content = yield* readFileEffect(statePath).pipe(
+      Effect.catchAll(() => Effect.succeed(""))
+    );
+    if (!content) {
+      return { version: 1, scouts: {} };
+    }
+    try {
+      return JSON.parse(content);
+    } catch {
+      return { version: 1, scouts: {} };
+    }
+  });
+
+/**
+ * Write scout state to file
+ */
+const writeScoutState = (
+  projectPath: string,
+  state: unknown
+): Effect.Effect<void> =>
+  Effect.tryPromise({
+    try: async () => {
+      const statePath = getScoutStatePath(projectPath);
+      await fs.writeFile(statePath, JSON.stringify(state, null, 2));
+    },
+    catch: () => new Error("Failed to write state"),
+  }).pipe(Effect.catchAll(() => Effect.void));
+
+/**
+ * Poll for scout completion and parse findings (Effect-based)
+ */
+const pollForCompletionEffect = (
   projectPath: string,
   name: string,
   logFile: string,
   question: string,
   startedAt: string,
   timeoutMs: number
-): Promise<void> {
-  const startTime = Date.now();
+): Effect.Effect<void> => {
   const pollInterval = 2000;
 
-  const readState = async () => {
-    const statePath = getScoutStatePath(projectPath);
-    if (!(await fileExists(statePath))) return { version: 1, scouts: {} };
-    try {
-      const content = await fs.readFile(statePath, "utf-8");
-      return JSON.parse(content);
-    } catch {
-      return { version: 1, scouts: {} };
-    }
-  };
-
-  const writeState = async (state: unknown) => {
-    const statePath = getScoutStatePath(projectPath);
-    await fs.writeFile(statePath, JSON.stringify(state, null, 2));
-  };
-
-  const checkCompletion = async (): Promise<void> => {
-    // Check if timed out
-    if (Date.now() - startTime > timeoutMs) {
-      const state = await readState();
-      if (state.scouts[name]) {
-        state.scouts[name].status = "failed";
-        state.scouts[name].completedAt = new Date().toISOString();
-        state.scouts[name].error = "Timed out";
-        await writeState(state);
+  const checkOnce = (state: PollState): Effect.Effect<PollState> =>
+    Effect.gen(function* () {
+      // Check if timed out
+      if (Date.now() - state.startTime > timeoutMs) {
+        const scoutState = yield* readScoutState(projectPath);
+        if (scoutState.scouts[name]) {
+          scoutState.scouts[name] = {
+            ...scoutState.scouts[name],
+            status: "failed",
+            completedAt: new Date().toISOString(),
+            error: "Timed out",
+          };
+          yield* writeScoutState(projectPath, scoutState);
+        }
+        return { ...state, done: true };
       }
-      return;
-    }
 
-    // Get current state
-    const state = await readState();
-    const entry = state.scouts[name];
-    if (!entry || entry.status !== "running") {
-      return; // Already completed or cancelled
-    }
+      // Get current state
+      const scoutState = yield* readScoutState(projectPath);
+      const entry = scoutState.scouts[name];
+      if (!entry || entry.status !== "running") {
+        // Already completed or cancelled
+        return { ...state, done: true };
+      }
 
-    // Check if process is still alive
-    if (entry.pid && !isProcessAlive(entry.pid)) {
-      // Process finished - parse results
-      const completedAt = new Date().toISOString();
+      // Check if process is still alive
+      if (entry.pid && !isProcessAlive(entry.pid)) {
+        // Process finished - parse results
+        const completedAt = new Date().toISOString();
 
-      try {
-        if (await fileExists(logFile)) {
-          const log = await fs.readFile(logFile, "utf-8");
+        const parseResult = yield* Effect.gen(function* () {
+          const exists = yield* fileExistsEffect(logFile);
+          if (!exists) return null;
+
+          const log = yield* readFileEffect(logFile).pipe(
+            Effect.catchAll(() => Effect.succeed(null))
+          );
+          if (!log) return null;
+
           const parsed = parseFindingsFromOutput(log);
+          if (!parsed) return { log, parsed: null };
 
-          if (parsed) {
-            const findings: ScoutFindings = {
-              name,
-              question,
-              exploredAt: completedAt,
-              duration: Math.round((Date.now() - new Date(startedAt).getTime()) / 1000),
-              ...parsed,
-              rawLog: log,
-            };
+          return { log, parsed };
+        });
 
-            const findingsPath = getScoutFindingsPath(projectPath, name);
-            const dir = path.dirname(findingsPath);
-            if (!(await fileExists(dir))) {
-              await fs.mkdir(dir, { recursive: true });
-            }
-            await fs.writeFile(findingsPath, JSON.stringify(findings, null, 2));
-          }
+        if (parseResult?.parsed) {
+          const findings: ScoutFindings = {
+            name,
+            question,
+            exploredAt: completedAt,
+            duration: Math.round((Date.now() - new Date(startedAt).getTime()) / 1000),
+            ...parseResult.parsed,
+            rawLog: parseResult.log,
+          };
+
+          // Write findings file
+          yield* Effect.tryPromise({
+            try: async () => {
+              const findingsPath = getScoutFindingsPath(projectPath, name);
+              const dir = path.dirname(findingsPath);
+              if (!(await fileExists(dir))) {
+                await fs.mkdir(dir, { recursive: true });
+              }
+              await fs.writeFile(findingsPath, JSON.stringify(findings, null, 2));
+            },
+            catch: () => new Error("Failed to write findings"),
+          }).pipe(Effect.catchAll(() => Effect.void));
         }
 
-        state.scouts[name].status = "done";
-        state.scouts[name].completedAt = completedAt;
-        await writeState(state);
-      } catch (err) {
-        state.scouts[name].status = "failed";
-        state.scouts[name].completedAt = completedAt;
-        state.scouts[name].error = String(err);
-        await writeState(state);
+        scoutState.scouts[name] = {
+          ...scoutState.scouts[name],
+          status: "done",
+          completedAt,
+        };
+        yield* writeScoutState(projectPath, scoutState);
+        return { ...state, done: true };
       }
 
-      return;
+      // Still running - continue polling after sleep
+      yield* Effect.sleep(Duration.millis(pollInterval));
+      return state;
+    }).pipe(
+      // Handle any errors in the check - log and continue
+      Effect.catchAll(() => Effect.succeed(state))
+    );
+
+  // Use Effect.iterate to poll until done
+  return Effect.iterate(
+    { done: false, startTime: Date.now() } as PollState,
+    {
+      while: (state) => !state.done,
+      body: checkOnce,
     }
-
-    // Still running - continue polling
-    setTimeout(() => {
-      checkCompletion().catch(() => {
-        // Silently ignore polling errors
-      });
-    }, pollInterval);
-  };
-
-  setTimeout(() => {
-    checkCompletion().catch(() => {
-      // Silently ignore polling errors
-    });
-  }, pollInterval);
-}
+  ).pipe(Effect.asVoid);
+};
 
 /**
  * Effect wrapper for async file existence check
@@ -425,17 +475,22 @@ const makeScoutService = (
       };
       yield* stateService.upsert(projectPath, runningEntry);
 
-      // Set up completion handler via polling
-      setTimeout(() => {
-        pollForCompletion(
-          projectPath,
-          name,
-          logFile,
-          question,
-          startedAt,
-          resolvedOptions.timeout * 1000
-        );
-      }, 1000);
+      // Set up completion handler via polling in background
+      // Use Effect.fork with delay to run polling asynchronously
+      // The fiber is interruptible - when the scout is cancelled, the polling stops
+      yield* pollForCompletionEffect(
+        projectPath,
+        name,
+        logFile,
+        question,
+        startedAt,
+        resolvedOptions.timeout * 1000
+      ).pipe(
+        Effect.delay(Duration.millis(1000)),
+        Effect.fork,
+        // Ignore the fiber reference - polling runs in background
+        Effect.asVoid
+      );
 
       return runningEntry;
     }),
@@ -530,7 +585,7 @@ const makeScoutService = (
           return yield* stateService.getFindings(projectPath, name);
         }
 
-        yield* Effect.sleep(pollInterval);
+        yield* Effect.sleep(Duration.millis(pollInterval));
       }
 
       return null;

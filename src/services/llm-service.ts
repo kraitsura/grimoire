@@ -464,46 +464,34 @@ export const streamFromAsyncIterator = <T, E>(
   onError: (error: unknown) => E,
   timeoutMs = 180000 // 3 minutes default
 ): Stream.Stream<StreamChunk, E> =>
-  // Use Stream.async for real-time chunk delivery (Stream.asyncEffect buffers until completion)
-  pipe(
-    Stream.async<StreamChunk, E>((emit) => {
-      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  Stream.unwrap(
+    Effect.gen(function* () {
+      // Get iterator with timeout - this covers the initial connection
+      const iterable = yield* pipe(
+        Effect.tryPromise({
+          try: () => getIterator(),
+          catch: onError,
+        }),
+        Effect.timeoutFail({
+          duration: Duration.millis(timeoutMs),
+          onTimeout: () => onError(new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds`)),
+        })
+      );
 
-      const cleanup = () => {
-        if (timeoutHandle) {
-          clearTimeout(timeoutHandle);
-          timeoutHandle = null;
-        }
-      };
-
-      // Set up timeout
-      timeoutHandle = setTimeout(() => {
-        emit.fail(onError(new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds`)));
-      }, timeoutMs);
-
-      // Run the async iteration
-      (async () => {
-        try {
-          const iterator = await getIterator();
-          for await (const item of iterator) {
-            const chunk = transform(item);
-            if (chunk) {
-              emit.single(chunk);
-            }
-          }
-          // Emit final done chunk
-          emit.single(onDone());
-          emit.end();
-        } catch (error) {
-          emit.fail(onError(error));
-        } finally {
-          cleanup();
-        }
-      })();
-
-      // Return cleanup function
-      return Effect.sync(cleanup);
-    }),
-    // Ensure proper cleanup on stream termination
-    Stream.ensuring(Effect.void)
+      // Convert async iterable to stream with per-chunk timeout
+      // Each chunk must arrive within the timeout window
+      return pipe(
+        Stream.fromAsyncIterable(iterable, onError),
+        // Apply timeout to each chunk emission - fails if no data for timeoutMs
+        Stream.timeoutFail(
+          () => onError(new Error(`Stream timed out - no data received for ${Math.round(timeoutMs / 1000)} seconds`)),
+          Duration.millis(timeoutMs)
+        ),
+        // Transform items to StreamChunk, filtering nulls
+        Stream.map(transform),
+        Stream.filter((chunk): chunk is StreamChunk => chunk !== null),
+        // Append the done chunk at the end
+        Stream.concat(Stream.succeed(onDone()))
+      );
+    })
   );
