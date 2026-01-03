@@ -291,6 +291,8 @@ export {
 
 // Re-export Profile services
 export { ProfileService, ProfileServiceLive } from "./profile/profile-service";
+export { HarnessExtractor, HarnessExtractorLive } from "./profile/harness-extractor";
+export { HarnessApplicator, HarnessApplicatorLive } from "./profile/harness-applicator";
 export {
   MarketplaceDetectionService,
   MarketplaceDetectionServiceLive,
@@ -460,6 +462,8 @@ import { MarketplaceDetectionServiceLive as MarketplaceDetectionServiceLiveImpor
 import { MarketplaceServiceLive as MarketplaceServiceLiveImport } from "./plugins/marketplace-service";
 import { AgentServiceLive as AgentServiceLiveImport } from "./agents/agent-service";
 import { ProfileServiceLive as ProfileServiceLiveImport } from "./profile/profile-service";
+import { HarnessExtractorLive as HarnessExtractorLiveImport } from "./profile/harness-extractor";
+import { HarnessApplicatorLive as HarnessApplicatorLiveImport } from "./profile/harness-applicator";
 
 /**
  * LLM Layer - Provides LLM services with all providers
@@ -545,7 +549,13 @@ const IndependentServices = Layer.mergeAll(
   CliInstallerServiceLiveImport,
   SkillValidationServiceLiveImport,
   AgentServiceLiveImport,
-  ProfileServiceLiveImport
+  HarnessExtractorLiveImport,
+  HarnessApplicatorLiveImport
+);
+
+// ProfileService needs HarnessExtractor and HarnessApplicator
+const ProfileServiceLayer = ProfileServiceLiveImport.pipe(
+  Layer.provide(Layer.mergeAll(HarnessExtractorLiveImport, HarnessApplicatorLiveImport))
 );
 
 // SkillEngineService needs SkillCache, SkillState, AgentAdapter, CliInstaller
@@ -592,6 +602,7 @@ export const MainLive = Layer.mergeAll(
   IndependentServices,
   SkillEngineLayer,
   PluginServicesLayer,
+  ProfileServiceLayer,
   LLMLive,
   LLMServiceLive,
   TokenCounterServiceLive,

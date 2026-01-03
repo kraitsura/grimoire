@@ -14,6 +14,7 @@ import type {
   Profile,
   ProfileListItem,
   ProfileGlobalConfig,
+  ProfileDiffItem,
 } from "../../models/profile";
 import {
   HARNESS_CONFIG_PATHS,
@@ -30,7 +31,12 @@ import {
   HarnessNotInstalledError,
   UnknownHarnessError,
   ProfileConfigError,
+  ProfileExtractionError,
+  ProfileSwitchError,
+  ProfileBackupError,
 } from "../../models/profile-errors";
+import { HarnessExtractor } from "./harness-extractor";
+import { HarnessApplicator } from "./harness-applicator";
 
 /**
  * Resolve ~ to home directory
@@ -189,7 +195,7 @@ interface ProfileServiceImpl {
     options?: { description?: string; fromHarness?: HarnessId }
   ) => Effect.Effect<
     Profile,
-    ProfileAlreadyExistsError | InvalidProfileNameError | HarnessNotInstalledError | UnknownHarnessError | ProfileConfigError
+    ProfileAlreadyExistsError | InvalidProfileNameError | HarnessNotInstalledError | UnknownHarnessError | ProfileConfigError | ProfileExtractionError
   >;
 
   /**
@@ -210,16 +216,18 @@ interface ProfileServiceImpl {
    */
   readonly apply: (
     name: string,
-    harnesses: HarnessId[]
-  ) => Effect.Effect<void, ProfileNotFoundError | HarnessNotInstalledError | UnknownHarnessError | ProfileConfigError>;
+    harnesses: HarnessId[],
+    options?: { skipBackup?: boolean }
+  ) => Effect.Effect<void, ProfileNotFoundError | HarnessNotInstalledError | UnknownHarnessError | ProfileConfigError | ProfileSwitchError | ProfileBackupError>;
 
   /**
    * Remove a profile from harnesses
    */
   readonly remove: (
     name: string,
-    harnesses: HarnessId[]
-  ) => Effect.Effect<void, ProfileNotFoundError | ProfileConfigError>;
+    harnesses: HarnessId[],
+    options?: { skipBackup?: boolean }
+  ) => Effect.Effect<void, ProfileNotFoundError | ProfileConfigError | ProfileSwitchError | ProfileBackupError | UnknownHarnessError | HarnessNotInstalledError>;
 
   /**
    * Get harnesses a profile is applied to
@@ -230,6 +238,28 @@ interface ProfileServiceImpl {
    * List all available harnesses with their status
    */
   readonly listHarnesses: () => Effect.Effect<Array<{ id: HarnessId; installed: boolean; configPath: string }>, never>;
+
+  /**
+   * Compare two profiles or a profile vs current harness config
+   */
+  readonly diff: (
+    profile1: string,
+    profile2?: string
+  ) => Effect.Effect<
+    { differences: ProfileDiffItem[]; identical: boolean },
+    ProfileNotFoundError | ProfileConfigError
+  >;
+
+  /**
+   * Compare a profile to current harness config
+   */
+  readonly diffWithHarness: (
+    profileName: string,
+    harnessId: HarnessId
+  ) => Effect.Effect<
+    { differences: ProfileDiffItem[]; identical: boolean },
+    ProfileNotFoundError | ProfileConfigError | UnknownHarnessError | HarnessNotInstalledError | ProfileExtractionError
+  >;
 }
 
 // Service tag
@@ -238,182 +268,466 @@ export class ProfileService extends Context.Tag("ProfileService")<
   ProfileServiceImpl
 >() {}
 
-// Service implementation
-const makeProfileService = (): ProfileServiceImpl => ({
-  list: () =>
-    Effect.gen(function* () {
-      const profilesDir = getProfilesDir();
-      const profileNames = yield* listDir(profilesDir);
+// Service implementation factory (uses Effect.gen for service dependencies)
+const makeProfileService = Effect.gen(function* () {
+  // Yield dependencies at service creation time
+  const extractor = yield* HarnessExtractor;
+  const applicator = yield* HarnessApplicator;
 
-      const items: ProfileListItem[] = [];
-      for (const name of profileNames) {
-        const profileResult = yield* readProfile(name).pipe(
-          Effect.map((profile) => ({
-            name: profile.metadata.name,
-            description: profile.metadata.description,
-            skillCount: profile.skills.length,
-            commandCount: profile.commands.length,
-            mcpServerCount: profile.mcpServers.length,
-            appliedTo: profile.metadata.appliedTo,
-            updated: profile.metadata.updated,
-          })),
-          Effect.catchAll(() => Effect.succeed(null))
-        );
+  return {
+    list: () =>
+      Effect.gen(function* () {
+        const profilesDir = getProfilesDir();
+        const profileNames = yield* listDir(profilesDir);
 
-        if (profileResult) {
-          items.push(profileResult);
+        const items: ProfileListItem[] = [];
+        for (const name of profileNames) {
+          const profileResult = yield* readProfile(name).pipe(
+            Effect.map((profile) => ({
+              name: profile.metadata.name,
+              description: profile.metadata.description,
+              skillCount: profile.skills.length,
+              commandCount: profile.commands.length,
+              mcpServerCount: profile.mcpServers.length,
+              appliedTo: profile.metadata.appliedTo,
+              updated: profile.metadata.updated,
+            })),
+            Effect.catchAll(() => Effect.succeed(null))
+          );
+
+          if (profileResult) {
+            items.push(profileResult);
+          }
         }
-      }
 
-      return items;
-    }),
+        return items;
+      }),
 
-  get: (name: string) => readProfile(name),
+    get: (name: string) => readProfile(name),
 
-  create: (name: string, options?: { description?: string; fromHarness?: HarnessId }) =>
-    Effect.gen(function* () {
-      // Validate profile name
-      if (!isValidProfileName(name)) {
-        return yield* Effect.fail(
-          new InvalidProfileNameError({
+    create: (name: string, options?: { description?: string; fromHarness?: HarnessId }) =>
+      Effect.gen(function* () {
+        // Validate profile name
+        if (!isValidProfileName(name)) {
+          return yield* Effect.fail(
+            new InvalidProfileNameError({
+              name,
+              reason: "Must be kebab-case: lowercase letters, numbers, and hyphens only",
+            })
+          );
+        }
+
+        // Check if profile already exists
+        const profilePath = getProfilePath(name);
+        const exists = yield* pathExists(profilePath);
+
+        if (exists) {
+          return yield* Effect.fail(
+            new ProfileAlreadyExistsError({ harnessId: "", profileName: name })
+          );
+        }
+
+        // Create profile - either from harness or empty
+        let profile: Profile;
+
+        if (options?.fromHarness) {
+          // Extract configuration from the harness using captured extractor
+          profile = yield* extractor.createProfile(
             name,
-            reason: "Must be kebab-case: lowercase letters, numbers, and hyphens only",
-          })
+            options.fromHarness,
+            options.description
+          );
+        } else {
+          profile = createEmptyProfile(name, options?.description);
+        }
+
+        yield* writeProfile(profile);
+        return profile;
+      }),
+
+    delete: (name: string) =>
+      Effect.gen(function* () {
+        const profilePath = getProfilePath(name);
+        const exists = yield* pathExists(profilePath);
+
+        if (!exists) {
+          return yield* Effect.fail(
+            new ProfileNotFoundError({ harnessId: "", profileName: name })
+          );
+        }
+
+        yield* Effect.promise(() => rm(profilePath, { recursive: true, force: true }));
+      }),
+
+    update: (name: string, updates: { description?: string; tags?: string[] }) =>
+      Effect.gen(function* () {
+        const profile = yield* readProfile(name);
+
+        const updatedProfile: Profile = {
+          ...profile,
+          metadata: {
+            ...profile.metadata,
+            description: updates.description ?? profile.metadata.description,
+            tags: updates.tags ?? profile.metadata.tags,
+            updated: new Date().toISOString(),
+          },
+        };
+
+        yield* writeProfile(updatedProfile);
+        return updatedProfile;
+      }),
+
+    apply: (name: string, harnesses: HarnessId[], options?: { skipBackup?: boolean }) =>
+      Effect.gen(function* () {
+        const profile = yield* readProfile(name);
+
+        // Apply to each harness
+        for (const harnessId of harnesses) {
+          yield* applicator.apply(name, harnessId, {
+            skipBackup: options?.skipBackup,
+            createMarker: true,
+          });
+        }
+
+        // Update profile metadata with applied harnesses
+        const newAppliedTo = [...new Set([...profile.metadata.appliedTo, ...harnesses])];
+
+        const updatedProfile: Profile = {
+          ...profile,
+          metadata: {
+            ...profile.metadata,
+            appliedTo: newAppliedTo as HarnessId[],
+            updated: new Date().toISOString(),
+          },
+        };
+
+        yield* writeProfile(updatedProfile);
+      }),
+
+    remove: (name: string, harnesses: HarnessId[], options?: { skipBackup?: boolean }) =>
+      Effect.gen(function* () {
+        const profile = yield* readProfile(name);
+
+        // Remove from each harness
+        for (const harnessId of harnesses) {
+          yield* applicator.remove(name, harnessId, {
+            skipBackup: options?.skipBackup,
+          });
+        }
+
+        // Remove harnesses from applied list
+        const newAppliedTo = profile.metadata.appliedTo.filter(
+          (h) => !harnesses.includes(h)
         );
-      }
 
-      // Check if profile already exists
-      const profilePath = getProfilePath(name);
-      const exists = yield* pathExists(profilePath);
+        const updatedProfile: Profile = {
+          ...profile,
+          metadata: {
+            ...profile.metadata,
+            appliedTo: newAppliedTo,
+            updated: new Date().toISOString(),
+          },
+        };
 
-      if (exists) {
-        return yield* Effect.fail(
-          new ProfileAlreadyExistsError({ harnessId: "", profileName: name })
-        );
-      }
+        yield* writeProfile(updatedProfile);
+      }),
 
-      // Create profile
-      const profile = createEmptyProfile(name, options?.description);
+    getAppliedHarnesses: (name: string) =>
+      Effect.gen(function* () {
+        const profile = yield* readProfile(name);
+        return [...profile.metadata.appliedTo];
+      }),
 
-      // If creating from a harness, we would extract config here
-      // For now, just create empty profile
-      if (options?.fromHarness) {
-        // Validate harness exists
-        yield* getHarnessConfigPath(options.fromHarness);
-        // TODO: Extract skills, commands, MCP servers from harness
-        // This will be implemented in grimoire-21f8
-      }
+    listHarnesses: () =>
+      Effect.gen(function* () {
+        const harnesses: Array<{ id: HarnessId; installed: boolean; configPath: string }> = [];
 
-      yield* writeProfile(profile);
-      return profile;
-    }),
+        for (const [id, configPath] of Object.entries(HARNESS_CONFIG_PATHS)) {
+          const resolvedPath = resolvePath(configPath);
+          const installed = yield* pathExists(resolvedPath);
+          harnesses.push({
+            id: id as HarnessId,
+            installed,
+            configPath: resolvedPath,
+          });
+        }
 
-  delete: (name: string) =>
-    Effect.gen(function* () {
-      const profilePath = getProfilePath(name);
-      const exists = yield* pathExists(profilePath);
+        return harnesses;
+      }),
 
-      if (!exists) {
-        return yield* Effect.fail(
-          new ProfileNotFoundError({ harnessId: "", profileName: name })
-        );
-      }
+    diff: (profile1Name: string, profile2Name?: string) =>
+      Effect.gen(function* () {
+        const p1 = yield* readProfile(profile1Name);
 
-      yield* Effect.promise(() => rm(profilePath, { recursive: true, force: true }));
-    }),
+        // If no second profile, return empty diff (profile vs itself)
+        if (!profile2Name) {
+          return { differences: [], identical: true };
+        }
 
-  update: (name: string, updates: { description?: string; tags?: string[] }) =>
-    Effect.gen(function* () {
-      const profile = yield* readProfile(name);
+        const p2 = yield* readProfile(profile2Name);
+        const differences: ProfileDiffItem[] = [];
 
-      const updatedProfile: Profile = {
-        ...profile,
-        metadata: {
-          ...profile.metadata,
-          description: updates.description ?? profile.metadata.description,
-          tags: updates.tags ?? profile.metadata.tags,
-          updated: new Date().toISOString(),
-        },
-      };
+        // Compare skills
+        const p1Skills = new Set(p1.skills);
+        const p2Skills = new Set(p2.skills);
 
-      yield* writeProfile(updatedProfile);
-      return updatedProfile;
-    }),
+        for (const skill of p1Skills) {
+          if (!p2Skills.has(skill)) {
+            differences.push({
+              category: "skill",
+              item: skill,
+              changeType: "removed",
+              details: `Only in ${profile1Name}`,
+            });
+          }
+        }
 
-  apply: (name: string, harnesses: HarnessId[]) =>
-    Effect.gen(function* () {
-      const profile = yield* readProfile(name);
+        for (const skill of p2Skills) {
+          if (!p1Skills.has(skill)) {
+            differences.push({
+              category: "skill",
+              item: skill,
+              changeType: "added",
+              details: `Only in ${profile2Name}`,
+            });
+          }
+        }
 
-      // Validate all harnesses exist
-      for (const harnessId of harnesses) {
-        yield* getHarnessConfigPath(harnessId);
-      }
+        // Compare commands
+        const p1Commands = new Set(p1.commands);
+        const p2Commands = new Set(p2.commands);
 
-      // Update profile metadata with applied harnesses
-      const newAppliedTo = [...new Set([...profile.metadata.appliedTo, ...harnesses])];
+        for (const cmd of p1Commands) {
+          if (!p2Commands.has(cmd)) {
+            differences.push({
+              category: "command",
+              item: cmd,
+              changeType: "removed",
+              details: `Only in ${profile1Name}`,
+            });
+          }
+        }
 
-      const updatedProfile: Profile = {
-        ...profile,
-        metadata: {
-          ...profile.metadata,
-          appliedTo: newAppliedTo as HarnessId[],
-          updated: new Date().toISOString(),
-        },
-      };
+        for (const cmd of p2Commands) {
+          if (!p1Commands.has(cmd)) {
+            differences.push({
+              category: "command",
+              item: cmd,
+              changeType: "added",
+              details: `Only in ${profile2Name}`,
+            });
+          }
+        }
 
-      yield* writeProfile(updatedProfile);
+        // Compare MCP servers
+        const p1McpNames = new Set(p1.mcpServers.map((s) => s.name));
+        const p2McpNames = new Set(p2.mcpServers.map((s) => s.name));
 
-      // TODO: Actually copy skills/commands/MCP to harness configs
-      // This will be implemented in grimoire-1k32
-    }),
+        for (const mcp of p1.mcpServers) {
+          if (!p2McpNames.has(mcp.name)) {
+            differences.push({
+              category: "mcp",
+              item: mcp.name,
+              changeType: "removed",
+              details: `Only in ${profile1Name}`,
+            });
+          } else {
+            // Check if enabled status differs
+            const p2Mcp = p2.mcpServers.find((s) => s.name === mcp.name);
+            if (p2Mcp && p2Mcp.enabled !== mcp.enabled) {
+              differences.push({
+                category: "mcp",
+                item: mcp.name,
+                changeType: "modified",
+                details: `${profile1Name}: ${mcp.enabled ? "enabled" : "disabled"}, ${profile2Name}: ${p2Mcp.enabled ? "enabled" : "disabled"}`,
+              });
+            }
+          }
+        }
 
-  remove: (name: string, harnesses: HarnessId[]) =>
-    Effect.gen(function* () {
-      const profile = yield* readProfile(name);
+        for (const mcp of p2.mcpServers) {
+          if (!p1McpNames.has(mcp.name)) {
+            differences.push({
+              category: "mcp",
+              item: mcp.name,
+              changeType: "added",
+              details: `Only in ${profile2Name}`,
+            });
+          }
+        }
 
-      // Remove harnesses from applied list
-      const newAppliedTo = profile.metadata.appliedTo.filter(
-        (h) => !harnesses.includes(h)
-      );
+        // Compare model preferences
+        const p1Model = p1.metadata.modelPreferences?.default;
+        const p2Model = p2.metadata.modelPreferences?.default;
 
-      const updatedProfile: Profile = {
-        ...profile,
-        metadata: {
-          ...profile.metadata,
-          appliedTo: newAppliedTo,
-          updated: new Date().toISOString(),
-        },
-      };
+        if (p1Model !== p2Model) {
+          differences.push({
+            category: "model",
+            item: "default",
+            changeType: "modified",
+            details: `${profile1Name}: ${p1Model || "(none)"}, ${profile2Name}: ${p2Model || "(none)"}`,
+          });
+        }
 
-      yield* writeProfile(updatedProfile);
+        // Compare theme
+        if (p1.metadata.theme !== p2.metadata.theme) {
+          differences.push({
+            category: "theme",
+            item: "theme",
+            changeType: "modified",
+            details: `${profile1Name}: ${p1.metadata.theme || "(none)"}, ${profile2Name}: ${p2.metadata.theme || "(none)"}`,
+          });
+        }
 
-      // TODO: Remove profile's skills/commands/MCP from harness configs
-      // This will be implemented in grimoire-1k32
-    }),
+        return { differences, identical: differences.length === 0 };
+      }),
 
-  getAppliedHarnesses: (name: string) =>
-    Effect.gen(function* () {
-      const profile = yield* readProfile(name);
-      return [...profile.metadata.appliedTo];
-    }),
+    diffWithHarness: (profileName: string, harnessId: HarnessId) =>
+      Effect.gen(function* () {
+        const profile = yield* readProfile(profileName);
 
-  listHarnesses: () =>
-    Effect.gen(function* () {
-      const harnesses: Array<{ id: HarnessId; installed: boolean; configPath: string }> = [];
+        // Extract current harness config
+        const harnessConfig = yield* extractor.extract(harnessId);
+        const differences: ProfileDiffItem[] = [];
 
-      for (const [id, configPath] of Object.entries(HARNESS_CONFIG_PATHS)) {
-        const resolvedPath = resolvePath(configPath);
-        const installed = yield* pathExists(resolvedPath);
-        harnesses.push({
-          id: id as HarnessId,
-          installed,
-          configPath: resolvedPath,
-        });
-      }
+        // Compare skills
+        const profileSkills = new Set(profile.skills);
+        const harnessSkills = new Set(harnessConfig.skills);
 
-      return harnesses;
-    }),
+        for (const skill of profileSkills) {
+          if (!harnessSkills.has(skill)) {
+            differences.push({
+              category: "skill",
+              item: skill,
+              changeType: "added",
+              details: `Would add from profile`,
+            });
+          }
+        }
+
+        for (const skill of harnessSkills) {
+          if (!profileSkills.has(skill)) {
+            differences.push({
+              category: "skill",
+              item: skill,
+              changeType: "removed",
+              details: `In harness but not in profile`,
+            });
+          }
+        }
+
+        // Compare commands
+        const profileCommands = new Set(profile.commands);
+        const harnessCommands = new Set(harnessConfig.commands);
+
+        for (const cmd of profileCommands) {
+          if (!harnessCommands.has(cmd)) {
+            differences.push({
+              category: "command",
+              item: cmd,
+              changeType: "added",
+              details: `Would add from profile`,
+            });
+          }
+        }
+
+        for (const cmd of harnessCommands) {
+          if (!profileCommands.has(cmd)) {
+            differences.push({
+              category: "command",
+              item: cmd,
+              changeType: "removed",
+              details: `In harness but not in profile`,
+            });
+          }
+        }
+
+        // Compare MCP servers
+        const profileMcpNames = new Set(profile.mcpServers.map((s) => s.name));
+        const harnessMcpNames = new Set(harnessConfig.mcpServers.map((s) => s.name));
+
+        for (const mcp of profile.mcpServers) {
+          if (!harnessMcpNames.has(mcp.name)) {
+            differences.push({
+              category: "mcp",
+              item: mcp.name,
+              changeType: "added",
+              details: `Would add from profile`,
+            });
+          }
+        }
+
+        for (const mcp of harnessConfig.mcpServers) {
+          if (!profileMcpNames.has(mcp.name)) {
+            differences.push({
+              category: "mcp",
+              item: mcp.name,
+              changeType: "removed",
+              details: `In harness but not in profile`,
+            });
+          }
+        }
+
+        // Compare model
+        const profileModel = profile.metadata.modelPreferences?.default;
+        const harnessModel = harnessConfig.model;
+
+        if (profileModel && harnessModel && profileModel !== harnessModel) {
+          differences.push({
+            category: "model",
+            item: "default",
+            changeType: "modified",
+            details: `Profile: ${profileModel}, Harness: ${harnessModel}`,
+          });
+        } else if (profileModel && !harnessModel) {
+          differences.push({
+            category: "model",
+            item: "default",
+            changeType: "added",
+            details: `Would set to ${profileModel}`,
+          });
+        } else if (!profileModel && harnessModel) {
+          differences.push({
+            category: "model",
+            item: "default",
+            changeType: "removed",
+            details: `Harness has ${harnessModel}`,
+          });
+        }
+
+        // Compare theme
+        const profileTheme = profile.metadata.theme;
+        const harnessTheme = harnessConfig.theme;
+
+        if (profileTheme !== harnessTheme) {
+          if (profileTheme && harnessTheme) {
+            differences.push({
+              category: "theme",
+              item: "theme",
+              changeType: "modified",
+              details: `Profile: ${profileTheme}, Harness: ${harnessTheme}`,
+            });
+          } else if (profileTheme) {
+            differences.push({
+              category: "theme",
+              item: "theme",
+              changeType: "added",
+              details: `Would set to ${profileTheme}`,
+            });
+          } else if (harnessTheme) {
+            differences.push({
+              category: "theme",
+              item: "theme",
+              changeType: "removed",
+              details: `Harness has ${harnessTheme}`,
+            });
+          }
+        }
+
+        return { differences, identical: differences.length === 0 };
+      }),
+  } satisfies ProfileServiceImpl;
 });
 
-// Live layer
-export const ProfileServiceLive = Layer.succeed(ProfileService, makeProfileService());
+// Live layer - uses Layer.effect since service creation is effectful
+export const ProfileServiceLive = Layer.effect(ProfileService, makeProfileService);
