@@ -9,7 +9,7 @@
  * Also handles common patterns like skills/ subfolder.
  */
 
-import { Context, Effect, Layer, Data } from "effect";
+import { Context, Effect, Layer, Data, Ref } from "effect";
 import * as yaml from "js-yaml";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -39,49 +39,56 @@ interface FileEntry {
 
 /**
  * Run a shell command and return stdout
+ * Uses Ref for immutable state accumulation instead of mutable variables
  */
 const runCommand = (
   cmd: string,
   args: string[],
   cwd?: string
 ): Effect.Effect<string, SourceAnalyzerError> =>
-  Effect.async((resume) => {
-    const proc = spawn(cmd, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
+  Effect.gen(function* () {
+    const stdoutRef = yield* Ref.make("");
+    const stderrRef = yield* Ref.make("");
 
-    proc.stdout?.on("data", (data) => {
-      stdout += data.toString();
-    });
-    proc.stderr?.on("data", (data) => {
-      stderr += data.toString();
-    });
+    return yield* Effect.async<string, SourceAnalyzerError>((resume) => {
+      const proc = spawn(cmd, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
 
-    proc.on("close", (code) => {
-      if (code === 0) {
-        resume(Effect.succeed(stdout));
-      } else {
+      proc.stdout?.on("data", (data) => {
+        Effect.runSync(Ref.update(stdoutRef, (s) => s + data.toString()));
+      });
+      proc.stderr?.on("data", (data) => {
+        Effect.runSync(Ref.update(stderrRef, (s) => s + data.toString()));
+      });
+
+      proc.on("close", (code) => {
+        const stdout = Effect.runSync(Ref.get(stdoutRef));
+        const stderr = Effect.runSync(Ref.get(stderrRef));
+
+        if (code === 0) {
+          resume(Effect.succeed(stdout));
+        } else {
+          resume(
+            Effect.fail(
+              new SourceAnalyzerError({
+                source: cmd,
+                message: `Command failed with code ${code}: ${stderr || stdout}`,
+              })
+            )
+          );
+        }
+      });
+
+      proc.on("error", (error) => {
         resume(
           Effect.fail(
             new SourceAnalyzerError({
               source: cmd,
-              message: `Command failed with code ${code}: ${stderr || stdout}`,
+              message: `Failed to spawn command: ${error.message}`,
+              cause: error,
             })
           )
         );
-      }
-    });
-
-    proc.on("error", (error) => {
-      resume(
-        Effect.fail(
-          new SourceAnalyzerError({
-            source: cmd,
-            message: `Failed to spawn command: ${error.message}`,
-            cause: error,
-          })
-        )
-      );
+      });
     });
   });
 
