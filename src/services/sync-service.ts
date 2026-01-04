@@ -95,17 +95,11 @@ export const SyncLive = Layer.effect(
     return SyncService.of({
       fullSync: () =>
         Effect.gen(function* () {
-          const result: SyncResult = {
-            filesScanned: 0,
-            filesUpdated: 0,
-            filesCreated: 0,
-            filesRemoved: 0,
-            errors: [],
-          };
+          // Concurrency limit for parallel file operations
+          const CONCURRENCY_LIMIT = 10;
 
           // Step 1: Get all files from filesystem
           const filePaths = yield* storage.listPrompts();
-          result.filesScanned = filePaths.length;
 
           // Step 2: Get all prompts from database
           const dbPrompts = yield* sql.query<PromptRow>(
@@ -118,9 +112,16 @@ export const SyncLive = Layer.effect(
           // Create a set of file paths that exist on disk
           const filePathSet = new Set(filePaths);
 
-          // Step 3: Process each file
-          for (const filePath of filePaths) {
-            try {
+          // Result type for individual file sync operations
+          type FileSyncResult =
+            | { readonly _tag: "created" }
+            | { readonly _tag: "updated" }
+            | { readonly _tag: "unchanged" }
+            | { readonly _tag: "error"; readonly message: string };
+
+          // Step 3: Process each file in parallel with concurrency limit
+          const syncSingleFile = (filePath: string): Effect.Effect<FileSyncResult, never> =>
+            Effect.gen(function* () {
               // Read and parse the file
               const parsed = yield* storage.readPrompt(filePath);
               const { frontmatter, content } = parsed;
@@ -180,7 +181,7 @@ export const SyncLive = Layer.effect(
                   }
                 }
 
-                result.filesCreated++;
+                return { _tag: "created" } as const;
               } else if (dbPrompt.content_hash !== hash) {
                 // File exists and is in database, but hash doesn't match - update it
                 yield* sql.run(
@@ -228,33 +229,73 @@ export const SyncLive = Layer.effect(
                   }
                 }
 
-                result.filesUpdated++;
+                return { _tag: "updated" } as const;
               }
-              // else: hash matches, no update needed
-            } catch (error) {
-              // Record error but continue processing other files
-              const errorMsg = error instanceof Error ? error.message : String(error);
-              result.errors.push(`Failed to sync ${basename(filePath)}: ${errorMsg}`);
-            }
-          }
+              // Hash matches, no update needed
+              return { _tag: "unchanged" } as const;
+            }).pipe(
+              Effect.catchAll((error) =>
+                Effect.succeed({
+                  _tag: "error",
+                  message: `Failed to sync ${basename(filePath)}: ${error instanceof Error ? error.message : String(error)}`,
+                } as const)
+              )
+            );
+
+          // Execute all file syncs in parallel with concurrency limit
+          const fileSyncResults = yield* Effect.all(
+            filePaths.map(syncSingleFile),
+            { concurrency: CONCURRENCY_LIMIT }
+          );
+
+          // Result type for orphan removal operations
+          type RemovalResult =
+            | { readonly _tag: "removed" }
+            | { readonly _tag: "error"; readonly message: string };
 
           // Step 4: Remove database records for files that no longer exist
-          for (const dbPrompt of dbPrompts) {
-            if (!filePathSet.has(dbPrompt.file_path)) {
-              try {
-                // Delete from FTS index first
-                yield* sql.run(`DELETE FROM prompts_fts WHERE prompt_id = ?`, [dbPrompt.id]);
-                // Delete from prompts table
-                yield* sql.run(`DELETE FROM prompts WHERE id = ?`, [dbPrompt.id]);
-                result.filesRemoved++;
-              } catch (error) {
-                const errorMsg = error instanceof Error ? error.message : String(error);
-                result.errors.push(`Failed to remove ${dbPrompt.id}: ${errorMsg}`);
-              }
-            }
-          }
+          const orphanedPrompts = dbPrompts.filter((p) => !filePathSet.has(p.file_path));
 
-          return result;
+          const removeOrphan = (dbPrompt: PromptRow): Effect.Effect<RemovalResult, never> =>
+            Effect.gen(function* () {
+              // Delete from FTS index first
+              yield* sql.run(`DELETE FROM prompts_fts WHERE prompt_id = ?`, [dbPrompt.id]);
+              // Delete from prompts table
+              yield* sql.run(`DELETE FROM prompts WHERE id = ?`, [dbPrompt.id]);
+              return { _tag: "removed" } as const;
+            }).pipe(
+              Effect.catchAll((error) =>
+                Effect.succeed({
+                  _tag: "error",
+                  message: `Failed to remove ${dbPrompt.id}: ${error instanceof Error ? error.message : String(error)}`,
+                } as const)
+              )
+            );
+
+          // Execute all orphan removals in parallel with concurrency limit
+          const removalResults = yield* Effect.all(
+            orphanedPrompts.map(removeOrphan),
+            { concurrency: CONCURRENCY_LIMIT }
+          );
+
+          // Aggregate results immutably
+          const filesCreated = fileSyncResults.filter((r) => r._tag === "created").length;
+          const filesUpdated = fileSyncResults.filter((r) => r._tag === "updated").length;
+          const filesRemoved = removalResults.filter((r) => r._tag === "removed").length;
+          const fileErrors = fileSyncResults
+            .filter((r): r is { readonly _tag: "error"; readonly message: string } => r._tag === "error")
+            .map((r) => r.message);
+          const removalErrors = removalResults
+            .filter((r): r is { readonly _tag: "error"; readonly message: string } => r._tag === "error")
+            .map((r) => r.message);
+
+          return {
+            filesScanned: filePaths.length,
+            filesUpdated,
+            filesCreated,
+            filesRemoved,
+            errors: [...fileErrors, ...removalErrors],
+          };
         }),
 
       syncFile: (path: string) =>
