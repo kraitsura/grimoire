@@ -414,23 +414,21 @@ export const createMockArchiveService = (
   archived: ArchivedPrompt[] = []
 ): typeof ArchiveService.Service => ({
   list: () => Effect.succeed(archived),
-  restore: (id: string) => {
-    const idx = archived.findIndex((a) => a.id === id);
-    if (idx >= 0) {
-      const [item] = archived.splice(idx, 1);
-      return Effect.succeed(createTestPrompt({ id: item.id, name: item.name }));
+  add: (_promptNames: string[]) => Effect.succeed(_promptNames.length),
+  restore: (promptNames: string[]) => {
+    let restoredCount = 0;
+    for (const name of promptNames) {
+      const idx = archived.findIndex((a) => a.id === name || a.name === name);
+      if (idx >= 0) {
+        archived.splice(idx, 1);
+        restoredCount++;
+      } else {
+        return Effect.fail(new PromptNotFoundError({ id: name }));
+      }
     }
-    return Effect.fail(new PromptNotFoundError({ id }));
+    return Effect.succeed(restoredCount);
   },
-  delete: (id: string) => {
-    const idx = archived.findIndex((a) => a.id === id);
-    if (idx >= 0) {
-      archived.splice(idx, 1);
-      return Effect.void;
-    }
-    return Effect.fail(new PromptNotFoundError({ id }));
-  },
-  clear: () => {
+  purge: (_olderThan?: Date) => {
     const count = archived.length;
     archived.length = 0;
     return Effect.succeed(count);
@@ -471,32 +469,33 @@ export const createMockStatsService = (): typeof StatsService.Service => ({
 export const createMockAliasService = (
   aliases: Map<string, Alias> = new Map()
 ): typeof AliasService.Service => ({
-  create: (name, command) => {
-    const alias: Alias = { name, command, createdAt: new Date() };
+  createAlias: (name: string, command: string, args: string[], description?: string) => {
+    const alias: Alias = { name, command, args, description, createdAt: new Date() };
     aliases.set(name, alias);
     return Effect.succeed(alias);
   },
-  get: (name) => {
+  getAlias: (name: string) => {
     const alias = aliases.get(name);
     if (!alias) {
       return Effect.fail(new AliasNotFoundError({ name }));
     }
     return Effect.succeed(alias);
   },
-  list: () => Effect.succeed(Array.from(aliases.values())),
-  delete: (name) => {
+  listAliases: () => Effect.succeed(Array.from(aliases.values())),
+  removeAlias: (name: string) => {
     if (!aliases.has(name)) {
       return Effect.fail(new AliasNotFoundError({ name }));
     }
     aliases.delete(name);
     return Effect.void;
   },
-  expand: (name) => {
-    const alias = aliases.get(name);
+  resolveAlias: (input: string[]) => {
+    const aliasName = input[0];
+    const alias = aliases.get(aliasName);
     if (!alias) {
-      return Effect.fail(new AliasNotFoundError({ name }));
+      return Effect.succeed(input);
     }
-    return Effect.succeed(alias.command);
+    return Effect.succeed([alias.command, ...alias.args, ...input.slice(1)]);
   },
 });
 
@@ -642,6 +641,38 @@ export const createMockRemoteSyncService = (): typeof RemoteSyncService.Service 
 });
 
 // ============================================================================
+// Mock Retention Service
+// ============================================================================
+
+import { RetentionService, type CleanupResult, type CleanupPreview, type RetentionConfig } from "../../src/services/retention-service";
+
+export const createMockRetentionService = (): typeof RetentionService.Service => ({
+  cleanupVersions: (_promptId: string) => Effect.succeed(0),
+  cleanupAll: (): Effect.Effect<CleanupResult, any> =>
+    Effect.succeed({
+      totalVersionsDeleted: 0,
+      promptsAffected: 0,
+      deletedVersions: [],
+    }),
+  previewCleanup: (): Effect.Effect<CleanupPreview, any> =>
+    Effect.succeed({
+      totalVersionsToDelete: 0,
+      promptsAffected: 0,
+      versionsToDelete: [],
+    }),
+  tagVersion: (_promptId: string, _version: number, _tag: string) => Effect.void,
+  untagVersion: (_promptId: string, _version: number) => Effect.void,
+  getTaggedVersions: (_promptId: string) => Effect.succeed([]),
+  getConfig: (): Effect.Effect<RetentionConfig, any> =>
+    Effect.succeed({
+      maxVersionsPerPrompt: 50,
+      maxAgeInDays: 90,
+      keepTaggedVersions: true,
+    }),
+  updateConfig: (_config: Partial<RetentionConfig>) => Effect.void,
+});
+
+// ============================================================================
 // Layer Factories
 // ============================================================================
 
@@ -670,6 +701,7 @@ export const createTestLayer = (options?: {
   favorites?: typeof FavoriteService.Service;
   pins?: typeof PinService.Service;
   remoteSync?: typeof RemoteSyncService.Service;
+  retention?: typeof RetentionService.Service;
 }) => {
   return Layer.mergeAll(
     Layer.succeed(StorageService, options?.storage ?? createMockStorageService()),
@@ -692,7 +724,8 @@ export const createTestLayer = (options?: {
     Layer.succeed(EnhancementService, options?.enhancement ?? createMockEnhancementService()),
     Layer.succeed(FavoriteService, options?.favorites ?? createMockFavoriteService()),
     Layer.succeed(PinService, options?.pins ?? createMockPinService()),
-    Layer.succeed(RemoteSyncService, options?.remoteSync ?? createMockRemoteSyncService())
+    Layer.succeed(RemoteSyncService, options?.remoteSync ?? createMockRemoteSyncService()),
+    Layer.succeed(RetentionService, options?.retention ?? createMockRetentionService())
   );
 };
 

@@ -66,7 +66,7 @@ describe("pl archive command", () => {
     const TestLayer = createTestLayer({ archive });
 
     const args = createParsedArgs({
-      positional: ["restore", "restore-test"],
+      positional: ["restore", "to-restore"],
     });
 
     await Effect.runPromise(archiveCommand(args).pipe(Effect.provide(TestLayer)));
@@ -89,19 +89,20 @@ describe("pl archive command", () => {
 
     await Effect.runPromise(archiveCommand(args).pipe(Effect.provide(TestLayer)));
 
+    expect(archived.length).toBe(0);
     const logs = console$.getLogs();
     expect(logs.length).toBeGreaterThan(0);
   });
 
-  it("should permanently delete archived prompt", async () => {
+  it("should purge old archived prompts", async () => {
     const archived: ArchivedPrompt[] = [
-      { id: "delete-test", name: "to-delete", archivedAt: new Date(), originalPath: "/path" },
+      { id: "purge-test", name: "to-purge", archivedAt: new Date(), originalPath: "/path" },
     ];
     const archive = createMockArchiveService(archived);
     const TestLayer = createTestLayer({ archive });
 
     const args = createParsedArgs({
-      positional: ["delete", "delete-test"],
+      positional: ["purge"],
       flags: { yes: true },
     });
 
@@ -109,28 +110,28 @@ describe("pl archive command", () => {
 
     expect(archived.length).toBe(0);
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Deleted") || l.includes("permanently"))).toBe(true);
+    expect(logs.some((l) => l.includes("Purged") || l.includes("1"))).toBe(true);
   });
 
-  it("should clear all archived prompts", async () => {
+  it("should purge all archived prompts with --older-than", async () => {
     const archived: ArchivedPrompt[] = [
-      { id: "clear-1", name: "clear-prompt-1", archivedAt: new Date(), originalPath: "/path" },
-      { id: "clear-2", name: "clear-prompt-2", archivedAt: new Date(), originalPath: "/path" },
-      { id: "clear-3", name: "clear-prompt-3", archivedAt: new Date(), originalPath: "/path" },
+      { id: "purge-1", name: "purge-prompt-1", archivedAt: new Date(), originalPath: "/path" },
+      { id: "purge-2", name: "purge-prompt-2", archivedAt: new Date(), originalPath: "/path" },
+      { id: "purge-3", name: "purge-prompt-3", archivedAt: new Date(), originalPath: "/path" },
     ];
     const archive = createMockArchiveService(archived);
     const TestLayer = createTestLayer({ archive });
 
     const args = createParsedArgs({
-      positional: ["clear"],
-      flags: { yes: true },
+      positional: ["purge"],
+      flags: { yes: true, "older-than": "30d" },
     });
 
     await Effect.runPromise(archiveCommand(args).pipe(Effect.provide(TestLayer)));
 
     expect(archived.length).toBe(0);
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Cleared") || l.includes("3"))).toBe(true);
+    expect(logs.some((l) => l.includes("Purged") || l.includes("3"))).toBe(true);
   });
 
   it("should show usage when no subcommand provided", async () => {
@@ -152,7 +153,7 @@ describe("pl archive command", () => {
     const TestLayer = createTestLayer({ archive });
 
     const args = createParsedArgs({
-      positional: ["delete", "y-test"],
+      positional: ["purge"],
       flags: { y: true },
     });
 

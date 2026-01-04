@@ -1,5 +1,10 @@
 /**
  * Tests for pl alias command
+ *
+ * The alias command manages command shortcuts:
+ *   grimoire alias <name> <command>   # Create alias
+ *   grimoire alias --list             # List all aliases
+ *   grimoire alias --remove <name>    # Remove alias
  */
 
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
@@ -31,27 +36,28 @@ describe("pl alias command", () => {
     const TestLayer = createTestLayer({ alias });
 
     const args = createParsedArgs({
-      positional: ["add", "myalias", "copy my-prompt"],
+      positional: ["cp", "copy", "my-prompt"],
     });
 
     await Effect.runPromise(aliasCommand(args).pipe(Effect.provide(TestLayer)));
 
-    expect(aliases.has("myalias")).toBe(true);
-    expect(aliases.get("myalias")?.command).toBe("copy my-prompt");
+    expect(aliases.has("cp")).toBe(true);
+    expect(aliases.get("cp")?.command).toBe("copy");
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Created alias") || l.includes("myalias"))).toBe(true);
+    expect(logs.some((l) => l.includes("created") || l.includes("cp"))).toBe(true);
   });
 
-  it("should list all aliases", async () => {
+  it("should list all aliases with --list flag", async () => {
     const aliases = new Map<string, Alias>([
-      ["alias1", { name: "alias1", command: "copy prompt1", createdAt: new Date() }],
-      ["alias2", { name: "alias2", command: "show prompt2", createdAt: new Date() }],
+      ["alias1", { name: "alias1", command: "copy", args: ["prompt1"], createdAt: new Date() }],
+      ["alias2", { name: "alias2", command: "show", args: ["prompt2"], createdAt: new Date() }],
     ]);
     const alias = createMockAliasService(aliases);
     const TestLayer = createTestLayer({ alias });
 
     const args = createParsedArgs({
-      positional: ["list"],
+      positional: [],
+      flags: { list: true },
     });
 
     await Effect.runPromise(aliasCommand(args).pipe(Effect.provide(TestLayer)));
@@ -67,68 +73,36 @@ describe("pl alias command", () => {
     const TestLayer = createTestLayer({ alias });
 
     const args = createParsedArgs({
-      positional: ["list"],
+      positional: [],
+      flags: { list: true },
     });
 
     await Effect.runPromise(aliasCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("No aliases") || l.includes("empty"))).toBe(true);
+    expect(logs.some((l) => l.includes("No aliases"))).toBe(true);
   });
 
-  it("should delete an alias", async () => {
+  it("should remove an alias with --remove flag", async () => {
     const aliases = new Map<string, Alias>([
-      ["todelete", { name: "todelete", command: "some command", createdAt: new Date() }],
+      ["todelete", { name: "todelete", command: "some", args: ["command"], createdAt: new Date() }],
     ]);
     const alias = createMockAliasService(aliases);
     const TestLayer = createTestLayer({ alias });
 
     const args = createParsedArgs({
-      positional: ["remove", "todelete"],
+      positional: ["todelete"],
+      flags: { remove: true },
     });
 
     await Effect.runPromise(aliasCommand(args).pipe(Effect.provide(TestLayer)));
 
     expect(aliases.has("todelete")).toBe(false);
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Removed") || l.includes("Deleted"))).toBe(true);
+    expect(logs.some((l) => l.includes("removed") || l.includes("todelete"))).toBe(true);
   });
 
-  it("should handle delete of non-existent alias", async () => {
-    const aliases = new Map<string, Alias>();
-    const alias = createMockAliasService(aliases);
-    const TestLayer = createTestLayer({ alias });
-
-    const args = createParsedArgs({
-      positional: ["remove", "nonexistent"],
-    });
-
-    const result = await Effect.runPromiseExit(
-      aliasCommand(args).pipe(Effect.provide(TestLayer))
-    );
-
-    expect(result._tag).toBe("Failure");
-  });
-
-  it("should show alias details with show subcommand", async () => {
-    const aliases = new Map<string, Alias>([
-      ["myalias", { name: "myalias", command: "copy my-prompt -v name=test", createdAt: new Date() }],
-    ]);
-    const alias = createMockAliasService(aliases);
-    const TestLayer = createTestLayer({ alias });
-
-    const args = createParsedArgs({
-      positional: ["show", "myalias"],
-    });
-
-    await Effect.runPromise(aliasCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("myalias"))).toBe(true);
-    expect(logs.some((l) => l.includes("copy my-prompt"))).toBe(true);
-  });
-
-  it("should show usage when no subcommand provided", async () => {
+  it("should show usage when no arguments provided", async () => {
     const TestLayer = createTestLayer();
 
     const args = createParsedArgs({ positional: [] });
@@ -136,28 +110,17 @@ describe("pl alias command", () => {
     await Effect.runPromise(aliasCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Usage") || l.includes("Subcommands"))).toBe(true);
+    expect(logs.some((l) => l.includes("Usage"))).toBe(true);
   });
 
-  it("should show usage for add without arguments", async () => {
+  it("should show usage when only name provided without command", async () => {
     const TestLayer = createTestLayer();
 
-    const args = createParsedArgs({ positional: ["add"] });
+    const args = createParsedArgs({ positional: ["myalias"] });
 
     await Effect.runPromise(aliasCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
     expect(logs.some((l) => l.includes("Usage"))).toBe(true);
-  });
-
-  it("should handle unknown subcommand", async () => {
-    const TestLayer = createTestLayer();
-
-    const args = createParsedArgs({ positional: ["unknown"] });
-
-    await Effect.runPromise(aliasCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Unknown") || l.includes("subcommand"))).toBe(true);
   });
 });
