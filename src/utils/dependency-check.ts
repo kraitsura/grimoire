@@ -66,13 +66,6 @@ export function isInstalled(dep: Dependency): boolean {
 }
 
 /**
- * Get dependency info
- */
-export function getDependencyInfo(dep: Dependency): DependencyInfo {
-  return DEPENDENCIES[dep];
-}
-
-/**
  * Check if dependency is installed, exit with helpful message if not
  */
 export function requireDependency(dep: Dependency, feature: string): void {
