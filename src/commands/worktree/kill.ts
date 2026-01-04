@@ -87,7 +87,7 @@ export const worktreeKill = (args: ParsedArgs) =>
     if (session.tmuxWindow) {
       yield* Effect.tryPromise({
         try: async () => {
-          const tmux = Bun.spawn(["tmux", "kill-window", "-t", session.tmuxWindow], {
+          const tmux = Bun.spawn(["tmux", "kill-window", "-t", session.tmuxWindow!], {
             stdout: "ignore",
             stderr: "ignore",
           });

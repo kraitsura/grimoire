@@ -113,7 +113,7 @@ const main = async () => {
           process.exit(1);
         })
       )
-    )
+    ) as Effect.Effect<void>
   ).catch((error: unknown) => {
     // Handle unhandled errors gracefully
     if (error && typeof error === "object") {

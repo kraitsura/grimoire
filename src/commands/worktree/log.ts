@@ -68,7 +68,8 @@ export const worktreeLog = (args: ParsedArgs) =>
       // View agent session output: grimoire wt logs [name] [-f] [-n N]
       const name = args.positional[1] || detectCurrentWorktree(cwd);
       const follow = args.flags.f === true || args.flags.follow === true;
-      const numLines = (args.flags.n as number) || (args.flags.lines as number) || 50;
+      const numLines = (typeof args.flags.n === "number" ? args.flags.n : undefined) ||
+                       (typeof args.flags.lines === "number" ? args.flags.lines : undefined) || 50;
 
       if (!name) {
         console.error("Error: Specify worktree name or run from within a worktree");

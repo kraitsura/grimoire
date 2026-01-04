@@ -155,6 +155,13 @@ interface AgentSessionServiceImpl {
   ) => Effect.Effect<AgentSession | null, Error>;
 
   /**
+   * List all sessions in worktrees under the given directory
+   */
+  readonly listSessions: (
+    baseDir: string
+  ) => Effect.Effect<AgentSession[], Error>;
+
+  /**
    * Check if a PID is still running
    */
   readonly isPidAlive: (pid: number) => boolean;
@@ -383,6 +390,43 @@ const makeAgentSessionService = (): AgentSessionServiceImpl => ({
       }
 
       return parsed;
+    }),
+
+  listSessions: (baseDir: string) =>
+    Effect.gen(function* () {
+      const sessions: AgentSession[] = [];
+
+      // Find all .grim/session.json files under baseDir
+      const { glob } = yield* Effect.promise(() => import("glob"));
+      const pattern = join(baseDir, "**", WORKTREE_METADATA_DIR, SESSION_FILE_NAME);
+
+      const sessionFiles = yield* Effect.tryPromise({
+        try: () => glob(pattern, { absolute: true }),
+        catch: (error) =>
+          new Error(`Failed to find session files: ${error instanceof Error ? error.message : String(error)}`),
+      });
+
+      for (const sessionPath of sessionFiles) {
+        const file = Bun.file(sessionPath);
+        const exists = yield* Effect.promise(() => file.exists());
+        if (!exists) continue;
+
+        const content = yield* Effect.tryPromise({
+          try: () => file.text(),
+          catch: () => new Error("Failed to read session file"),
+        }).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+        if (!content) continue;
+
+        try {
+          const session = JSON.parse(content) as AgentSession;
+          sessions.push(session);
+        } catch {
+          // Skip invalid session files
+        }
+      }
+
+      return sessions;
     }),
 
   isPidAlive: isProcessAlive,

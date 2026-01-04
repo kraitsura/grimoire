@@ -471,7 +471,7 @@ export const scoutCommand = (args: ParsedArgs) =>
         yield* spawnScout(projectPath, name, question, {
           depth: args.flags.depth as ScoutDepth | undefined,
           focus: args.flags.focus as string | undefined,
-          timeout: args.flags.timeout as number | undefined,
+          timeout: typeof args.flags.timeout === "number" ? args.flags.timeout : undefined,
           model: args.flags.model as string | undefined,
         });
         break;

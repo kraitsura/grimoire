@@ -210,18 +210,6 @@ export const worktreePr = (args: ParsedArgs) =>
       console.log("+ Pull request created!");
       console.log(`  ${prUrl}`);
 
-      // Log PR creation in worktree state
-      if (worktreeName) {
-        const now = new Date().toISOString();
-
-        yield* stateService.addLog(repoRoot, worktreeName, {
-          time: now,
-          message: `Created PR: ${prUrl}`,
-          author: "user",
-          type: "log",
-        });
-      }
-
       return;
     } catch (error) {
       console.error();
