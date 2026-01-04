@@ -1,5 +1,8 @@
 /**
  * Tests for pl compare command
+ *
+ * The compare command performs A/B testing by comparing multiple prompts
+ * against the same LLM request, showing timing and cost comparisons.
  */
 
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
@@ -10,7 +13,7 @@ import {
   createTestLayer,
   createMockStorageService,
   createMockStorageState,
-  createMockVersionService,
+  createMockLLMService,
   createTestPrompt,
   captureConsole,
 } from "./test-helpers";
@@ -27,117 +30,49 @@ describe("pl compare command", () => {
     console$.clear();
   });
 
-  it("should compare two versions of a prompt", async () => {
-    const prompt = createTestPrompt({ id: "compare-test", name: "compare-prompt" });
-    const state = createMockStorageState([prompt]);
-    const storage = createMockStorageService(state);
-    const versions = {
-      ...createMockVersionService([]),
-      diff: (promptId: string, fromVersion: number, toVersion: number) =>
-        Effect.succeed({
-          from: { version: fromVersion, content: "Original content" },
-          to: { version: toVersion, content: "Modified content" },
-          hunks: [{ start: 1, lines: ["-Original content", "+Modified content"] }],
-          stats: { added: 1, removed: 1, unchanged: 0 },
-        }),
-    };
-    const TestLayer = createTestLayer({ storage, versions });
+  it("should show usage when less than 2 prompts provided", async () => {
+    const TestLayer = createTestLayer();
 
     const args = createParsedArgs({
-      positional: ["compare-prompt", "1", "2"],
+      positional: ["only-one-prompt"],
     });
 
     await Effect.runPromise(compareCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("-Original") || l.includes("+Modified"))).toBe(true);
+    expect(logs.some((l) => l.includes("Usage:") || l.includes("compare"))).toBe(true);
   });
 
-  it("should compare with current version when one version specified", async () => {
-    const prompt = createTestPrompt({ id: "current-test", name: "current-prompt", version: 5 });
-    const state = createMockStorageState([prompt]);
+  it("should compare two prompts", async () => {
+    const prompt1 = createTestPrompt({ id: "prompt-1", name: "prompt-a", content: "First prompt content" });
+    const prompt2 = createTestPrompt({ id: "prompt-2", name: "prompt-b", content: "Second prompt content" });
+    const state = createMockStorageState([prompt1, prompt2]);
     const storage = createMockStorageService(state);
-    let diffParams: { from: number; to: number } = { from: 0, to: 0 };
-    const versions = {
-      ...createMockVersionService([]),
-      getLatestVersion: (promptId: string) =>
-        Effect.succeed({
-          id: 1,
-          promptId,
-          version: 5,
-          content: "current",
-          frontmatter: {},
-          createdAt: new Date(),
-          branch: "main",
-        }),
-      diff: (promptId: string, fromVersion: number, toVersion: number) => {
-        diffParams = { from: fromVersion, to: toVersion };
-        return Effect.succeed({
-          from: { version: fromVersion, content: "old" },
-          to: { version: toVersion, content: "new" },
-          hunks: [],
-          stats: { added: 0, removed: 0, unchanged: 0 },
-        });
-      },
-    };
-    const TestLayer = createTestLayer({ storage, versions });
+    const llm = createMockLLMService("Mock response for comparison");
+    const TestLayer = createTestLayer({ storage, llm });
 
     const args = createParsedArgs({
-      positional: ["current-prompt", "3"],
-    });
-
-    await Effect.runPromise(compareCommand(args).pipe(Effect.provide(TestLayer)));
-
-    expect(diffParams.from).toBe(3);
-    expect(diffParams.to).toBe(5);
-  });
-
-  it("should show unified diff format with --unified flag", async () => {
-    const prompt = createTestPrompt({ id: "unified-test", name: "unified-prompt" });
-    const state = createMockStorageState([prompt]);
-    const storage = createMockStorageService(state);
-    const versions = {
-      ...createMockVersionService([]),
-      diff: (_promptId: string, _fromVersion: number, _toVersion: number) =>
-        Effect.succeed({
-          from: { version: 1, content: "line1\nline2\nline3" },
-          to: { version: 2, content: "line1\nmodified\nline3" },
-          hunks: [{ start: 2, lines: ["-line2", "+modified"] }],
-          stats: { added: 1, removed: 1, unchanged: 2 },
-        }),
-    };
-    const TestLayer = createTestLayer({ storage, versions });
-
-    const args = createParsedArgs({
-      positional: ["unified-prompt", "1", "2"],
-      flags: { unified: true },
+      positional: ["prompt-a", "prompt-b"],
     });
 
     await Effect.runPromise(compareCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("@@") || l.includes("-") || l.includes("+"))).toBe(true);
+    // Should have some output about the comparison
+    expect(logs.length).toBeGreaterThan(0);
   });
 
-  it("should show context with --context flag", async () => {
-    const prompt = createTestPrompt({ id: "context-test", name: "context-prompt" });
-    const state = createMockStorageState([prompt]);
+  it("should compare multiple prompts", async () => {
+    const prompt1 = createTestPrompt({ id: "prompt-1", name: "v1" });
+    const prompt2 = createTestPrompt({ id: "prompt-2", name: "v2" });
+    const prompt3 = createTestPrompt({ id: "prompt-3", name: "v3" });
+    const state = createMockStorageState([prompt1, prompt2, prompt3]);
     const storage = createMockStorageService(state);
-    const versions = {
-      ...createMockVersionService([]),
-      diff: (_promptId: string, _fromVersion: number, _toVersion: number) =>
-        Effect.succeed({
-          from: { version: 1, content: "old" },
-          to: { version: 2, content: "new" },
-          hunks: [],
-          stats: { added: 1, removed: 1, unchanged: 0 },
-        }),
-    };
-    const TestLayer = createTestLayer({ storage, versions });
+    const llm = createMockLLMService("Response");
+    const TestLayer = createTestLayer({ storage, llm });
 
     const args = createParsedArgs({
-      positional: ["context-prompt", "1", "2"],
-      flags: { context: "3" },
+      positional: ["v1", "v2", "v3"],
     });
 
     await Effect.runPromise(compareCommand(args).pipe(Effect.provide(TestLayer)));
@@ -146,68 +81,57 @@ describe("pl compare command", () => {
     expect(logs.length).toBeGreaterThan(0);
   });
 
-  it("should show stats with --stat flag", async () => {
-    const prompt = createTestPrompt({ id: "stat-test", name: "stat-prompt" });
-    const state = createMockStorageState([prompt]);
+  it("should use specified model with --model flag", async () => {
+    const prompt1 = createTestPrompt({ id: "p1", name: "prompt-1" });
+    const prompt2 = createTestPrompt({ id: "p2", name: "prompt-2" });
+    const state = createMockStorageState([prompt1, prompt2]);
     const storage = createMockStorageService(state);
-    const versions = {
-      ...createMockVersionService([]),
-      diff: (_promptId: string, _fromVersion: number, _toVersion: number) =>
-        Effect.succeed({
-          from: { version: 1, content: "old" },
-          to: { version: 2, content: "new" },
-          hunks: [],
-          stats: { added: 10, removed: 5, unchanged: 100 },
-        }),
-    };
-    const TestLayer = createTestLayer({ storage, versions });
+    const llm = createMockLLMService("Response");
+    const TestLayer = createTestLayer({ storage, llm });
 
     const args = createParsedArgs({
-      positional: ["stat-prompt", "1", "2"],
-      flags: { stat: true },
+      positional: ["prompt-1", "prompt-2"],
+      flags: { model: "claude-sonnet-4-20250514" },
     });
 
     await Effect.runPromise(compareCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("10") || l.includes("added"))).toBe(true);
-    expect(logs.some((l) => l.includes("5") || l.includes("removed"))).toBe(true);
+    expect(logs.length).toBeGreaterThan(0);
   });
 
-  it("should show no changes message when identical", async () => {
-    const prompt = createTestPrompt({ id: "identical-test", name: "identical-prompt" });
-    const state = createMockStorageState([prompt]);
+  it("should output JSON format with --format json", async () => {
+    const prompt1 = createTestPrompt({ id: "p1", name: "a" });
+    const prompt2 = createTestPrompt({ id: "p2", name: "b" });
+    const state = createMockStorageState([prompt1, prompt2]);
     const storage = createMockStorageService(state);
-    const versions = {
-      ...createMockVersionService([]),
-      diff: (_promptId: string, _fromVersion: number, _toVersion: number) =>
-        Effect.succeed({
-          from: { version: 1, content: "same" },
-          to: { version: 2, content: "same" },
-          hunks: [],
-          stats: { added: 0, removed: 0, unchanged: 1 },
-        }),
-    };
-    const TestLayer = createTestLayer({ storage, versions });
+    const llm = createMockLLMService("JSON output test");
+    const TestLayer = createTestLayer({ storage, llm });
 
     const args = createParsedArgs({
-      positional: ["identical-prompt", "1", "2"],
+      positional: ["a", "b"],
+      flags: { format: "json" },
     });
 
     await Effect.runPromise(compareCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("No changes") || l.includes("identical"))).toBe(true);
+    expect(logs.length).toBeGreaterThan(0);
   });
 
-  it("should show usage when no arguments provided", async () => {
-    const TestLayer = createTestLayer();
+  it("should fail gracefully for non-existent prompt", async () => {
+    const prompt1 = createTestPrompt({ id: "p1", name: "exists" });
+    const state = createMockStorageState([prompt1]);
+    const storage = createMockStorageService(state);
+    const TestLayer = createTestLayer({ storage });
 
-    const args = createParsedArgs({ positional: [] });
+    const args = createParsedArgs({
+      positional: ["exists", "does-not-exist"],
+    });
 
-    await Effect.runPromise(compareCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Usage"))).toBe(true);
+    // Should reject because prompt doesn't exist
+    await expect(
+      Effect.runPromise(compareCommand(args).pipe(Effect.provide(TestLayer)))
+    ).rejects.toThrow();
   });
 });

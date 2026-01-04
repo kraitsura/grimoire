@@ -9,6 +9,8 @@ import {
   createParsedArgs,
   createTestLayer,
   createMockStatsService,
+  createMockStorageService,
+  createMockStorageState,
   createTestPrompt,
   captureConsole,
 } from "./test-helpers";
@@ -32,9 +34,9 @@ describe("pl stats command", () => {
         Effect.succeed({
           totalPrompts: 25,
           totalTemplates: 5,
-          totalTags: 10,
-          topPrompts: [],
-          tagCounts: { coding: 10, writing: 8, assistant: 7 },
+          tagDistribution: { coding: 10, writing: 8, assistant: 7 },
+          mostUsed: [],
+          recentlyEdited: [],
         }),
     };
     const TestLayer = createTestLayer({ stats });
@@ -49,25 +51,35 @@ describe("pl stats command", () => {
   });
 
   it("should display stats for specific prompt", async () => {
+    // Create storage with the prompt we're looking for
+    const storageState = createMockStorageState([
+      createTestPrompt({ id: "my-prompt-id", name: "my-prompt" }),
+    ]);
     const stats = {
       ...createMockStatsService(),
-      getPromptStats: (promptId: string) =>
+      getPromptStats: (_promptId: string) =>
         Effect.succeed({
-          promptId,
-          copies: 15,
-          tests: 8,
+          characterCount: 500,
+          wordCount: 100,
+          lineCount: 20,
+          copyCount: 15,
+          testCount: 8,
+          viewCount: 25,
+          editCount: 5,
           lastUsed: new Date(),
-          totalTokens: 5000,
         }),
     };
-    const TestLayer = createTestLayer({ stats });
+    const TestLayer = createTestLayer({
+      stats,
+      storage: createMockStorageService(storageState),
+    });
 
     const args = createParsedArgs({ positional: ["my-prompt"] });
 
     await Effect.runPromise(statsCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("15") || l.includes("copies"))).toBe(true);
+    expect(logs.some((l) => l.includes("15") || l.includes("Copies"))).toBe(true);
   });
 
   it("should show top prompts in collection stats", async () => {
@@ -77,13 +89,13 @@ describe("pl stats command", () => {
         Effect.succeed({
           totalPrompts: 10,
           totalTemplates: 2,
-          totalTags: 5,
-          topPrompts: [
-            { name: "top-prompt-1", copies: 50 },
-            { name: "top-prompt-2", copies: 30 },
-            { name: "top-prompt-3", copies: 20 },
+          tagDistribution: {},
+          mostUsed: [
+            { promptId: "1", name: "top-prompt-1", count: 50 },
+            { promptId: "2", name: "top-prompt-2", count: 30 },
+            { promptId: "3", name: "top-prompt-3", count: 20 },
           ],
-          tagCounts: {},
+          recentlyEdited: [],
         }),
     };
     const TestLayer = createTestLayer({ stats });
@@ -103,13 +115,13 @@ describe("pl stats command", () => {
         Effect.succeed({
           totalPrompts: 10,
           totalTemplates: 2,
-          totalTags: 3,
-          topPrompts: [],
-          tagCounts: {
+          tagDistribution: {
             coding: 10,
             writing: 5,
             testing: 3,
           },
+          mostUsed: [],
+          recentlyEdited: [],
         }),
     };
     const TestLayer = createTestLayer({ stats });
@@ -129,9 +141,9 @@ describe("pl stats command", () => {
         Effect.succeed({
           totalPrompts: 10,
           totalTemplates: 2,
-          totalTags: 5,
-          topPrompts: [],
-          tagCounts: {},
+          tagDistribution: {},
+          mostUsed: [],
+          recentlyEdited: [],
         }),
     };
     const TestLayer = createTestLayer({ stats });
@@ -156,14 +168,9 @@ describe("pl stats command", () => {
         Effect.succeed({
           totalPrompts: 10,
           totalTemplates: 2,
-          totalTags: 5,
-          topPrompts: [],
-          tagCounts: {},
-          usage: {
-            today: 5,
-            week: 25,
-            month: 100,
-          },
+          tagDistribution: {},
+          mostUsed: [],
+          recentlyEdited: [],
         }),
     };
     const TestLayer = createTestLayer({ stats });

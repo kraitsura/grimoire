@@ -1,39 +1,29 @@
-import { describe, expect, test, beforeEach } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { Effect, Layer } from "effect";
 import {
   BranchService,
   BranchServiceLive,
-  BranchNotFoundError,
-  BranchError,
-  type CreateBranchParams,
 } from "../../src/services/branch-service";
-import { SqlService, SqlLive } from "../../src/services/sql-service";
+import { SqlService } from "../../src/services/sql-service";
 import { MigrationService, MigrationLive } from "../../src/services/migration-service";
 import { VersionService, VersionServiceLive } from "../../src/services/version-service";
+import { TestSqlWithMigrationsLive } from "../utils";
 
 describe("BranchService", () => {
-  // Create a test layer with all dependencies
+  // Create a test layer with in-memory database (migrations already run)
   const TestLayer = Layer.mergeAll(
-    SqlLive,
-    MigrationLive.pipe(Layer.provide(SqlLive)),
-    VersionServiceLive.pipe(Layer.provide(SqlLive)),
+    TestSqlWithMigrationsLive,
+    VersionServiceLive.pipe(Layer.provide(TestSqlWithMigrationsLive)),
     BranchServiceLive.pipe(
-      Layer.provide(Layer.mergeAll(SqlLive, VersionServiceLive.pipe(Layer.provide(SqlLive))))
+      Layer.provide(Layer.mergeAll(
+        TestSqlWithMigrationsLive,
+        VersionServiceLive.pipe(Layer.provide(TestSqlWithMigrationsLive))
+      ))
     )
   );
 
   const runEffect = <A, E>(effect: Effect.Effect<A, E, any>) =>
-    Effect.runPromise(effect.pipe(Effect.provide(TestLayer)) as Effect.Effect<A, E, never>);
-
-  // Setup: run migrations before tests
-  beforeEach(async () => {
-    const setupProgram = Effect.gen(function* () {
-      const migration = yield* MigrationService;
-      yield* migration.migrate();
-    });
-
-    await runEffect(setupProgram);
-  });
+    Effect.runPromise(Effect.scoped(effect.pipe(Effect.provide(TestLayer))) as Effect.Effect<A, E, never>);
 
   // Helper to create a test prompt with main branch
   const createTestPrompt = (promptId: string) =>
@@ -145,8 +135,22 @@ describe("BranchService", () => {
       const program = Effect.gen(function* () {
         const branchService = yield* BranchService;
         const versionService = yield* VersionService;
+        const sql = yield* SqlService;
 
         const promptId = "test-prompt-3";
+
+        // Set up prompt and main branch first
+        yield* sql.run(
+          `INSERT INTO prompts (id, name, content_hash, file_path, created_at, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          [promptId, "Test Prompt 3", "hash3", "/test/path3.md"]
+        );
+        yield* sql.run(
+          `INSERT INTO branches (id, prompt_id, name, is_active, created_at)
+           VALUES (?, ?, 'main', 1, datetime('now'))`,
+          [crypto.randomUUID(), promptId]
+        );
+
         yield* versionService.createVersion({
           promptId,
           content: "Test content",
@@ -181,8 +185,22 @@ describe("BranchService", () => {
       const program = Effect.gen(function* () {
         const branchService = yield* BranchService;
         const versionService = yield* VersionService;
+        const sql = yield* SqlService;
 
         const promptId = "test-prompt-4";
+
+        // Set up prompt and main branch first
+        yield* sql.run(
+          `INSERT INTO prompts (id, name, content_hash, file_path, created_at, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          [promptId, "Test Prompt 4", "hash4", "/test/path4.md"]
+        );
+        yield* sql.run(
+          `INSERT INTO branches (id, prompt_id, name, is_active, created_at)
+           VALUES (?, ?, 'main', 1, datetime('now'))`,
+          [crypto.randomUUID(), promptId]
+        );
+
         yield* versionService.createVersion({
           promptId,
           content: "Test content",
@@ -214,8 +232,22 @@ describe("BranchService", () => {
       const program = Effect.gen(function* () {
         const branchService = yield* BranchService;
         const versionService = yield* VersionService;
+        const sql = yield* SqlService;
 
         const promptId = "test-prompt-5";
+
+        // Set up prompt and main branch first
+        yield* sql.run(
+          `INSERT INTO prompts (id, name, content_hash, file_path, created_at, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          [promptId, "Test Prompt 5", "hash5", "/test/path5.md"]
+        );
+        yield* sql.run(
+          `INSERT INTO branches (id, prompt_id, name, is_active, created_at)
+           VALUES (?, ?, 'main', 1, datetime('now'))`,
+          [crypto.randomUUID(), promptId]
+        );
+
         yield* versionService.createVersion({
           promptId,
           content: "Test content",
@@ -235,8 +267,22 @@ describe("BranchService", () => {
       const program = Effect.gen(function* () {
         const branchService = yield* BranchService;
         const versionService = yield* VersionService;
+        const sql = yield* SqlService;
 
         const promptId = "test-prompt-6";
+
+        // Set up prompt and main branch first
+        yield* sql.run(
+          `INSERT INTO prompts (id, name, content_hash, file_path, created_at, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          [promptId, "Test Prompt 6", "hash6", "/test/path6.md"]
+        );
+        yield* sql.run(
+          `INSERT INTO branches (id, prompt_id, name, is_active, created_at)
+           VALUES (?, ?, 'main', 1, datetime('now'))`,
+          [crypto.randomUUID(), promptId]
+        );
+
         yield* versionService.createVersion({
           promptId,
           content: "Test content",
@@ -266,8 +312,22 @@ describe("BranchService", () => {
       const program = Effect.gen(function* () {
         const branchService = yield* BranchService;
         const versionService = yield* VersionService;
+        const sql = yield* SqlService;
 
         const promptId = "test-prompt-7";
+
+        // Set up prompt and main branch first
+        yield* sql.run(
+          `INSERT INTO prompts (id, name, content_hash, file_path, created_at, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          [promptId, "Test Prompt 7", "hash7", "/test/path7.md"]
+        );
+        yield* sql.run(
+          `INSERT INTO branches (id, prompt_id, name, is_active, created_at)
+           VALUES (?, ?, 'main', 1, datetime('now'))`,
+          [crypto.randomUUID(), promptId]
+        );
+
         yield* versionService.createVersion({
           promptId,
           content: "Test content",
@@ -301,8 +361,21 @@ describe("BranchService", () => {
       const program = Effect.gen(function* () {
         const branchService = yield* BranchService;
         const versionService = yield* VersionService;
+        const sql = yield* SqlService;
 
         const promptId = "test-prompt-8";
+
+        // Set up prompt and main branch first
+        yield* sql.run(
+          `INSERT INTO prompts (id, name, content_hash, file_path, created_at, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          [promptId, "Test Prompt 8", "hash8", "/test/path8.md"]
+        );
+        yield* sql.run(
+          `INSERT INTO branches (id, prompt_id, name, is_active, created_at)
+           VALUES (?, ?, 'main', 1, datetime('now'))`,
+          [crypto.randomUUID(), promptId]
+        );
 
         // Create version on main
         yield* versionService.createVersion({

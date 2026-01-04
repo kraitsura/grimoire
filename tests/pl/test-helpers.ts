@@ -445,19 +445,22 @@ export const createMockStatsService = (): typeof StatsService.Service => ({
   recordUsage: (_promptId, _action) => Effect.void,
   getPromptStats: (_promptId): Effect.Effect<PromptStats, any> =>
     Effect.succeed({
-      promptId: "test",
-      copies: 10,
-      tests: 5,
+      characterCount: 100,
+      wordCount: 20,
+      lineCount: 5,
+      copyCount: 10,
+      testCount: 5,
+      viewCount: 15,
+      editCount: 3,
       lastUsed: new Date(),
-      totalTokens: 1000,
     }),
   getCollectionStats: (): Effect.Effect<CollectionStats, any> =>
     Effect.succeed({
       totalPrompts: 10,
       totalTemplates: 2,
-      totalTags: 5,
-      topPrompts: [],
-      tagCounts: {},
+      tagDistribution: { coding: 5, writing: 3, assistant: 2 },
+      mostUsed: [],
+      recentlyEdited: [],
     }),
 });
 
