@@ -10,6 +10,8 @@ import type { Prompt, Frontmatter } from "../../src/models/prompt";
 import type { PromptVersion } from "../../src/services/version-service";
 import type { Branch } from "../../src/services/branch-service";
 import type { SkillManifest, AgentType } from "../../src/models/skill";
+import type { WorktreeEntry, WorktreeInfo, WorktreeConfig } from "../../src/models/worktree";
+import type { AgentDefinition, ClaudeCodeAgent } from "../../src/models/agent";
 
 // ============================================================================
 // UUID Generation
@@ -334,6 +336,171 @@ export const SAMPLE_SKILLS = {
     name: "tools-skill",
     description: "A skill with allowed tools.",
     allowed_tools: ["Read", "Write", "Bash"],
+  }),
+};
+
+// ============================================================================
+// Worktree Fixtures
+// ============================================================================
+
+/**
+ * Options for creating a test worktree entry.
+ */
+export interface WorktreeFixtureOptions {
+  name?: string;
+  branch?: string;
+  createdAt?: string;
+  linkedIssue?: string;
+  createdBy?: "user" | "agent";
+  sessionId?: string;
+}
+
+/**
+ * Create a test worktree entry.
+ */
+export const createWorktreeEntry = (options: WorktreeFixtureOptions = {}): WorktreeEntry => ({
+  name: options.name ?? `wt-${uuidCounter++}`,
+  branch: options.branch ?? `feature/test-${uuidCounter}`,
+  createdAt: options.createdAt ?? FIXED_DATE.toISOString(),
+  linkedIssue: options.linkedIssue,
+  metadata: options.createdBy || options.sessionId
+    ? {
+        createdBy: options.createdBy,
+        sessionId: options.sessionId,
+      }
+    : undefined,
+});
+
+/**
+ * Create a test worktree info.
+ */
+export const createWorktreeInfo = (options: WorktreeFixtureOptions & { path?: string } = {}): WorktreeInfo => ({
+  name: options.name ?? `wt-${uuidCounter++}`,
+  branch: options.branch ?? `feature/test-${uuidCounter}`,
+  path: options.path ?? `/tmp/project/.worktrees/wt-${uuidCounter}`,
+  createdAt: options.createdAt ?? FIXED_DATE.toISOString(),
+  linkedIssue: options.linkedIssue,
+  metadata: options.createdBy || options.sessionId
+    ? {
+        createdBy: options.createdBy,
+        sessionId: options.sessionId,
+      }
+    : undefined,
+});
+
+/**
+ * Sample worktree entries.
+ */
+export const SAMPLE_WORKTREES = {
+  /**
+   * Simple worktree with minimal config.
+   */
+  simple: createWorktreeEntry({
+    name: "simple-wt",
+    branch: "feature/simple",
+  }),
+
+  /**
+   * Worktree created by agent with linked issue.
+   */
+  agentCreated: createWorktreeEntry({
+    name: "agent-wt",
+    branch: "feature/agent-task",
+    linkedIssue: "GRIM-123",
+    createdBy: "agent",
+    sessionId: "sess-abc123",
+  }),
+
+  /**
+   * Worktree with full metadata.
+   */
+  full: createWorktreeEntry({
+    name: "full-wt",
+    branch: "feature/full",
+    linkedIssue: "GRIM-456",
+    createdBy: "user",
+  }),
+};
+
+// ============================================================================
+// Agent Fixtures
+// ============================================================================
+
+/**
+ * Options for creating a test agent definition.
+ */
+export interface AgentFixtureOptions {
+  name?: string;
+  description?: string;
+  content?: string;
+  tools?: string[];
+  model?: string;
+  wraps_cli?: string;
+  tags?: string[];
+}
+
+/**
+ * Create a test agent definition.
+ */
+export const createAgentDefinition = (options: AgentFixtureOptions = {}): AgentDefinition => ({
+  name: options.name ?? `test-agent-${uuidCounter++}`,
+  description: options.description ?? "A test agent for testing purposes.",
+  content: options.content ?? "# Test Agent\n\nThis is a test agent.",
+  tools: options.tools,
+  model: options.model,
+  wraps_cli: options.wraps_cli,
+  tags: options.tags,
+});
+
+/**
+ * Create a test Claude Code agent.
+ */
+export const createClaudeCodeAgent = (options: AgentFixtureOptions & {
+  color?: string;
+  permissionMode?: "default" | "ask" | "allow";
+} = {}): ClaudeCodeAgent => ({
+  name: options.name ?? `claude-agent-${uuidCounter++}`,
+  description: options.description ?? "A test Claude Code agent.",
+  content: options.content ?? "# Claude Agent\n\nInstructions here.",
+  tools: options.tools,
+  model: options.model,
+  color: options.color,
+  permissionMode: options.permissionMode,
+});
+
+/**
+ * Sample agent definitions.
+ */
+export const SAMPLE_AGENTS = {
+  /**
+   * Minimal agent.
+   */
+  minimal: createAgentDefinition({
+    name: "minimal-agent",
+    description: "A minimal agent.",
+    content: "Minimal instructions.",
+  }),
+
+  /**
+   * Agent with tools.
+   */
+  withTools: createAgentDefinition({
+    name: "dev-agent",
+    description: "Development agent with tools.",
+    content: "Development instructions.",
+    tools: ["Read", "Write", "Bash", "Glob"],
+  }),
+
+  /**
+   * CLI wrapper agent.
+   */
+  cliWrapper: createAgentDefinition({
+    name: "git-helper",
+    description: "Git helper agent.",
+    content: "Git workflow instructions.",
+    tools: ["Bash"],
+    wraps_cli: "git",
+    tags: ["git", "cli"],
   }),
 };
 

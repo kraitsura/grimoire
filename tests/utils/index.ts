@@ -101,6 +101,14 @@ export {
   // Skills
   createSkillManifest,
   SAMPLE_SKILLS,
+  // Worktrees
+  createWorktreeEntry,
+  createWorktreeInfo,
+  SAMPLE_WORKTREES,
+  // Agents
+  createAgentDefinition,
+  createClaudeCodeAgent,
+  SAMPLE_AGENTS,
   // Markdown
   createMarkdownWithFrontmatter,
   SAMPLE_MARKDOWN,
@@ -114,4 +122,6 @@ export {
   type VersionFixtureOptions,
   type BranchFixtureOptions,
   type SkillFixtureOptions,
+  type WorktreeFixtureOptions,
+  type AgentFixtureOptions,
 } from "./fixtures";
