@@ -9,6 +9,7 @@
  */
 
 import { Context, Effect, Layer } from "effect";
+import { Schema } from "@effect/schema";
 import { join, basename } from "path";
 import { glob } from "glob";
 import type {
@@ -24,6 +25,7 @@ import {
   PROTECTED_BRANCHES,
   WORKTREE_METADATA_DIR,
   getWorktreeInfoPath,
+  WorktreeMetadataSchema,
 } from "../../models/worktree";
 import {
   WorktreeError,
@@ -39,6 +41,95 @@ import {
 } from "../../models/worktree-errors";
 import { WorktreeStateService } from "./worktree-state-service";
 import { WorktreeConfigService, type WorktreeConfigData } from "./worktree-config-service";
+
+/**
+ * Schema for worktree state entries in .state.json (internal, simpler than full WorktreeEntry)
+ */
+const InternalWorktreeEntrySchema = Schema.Struct({
+  name: Schema.String,
+  branch: Schema.String,
+  createdAt: Schema.optional(Schema.String),
+  linkedIssue: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Struct({
+    createdBy: Schema.optional(Schema.Literal("user", "agent")),
+    sessionId: Schema.optional(Schema.String),
+  })),
+});
+
+/**
+ * Schema for the internal worktree state file
+ */
+const InternalWorktreeStateSchema = Schema.Struct({
+  version: Schema.Number,
+  worktrees: Schema.mutable(Schema.Array(InternalWorktreeEntrySchema)),
+});
+
+/**
+ * Mutable internal types for state manipulation
+ */
+interface MutableInternalWorktreeEntry {
+  name: string;
+  branch: string;
+  createdAt?: string;
+  linkedIssue?: string;
+  metadata?: {
+    createdBy?: "user" | "agent";
+    sessionId?: string;
+  };
+}
+
+interface MutableInternalWorktreeState {
+  version: number;
+  worktrees: MutableInternalWorktreeEntry[];
+}
+
+/**
+ * Decode worktree state with fallback (returns mutable copy)
+ */
+const decodeState = (content: string): MutableInternalWorktreeState => {
+  try {
+    const parsed = JSON.parse(content);
+    const validated = Schema.decodeUnknownSync(InternalWorktreeStateSchema)(parsed);
+    // Create mutable copy
+    return {
+      version: validated.version,
+      worktrees: [...validated.worktrees].map(w => ({ ...w })),
+    };
+  } catch {
+    return { version: 1, worktrees: [] };
+  }
+};
+
+/**
+ * Decode state as any for inline service implementation (fallback)
+ * This is used by the inline WorktreeStateService stub which doesn't need strict types
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const decodeStateForInline = (content: string): any => {
+  try {
+    const parsed = JSON.parse(content);
+    const validated = Schema.decodeUnknownSync(InternalWorktreeStateSchema)(parsed);
+    // Return as-is with version 2 for compatibility
+    return {
+      version: 2,
+      worktrees: [...validated.worktrees].map(w => ({ ...w, createdAt: w.createdAt || new Date().toISOString() })),
+    };
+  } catch {
+    return { version: 2, worktrees: [] };
+  }
+};
+
+/**
+ * Decode worktree metadata with fallback
+ */
+const decodeMetadata = (content: string): WorktreeMetadata | null => {
+  try {
+    const parsed = JSON.parse(content);
+    return Schema.decodeUnknownSync(WorktreeMetadataSchema)(parsed);
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Execute a shell command and return stdout/stderr
@@ -470,10 +561,10 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
         Effect.gen(function* () {
           const file = Bun.file(join(repoRoot, basePath || ".worktrees", ".state.json"));
           const exists = yield* Effect.promise(() => file.exists());
-          if (!exists) return { version: 1, worktrees: [] };
+          if (!exists) return { version: 2, worktrees: [] };
           const content = yield* Effect.promise(() => file.text());
-          return JSON.parse(content);
-        }).pipe(Effect.catchAll(() => Effect.succeed({ version: 1, worktrees: [] }))),
+          return decodeStateForInline(content);
+        }).pipe(Effect.catchAll(() => Effect.succeed({ version: 2, worktrees: [] }))),
       getWorktree: () => Effect.succeed(null),
       getWorktreeByBranch: () => Effect.succeed(null),
       addWorktree: (repoRoot, entry, basePath = ".worktrees") =>
@@ -482,8 +573,8 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
           const file = Bun.file(statePath);
           const exists = yield* Effect.promise(() => file.exists());
           const state = exists
-            ? JSON.parse(yield* Effect.promise(() => file.text()))
-            : { version: 1, worktrees: [] };
+            ? decodeStateForInline(yield* Effect.promise(() => file.text()))
+            : { version: 2, worktrees: [] };
           state.worktrees.push(entry);
           yield* Effect.promise(() =>
             import("fs/promises").then((fs) => fs.mkdir(join(repoRoot, basePath), { recursive: true }))
@@ -496,7 +587,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
           const file = Bun.file(statePath);
           const exists = yield* Effect.promise(() => file.exists());
           if (!exists) return;
-          const state = JSON.parse(yield* Effect.promise(() => file.text()));
+          const state = decodeStateForInline(yield* Effect.promise(() => file.text()));
           state.worktrees = state.worktrees.filter((w: { name: string }) => w.name !== name);
           yield* Effect.promise(() => Bun.write(statePath, JSON.stringify(state, null, 2)));
         }).pipe(Effect.catchAll(() => Effect.succeed(undefined))),
@@ -507,7 +598,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
           const file = Bun.file(statePath);
           const exists = yield* Effect.promise(() => file.exists());
           if (!exists) return [];
-          const state = JSON.parse(yield* Effect.promise(() => file.text()));
+          const state = decodeStateForInline(yield* Effect.promise(() => file.text()));
           return state.worktrees || [];
         }).pipe(Effect.catchAll(() => Effect.succeed([]))),
       hasState: (repoRoot, basePath = ".worktrees") =>
@@ -583,7 +674,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
             const statePath = join(repoRoot, config.basePath, ".state.json");
             const file = Bun.file(statePath);
             if (!(await file.exists())) return null;
-            const state = JSON.parse(await file.text());
+            const state = decodeState(await file.text());
             return state.worktrees?.find((w: { name: string }) => w.name === name) || null;
           },
           catch: () => null,
@@ -644,7 +735,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
             );
             const file = Bun.file(statePath);
             const state = (await file.exists())
-              ? JSON.parse(await file.text())
+              ? decodeState(await file.text())
               : { version: 1, worktrees: [] };
             state.worktrees.push({
               name,
@@ -721,7 +812,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
               const statePath = join(repoRoot, config.basePath, ".state.json");
               const file = Bun.file(statePath);
               if (!(await file.exists())) return null;
-              const state = JSON.parse(await file.text());
+              const state = decodeState(await file.text());
               return state.worktrees?.find((w: { name: string }) => w.name === name) || null;
             },
             catch: () => null,
@@ -799,7 +890,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
             const statePath = join(repoRoot, config.basePath, ".state.json");
             const file = Bun.file(statePath);
             if (!(await file.exists())) return;
-            const state = JSON.parse(await file.text());
+            const state = decodeState(await file.text());
             state.worktrees = state.worktrees.filter((w: { name: string }) => w.name !== name);
             await Bun.write(statePath, JSON.stringify(state, null, 2));
           },
@@ -830,7 +921,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
             const statePath = join(repoRoot, config.basePath, ".state.json");
             const file = Bun.file(statePath);
             if (!(await file.exists())) return null;
-            const state = JSON.parse(await file.text());
+            const state = decodeState(await file.text());
             return state.worktrees?.find((w: { name: string }) => w.name === name) || null;
           },
           catch: () => null,
@@ -873,7 +964,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
             const statePath = join(repoRoot, config.basePath, ".state.json");
             const file = Bun.file(statePath);
             if (!(await file.exists())) return null;
-            const state = JSON.parse(await file.text());
+            const state = decodeState(await file.text());
             return state.worktrees?.find((w: { branch: string }) => w.branch === branch) || null;
           },
           catch: () => null,
@@ -888,7 +979,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
           name: stateEntry.name,
           branch: stateEntry.branch,
           path: worktreePath,
-          createdAt: stateEntry.createdAt,
+          createdAt: stateEntry.createdAt || new Date().toISOString(),
           linkedIssue: stateEntry.linkedIssue,
           metadata: stateEntry.metadata,
         };
@@ -912,7 +1003,7 @@ const makeWorktreeService = (): WorktreeServiceImpl => {
           try: async () => {
             const file = Bun.file(metadataPath);
             if (!(await file.exists())) return null;
-            return JSON.parse(await file.text()) as WorktreeMetadata;
+            return decodeMetadata(await file.text());
           },
           catch: () => null,
         }).pipe(Effect.catchAll(() => Effect.succeed(null)));

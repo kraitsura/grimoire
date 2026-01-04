@@ -5,6 +5,7 @@
  */
 
 import { Context, Effect, Layer } from "effect";
+import { Schema } from "@effect/schema";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import {
@@ -12,6 +13,8 @@ import {
   type ScoutState,
   type ScoutFindings,
   type ScoutStatus,
+  ScoutStateSchema,
+  ScoutFindingsSchema,
   getScoutStatePath,
   getScoutFindingsPath,
   SCOUT_DIR,
@@ -82,25 +85,52 @@ export class ScoutStateService extends Context.Tag("ScoutStateService")<
 >() {}
 
 /**
- * Read state file
+ * Mutable scout state type for internal manipulation
  */
-const readState = (projectPath: string): ScoutState => {
+interface MutableScoutEntry extends Omit<ScoutEntry, 'status' | 'completedAt' | 'error' | 'pid'> {
+  status: ScoutEntry['status'];
+  completedAt?: string;
+  error?: string;
+  pid?: number;
+}
+
+interface MutableScoutState {
+  version: 1;
+  scouts: Record<string, MutableScoutEntry>;
+}
+
+/**
+ * Default empty state
+ */
+const defaultState = (): MutableScoutState => ({ version: 1, scouts: {} });
+
+/**
+ * Read state file (returns mutable copy)
+ */
+const readState = (projectPath: string): MutableScoutState => {
   const statePath = getScoutStatePath(projectPath);
   if (!existsSync(statePath)) {
-    return { version: 1, scouts: {} };
+    return defaultState();
   }
   try {
     const content = readFileSync(statePath, "utf-8");
-    return JSON.parse(content) as ScoutState;
+    const parsed = JSON.parse(content);
+    const validated = Schema.decodeUnknownSync(ScoutStateSchema)(parsed);
+    // Create mutable copy
+    const mutableScouts: Record<string, MutableScoutEntry> = {};
+    for (const [key, value] of Object.entries(validated.scouts)) {
+      mutableScouts[key] = { ...value } as MutableScoutEntry;
+    }
+    return { version: 1, scouts: mutableScouts };
   } catch {
-    return { version: 1, scouts: {} };
+    return defaultState();
   }
 };
 
 /**
  * Write state file
  */
-const writeState = (projectPath: string, state: ScoutState): void => {
+const writeState = (projectPath: string, state: MutableScoutState): void => {
   const statePath = getScoutStatePath(projectPath);
   const dir = dirname(statePath);
   if (!existsSync(dir)) {
@@ -210,7 +240,8 @@ const makeScoutStateService = (): ScoutStateServiceImpl => ({
       }
       try {
         const content = readFileSync(findingsPath, "utf-8");
-        return JSON.parse(content) as ScoutFindings;
+        const parsed = JSON.parse(content);
+        return Schema.decodeUnknownSync(ScoutFindingsSchema)(parsed);
       } catch {
         return null;
       }

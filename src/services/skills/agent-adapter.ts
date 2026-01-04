@@ -7,6 +7,7 @@
  */
 
 import { Effect, Context, Layer, Data } from "effect";
+import { Schema } from "@effect/schema";
 import type { AgentType, InstallScope } from "../../models/skill";
 import { GLOBAL_SKILL_LOCATIONS } from "../../models/skill";
 import type { CachedSkill } from "./skill-cache-service";
@@ -24,6 +25,66 @@ import {
   hasSkillInjection,
 } from "./injection-utils";
 import type { SkillManifest } from "../../models/skill";
+
+// ============================================================================
+// Schema Definitions for Agent Settings
+// ============================================================================
+
+/**
+ * MCP server entry schema
+ */
+const McpServerEntrySchema = Schema.Struct({
+  command: Schema.String,
+  args: Schema.optional(Schema.Array(Schema.String)),
+  env: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+});
+
+/**
+ * Claude Code settings.json schema (partial - just mcpServers)
+ */
+const ClaudeSettingsSchema = Schema.Struct({
+  mcpServers: Schema.optional(Schema.Record({ key: Schema.String, value: McpServerEntrySchema })),
+});
+
+/**
+ * OpenCode MCP entry schema
+ */
+const OpenCodeMcpEntrySchema = Schema.Struct({
+  type: Schema.String,
+  command: Schema.Array(Schema.String),
+  environment: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+});
+
+/**
+ * OpenCode opencode.json schema (partial - just mcp)
+ */
+const OpenCodeMcpConfigSchema = Schema.Struct({
+  mcp: Schema.optional(Schema.Record({ key: Schema.String, value: OpenCodeMcpEntrySchema })),
+});
+
+/**
+ * Safely decode Claude settings with fallback
+ */
+const decodeClaudeSettings = (content: string): Record<string, unknown> => {
+  try {
+    const parsed = JSON.parse(content);
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * Safely decode OpenCode config with fallback
+ */
+const decodeOpenCodeConfig = (content: string): Record<string, unknown> => {
+  try {
+    const parsed = JSON.parse(content);
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+};
 
 // ============================================================================
 // Path Utilities
@@ -575,7 +636,7 @@ const ClaudeCodeAdapter: AgentAdapter = {
       const settingsPath = join(projectPath, ".claude", "settings.json");
 
       // Read existing settings or create empty object
-      let settings: any = {};
+      let settings: Record<string, unknown> = {};
       if (existsSync(settingsPath)) {
         const content = yield* Effect.tryPromise({
           try: () => readFile(settingsPath, "utf-8"),
@@ -587,19 +648,14 @@ const ClaudeCodeAdapter: AgentAdapter = {
               cause: error,
             }),
         });
-        try {
-          settings = JSON.parse(content);
-        } catch (error) {
-          // Invalid JSON, start fresh
-          settings = {};
-        }
+        settings = decodeClaudeSettings(content);
       }
 
       // Add MCP configuration
       if (!settings.mcpServers) {
         settings.mcpServers = {};
       }
-      settings.mcpServers[name] = config;
+      (settings.mcpServers as Record<string, unknown>)[name] = config;
 
       // Write updated settings
       yield* Effect.tryPromise({
@@ -906,7 +962,7 @@ const OpenCodeAdapter: AgentAdapter = {
       const configPath = join(projectPath, "opencode.json");
 
       // Read existing config or create empty object
-      let opencodeConfig: any = {};
+      let opencodeConfig: Record<string, unknown> = {};
       if (existsSync(configPath)) {
         const content = yield* Effect.tryPromise({
           try: () => readFile(configPath, "utf-8"),
@@ -918,12 +974,7 @@ const OpenCodeAdapter: AgentAdapter = {
               cause: error,
             }),
         });
-        try {
-          opencodeConfig = JSON.parse(content);
-        } catch (error) {
-          // Invalid JSON, start fresh
-          opencodeConfig = {};
-        }
+        opencodeConfig = decodeOpenCodeConfig(content);
       }
 
       // Add MCP configuration in OpenCode format
@@ -934,7 +985,7 @@ const OpenCodeAdapter: AgentAdapter = {
 
       // Transform to OpenCode MCP format:
       // { type: "local", command: ["cmd", ...args], environment: { ... } }
-      opencodeConfig.mcp[name] = {
+      (opencodeConfig.mcp as Record<string, unknown>)[name] = {
         type: "local",
         command: [config.command, ...(config.args || [])],
         ...(config.env && { environment: config.env }),
@@ -1599,9 +1650,11 @@ function parseGlobsFromFrontmatter(content: string): string[] | undefined {
   // Handle array format: ["*.ts", "*.tsx"]
   if (globsValue.startsWith("[")) {
     try {
-      // Simple JSON-like array parsing
+      // Simple JSON-like array parsing with Schema validation
       const parsed = JSON.parse(globsValue.replace(/'/g, '"'));
-      if (Array.isArray(parsed)) return parsed;
+      const validated = Schema.decodeUnknownSync(Schema.Array(Schema.String))(parsed);
+      // Convert to mutable array
+      return [...validated];
     } catch {
       // Fall through to string parsing
     }
@@ -2543,7 +2596,7 @@ Instructions for Gemini AI coding assistant.
       const settingsPath = join(projectPath, ".gemini", "settings.json");
 
       // Read existing settings or create empty object
-      let settings: any = {};
+      let settings: Record<string, unknown> = {};
       if (existsSync(settingsPath)) {
         const content = yield* Effect.tryPromise({
           try: () => readFile(settingsPath, "utf-8"),
@@ -2555,18 +2608,15 @@ Instructions for Gemini AI coding assistant.
               cause: error,
             }),
         });
-        try {
-          settings = JSON.parse(content);
-        } catch (error) {
-          settings = {};
-        }
+        // Gemini settings.json has similar structure to Claude settings.json
+        settings = decodeClaudeSettings(content);
       }
 
       // Add MCP configuration
       if (!settings.mcpServers) {
         settings.mcpServers = {};
       }
-      settings.mcpServers[name] = config;
+      (settings.mcpServers as Record<string, unknown>)[name] = config;
 
       // Ensure .gemini directory exists
       yield* Effect.tryPromise({

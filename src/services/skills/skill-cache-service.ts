@@ -6,6 +6,7 @@
  */
 
 import { Context, Effect, Layer } from "effect";
+import { Schema } from "@effect/schema";
 import { join } from "path";
 import { homedir } from "os";
 import * as yaml from "js-yaml";
@@ -46,24 +47,35 @@ export interface CachedSkill {
 /**
  * Cache metadata stored in .meta.json
  */
-interface CacheMeta {
-  source: string;
-  cachedAt: string;
-  version: string;
-}
+const CacheMetaSchema = Schema.Struct({
+  source: Schema.String,
+  cachedAt: Schema.String,
+  version: Schema.String,
+});
+type CacheMeta = Schema.Schema.Type<typeof CacheMetaSchema>;
+
+/**
+ * Cache index skill entry
+ */
+const CacheIndexEntrySchema = Schema.Struct({
+  version: Schema.String,
+  source: Schema.String,
+  cachedAt: Schema.String,
+});
 
 /**
  * Cache index for quick lookups
  */
+const CacheIndexSchema = Schema.Struct({
+  skills: Schema.Record({ key: Schema.String, value: CacheIndexEntrySchema }),
+  updatedAt: Schema.String,
+});
+
+/**
+ * Mutable cache index type for internal manipulation
+ */
 interface CacheIndex {
-  skills: Record<
-    string,
-    {
-      version: string;
-      source: string;
-      cachedAt: string;
-    }
-  >;
+  skills: Record<string, { version: string; source: string; cachedAt: string }>;
   updatedAt: string;
 }
 
@@ -662,13 +674,30 @@ const readCacheIndex = (): Effect.Effect<CacheIndex, never> =>
       return { skills: {}, updatedAt: new Date().toISOString() };
     }
 
-    try {
-      const content = yield* Effect.promise(() => file.text());
-      return JSON.parse(content) as CacheIndex;
-    } catch {
-      // Return empty index on parse error
+    const content = yield* Effect.promise(() => file.text()).pipe(
+      Effect.catchAll(() => Effect.succeed(""))
+    );
+    if (!content) {
       return { skills: {}, updatedAt: new Date().toISOString() };
     }
+
+    const parseResult = yield* Effect.try(() => JSON.parse(content)).pipe(
+      Effect.flatMap((parsed) => Schema.decodeUnknown(CacheIndexSchema)(parsed)),
+      Effect.either
+    );
+
+    if (parseResult._tag === "Left") {
+      // Return empty index on parse/validation error
+      return { skills: {}, updatedAt: new Date().toISOString() };
+    }
+
+    // Convert to mutable type
+    const validated = parseResult.right;
+    const mutableSkills: Record<string, { version: string; source: string; cachedAt: string }> = {};
+    for (const [key, value] of Object.entries(validated.skills)) {
+      mutableSkills[key] = { ...value };
+    }
+    return { skills: mutableSkills, updatedAt: validated.updatedAt };
   });
 
 /**
@@ -958,14 +987,20 @@ const readCachedSkill = (name: string): Effect.Effect<CachedSkill, SkillNotCache
     let cachedAt = new Date();
 
     if (metaExists) {
-      try {
-        const metaContent = yield* Effect.promise(() => metaFile.text());
-        const meta = JSON.parse(metaContent) as CacheMeta;
-        source = meta.source;
-        cachedAt = new Date(meta.cachedAt);
-      } catch {
-        // Use defaults if meta is invalid
+      const metaResult = yield* Effect.promise(() => metaFile.text()).pipe(
+        Effect.flatMap((metaContent) =>
+          Effect.try(() => JSON.parse(metaContent)).pipe(
+            Effect.flatMap((parsed) => Schema.decodeUnknown(CacheMetaSchema)(parsed))
+          )
+        ),
+        Effect.either
+      );
+
+      if (metaResult._tag === "Right") {
+        source = metaResult.right.source;
+        cachedAt = new Date(metaResult.right.cachedAt);
       }
+      // Use defaults if meta is invalid
     }
 
     // Check for optional README file
