@@ -30,9 +30,6 @@ export type { ParsedPrompt } from "./prompt-storage-service";
 export { SyncService, SyncLive } from "./sync-service";
 export type { SyncResult as FileSyncResult, IntegrityResult } from "./sync-service";
 
-// Re-export File Watcher service (FileWatcherService is a Context.Tag class)
-export { FileWatcherService, FileWatcherLive } from "./file-watcher-service";
-
 // Re-export Editor service (EditorService is a Context.Tag class)
 export { EditorService, EditorServiceLive } from "./editor-service";
 
