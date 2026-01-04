@@ -79,24 +79,30 @@ const newCommand = Command.make(
 ).pipe(Command.withDescription("Create a new worktree from branch"));
 
 // Spawn command
+// Options must come before positional args (Effect CLI convention)
 const spawnCommand = Command.make(
   "spawn",
   {
     name: Args.text({ name: "name" }).pipe(Args.withDescription("Worktree name")),
-    prompt: Args.text({ name: "prompt" }).pipe(Args.optional),
-    promptFlag: Options.text("prompt").pipe(Options.withAlias("p"), Options.optional),
+    prompt: Options.text("prompt").pipe(Options.withAlias("p"), Options.optional),
     background: Options.boolean("background").pipe(Options.withAlias("bg"), Options.withDefault(false)),
     noSandbox: Options.boolean("no-sandbox").pipe(Options.withDefault(false)),
     issue: Options.text("issue").pipe(Options.withAlias("i"), Options.optional),
   },
-  ({ name, prompt, promptFlag, background, noSandbox, issue }) => {
-    const flags: Record<string, string | boolean> = { bg: background, "no-sandbox": noSandbox };
-    if (promptFlag._tag === "Some") flags.p = promptFlag.value;
-    if (issue._tag === "Some") flags.i = issue.value;
-    const positional = ["spawn", name];
-    if (prompt._tag === "Some") positional.push(prompt.value);
-    return worktreeSpawn(buildParsedArgs(positional, flags));
-  }
+  ({ name, prompt, background, noSandbox, issue }) =>
+    Effect.gen(function* () {
+      // Background agents require a prompt
+      if (background && prompt._tag === "None") {
+        yield* Effect.fail(
+          new Error("Background agents require a prompt. Use -p 'your prompt' with --background")
+        );
+      }
+
+      const flags: Record<string, string | boolean> = { bg: background, "no-sandbox": noSandbox };
+      if (prompt._tag === "Some") flags.p = prompt.value;
+      if (issue._tag === "Some") flags.i = issue.value;
+      return yield* worktreeSpawn(buildParsedArgs(["spawn", name], flags));
+    })
 ).pipe(Command.withDescription("Create worktree + launch sandboxed Claude session"));
 
 // Kill command
