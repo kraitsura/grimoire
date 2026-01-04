@@ -72,6 +72,14 @@ export {
   prepareForSnapshot,
 } from "./snapshots";
 
+// Mock prompt storage
+export {
+  MockPromptStorageLive,
+  mockPromptStorageWithFiles,
+  createMockPromptStorage,
+  createMockFile,
+} from "./mock-prompt-storage";
+
 // Fixtures
 export {
   // UUID
