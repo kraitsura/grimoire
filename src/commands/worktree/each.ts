@@ -139,9 +139,11 @@ export const worktreeEach = (args: ParsedArgs) =>
     const results: CommandResult[] = [];
 
     if (parallel) {
-      // Run all concurrently
-      const allResults = yield* Effect.promise(() =>
-        Promise.all(worktrees.map((wt) => runInWorktree(wt, command, true)))
+      // Run all concurrently using Effect.forEach
+      const allResults = yield* Effect.forEach(
+        worktrees,
+        (wt) => Effect.promise(() => runInWorktree(wt, command, true)),
+        { concurrency: "unbounded" }
       );
 
       for (const result of allResults) {

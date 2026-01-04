@@ -301,24 +301,24 @@ export const worktreePs = (args: ParsedArgs) =>
     const mainBranch = yield* Effect.promise(() => getMainBranch(repoRoot));
     const state = yield* stateService.getState(repoRoot);
 
-    // Collect data for all worktrees in parallel
-    const dataArr: WorktreeData[] = yield* Effect.promise(() =>
-      Promise.all(
-        worktrees.map(async (wt) => {
+    // Collect data for all worktrees in parallel using Effect.forEach
+    const dataArr: WorktreeData[] = yield* Effect.forEach(
+      worktrees,
+      (wt) =>
+        Effect.gen(function* () {
           // Get session info
-          const sessionResult = await Effect.runPromise(
-            sessionService.refreshSessionStatus(wt.path).pipe(
-              Effect.either,
-              Effect.provide(AgentSessionServiceLive)
-            )
-          );
+          const sessionResult = yield* sessionService
+            .refreshSessionStatus(wt.path)
+            .pipe(Effect.either);
           const session =
             sessionResult._tag === "Right" ? sessionResult.right : null;
 
           // Get git stats
-          const dirty = await getDirtyCount(wt.path);
-          const commits = await getCommitsVsBase(wt.path, mainBranch);
-          const diff = await getDiffStats(wt.path);
+          const dirty = yield* Effect.promise(() => getDirtyCount(wt.path));
+          const commits = yield* Effect.promise(() =>
+            getCommitsVsBase(wt.path, mainBranch)
+          );
+          const diff = yield* Effect.promise(() => getDiffStats(wt.path));
 
           // Get merge status from state
           const entry = state.worktrees.find((w) => w.name === wt.name);
@@ -327,9 +327,18 @@ export const worktreePs = (args: ParsedArgs) =>
           // Get parent worktree from state
           const parentWorktree = entry?.parentWorktree;
 
-          return { worktree: wt, session, dirty, commits, mergeStatus, managed: wt.managed !== false, parentWorktree, diff };
-        })
-      )
+          return {
+            worktree: wt,
+            session,
+            dirty,
+            commits,
+            mergeStatus,
+            managed: wt.managed !== false,
+            parentWorktree,
+            diff,
+          };
+        }),
+      { concurrency: "unbounded" }
     );
 
     // Filter worktrees based on context (unless --all)
