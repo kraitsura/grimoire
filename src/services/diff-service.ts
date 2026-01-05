@@ -66,9 +66,9 @@ export interface SideBySideDiff {
 }
 
 /**
- * Service for computing and formatting diffs between strings
+ * Service implementation for computing and formatting diffs between strings
  */
-export interface DiffService {
+export interface DiffServiceImpl {
   readonly computeDiff: (
     oldContent: string,
     newContent: string,
@@ -85,7 +85,13 @@ export interface DiffService {
   readonly formatInline: (diff: DiffResult) => Effect.Effect<string, never, never>;
 }
 
-export const DiffService = Context.GenericTag<DiffService>("@services/DiffService");
+/**
+ * DiffService Tag - provides diff computation and formatting capabilities
+ */
+export class DiffService extends Context.Tag("@services/DiffService")<
+  DiffService,
+  DiffServiceImpl
+>() {}
 
 /**
  * Converts jsdiff Change objects to our Change interface

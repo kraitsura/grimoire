@@ -43,19 +43,27 @@ interface UnmanagedWorktree {
   path: string;
 }
 
+/**
+ * Prompt for input with guaranteed readline cleanup.
+ * Uses Effect.acquireUseRelease to ensure interface is closed on
+ * completion, error, or interruption.
+ */
 const prompt = (question: string): Effect.Effect<string, never> =>
-  Effect.promise(() => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    return new Promise<string>((resolve) => {
-      rl.question(question, (answer) => {
-        rl.close();
-        resolve(answer.trim().toLowerCase());
-      });
-    });
-  });
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      })
+    ),
+    (rl) =>
+      Effect.async<string>((resume) => {
+        rl.question(question, (answer) => {
+          resume(Effect.succeed(answer.trim().toLowerCase()));
+        });
+      }),
+    (rl) => Effect.sync(() => rl.close())
+  );
 
 const reasonLabel = (reason: CleanReason): string => {
   switch (reason) {

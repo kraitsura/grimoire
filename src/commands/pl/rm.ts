@@ -67,7 +67,7 @@ export const rmCommand = (args: ParsedArgs) =>
       const names = prompts.map((p) => p.name).join(", ");
       console.log(`About to ${action}: ${names}`);
 
-      const confirmed = yield* Effect.promise(() => askConfirmation("Continue? [y/N] "));
+      const confirmed = yield* askConfirmation("Continue? [y/N] ");
       if (!confirmed) {
         console.log("Cancelled.");
         return;
@@ -83,20 +83,23 @@ export const rmCommand = (args: ParsedArgs) =>
   });
 
 /**
- * Ask for user confirmation
- *
- * @param question - The question to ask the user
- * @returns Promise that resolves to true if user confirmed (y), false otherwise
+ * Ask for user confirmation with guaranteed readline cleanup.
+ * Uses Effect.acquireUseRelease to ensure interface is closed on
+ * completion, error, or interruption.
  */
-function askConfirmation(question: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.toLowerCase() === "y");
-    });
-  });
-}
+const askConfirmation = (question: string): Effect.Effect<boolean> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      })
+    ),
+    (rl) =>
+      Effect.async<boolean>((resume) => {
+        rl.question(question, (answer) => {
+          resume(Effect.succeed(answer.toLowerCase() === "y"));
+        });
+      }),
+    (rl) => Effect.sync(() => rl.close())
+  );

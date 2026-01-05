@@ -78,6 +78,7 @@ export const ClipboardLive = Layer.succeed(
           );
         }
 
+        // Spawn clipboard copy process with guaranteed cleanup
         yield* Effect.tryPromise({
           try: async () => {
             const proc = Bun.spawn(commands.copy, {
@@ -85,17 +86,27 @@ export const ClipboardLive = Layer.succeed(
               stdout: "pipe",
               stderr: "pipe",
             });
+            try {
+              // Write text to stdin using the writer
+              proc.stdin.write(text);
+              await proc.stdin.end();
 
-            // Write text to stdin using the writer
-            proc.stdin.write(text);
-            await proc.stdin.end();
+              // Wait for process to complete
+              const exitCode = await proc.exited;
 
-            // Wait for process to complete
-            const exitCode = await proc.exited;
-
-            if (exitCode !== 0) {
-              const stderr = await new Response(proc.stderr).text();
-              throw new Error(`Clipboard command failed: ${stderr}`);
+              if (exitCode !== 0) {
+                const stderr = await new Response(proc.stderr).text();
+                throw new Error(`Clipboard command failed: ${stderr}`);
+              }
+            } finally {
+              // Ensure process is killed on error/interruption
+              try {
+                if (!proc.killed) {
+                  proc.kill();
+                }
+              } catch {
+                // Ignore errors during cleanup
+              }
             }
           },
           catch: (error) =>
@@ -117,6 +128,7 @@ export const ClipboardLive = Layer.succeed(
         );
       }
 
+      // Spawn clipboard paste process with guaranteed cleanup
       return yield* Effect.tryPromise({
         try: async () => {
           const proc = Bun.spawn(commands.paste, {
@@ -124,18 +136,28 @@ export const ClipboardLive = Layer.succeed(
             stdout: "pipe",
             stderr: "pipe",
           });
+          try {
+            // Wait for process to complete
+            const exitCode = await proc.exited;
 
-          // Wait for process to complete
-          const exitCode = await proc.exited;
+            if (exitCode !== 0) {
+              const stderr = await new Response(proc.stderr).text();
+              throw new Error(`Clipboard command failed: ${stderr}`);
+            }
 
-          if (exitCode !== 0) {
-            const stderr = await new Response(proc.stderr).text();
-            throw new Error(`Clipboard command failed: ${stderr}`);
+            // Read stdout
+            const output = await new Response(proc.stdout).text();
+            return output;
+          } finally {
+            // Ensure process is killed on error/interruption
+            try {
+              if (!proc.killed) {
+                proc.kill();
+              }
+            } catch {
+              // Ignore errors during cleanup
+            }
           }
-
-          // Read stdout
-          const output = await new Response(proc.stdout).text();
-          return output;
         },
         catch: (error) =>
           new ClipboardError({

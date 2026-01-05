@@ -8,6 +8,7 @@ import { Command, Options } from "@effect/cli";
 import { Effect } from "effect";
 import { MainLive } from "../../services";
 import { runInteractive } from "../app";
+import { reorderArgv } from "./argv-reorder";
 
 // Import command definitions
 import { plCommand } from "./pl";
@@ -66,6 +67,9 @@ export const grimoire = Command.make(
  *
  * Provides MainLive layer for all services.
  * Note: @effect/cli expects full process.argv including program name.
+ *
+ * We reorder argv to allow options after positional args, matching
+ * user expectations from tools like git, npm, docker.
  */
 export const runCli = () => {
   const cli = Command.run(grimoire, {
@@ -73,7 +77,12 @@ export const runCli = () => {
     version: "0.2.0",
   });
 
+  // Reorder argv: move options before positional args
+  // This allows: grim wt rm my-worktree --branch
+  // Instead of:  grim wt rm --branch my-worktree
+  const reorderedArgv = reorderArgv(process.argv);
+
   return Effect.scoped(
-    cli(process.argv).pipe(Effect.provide(MainLive))
+    cli(reorderedArgv).pipe(Effect.provide(MainLive))
   );
 };

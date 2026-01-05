@@ -83,6 +83,46 @@ interface TagRow {
 }
 
 /**
+ * Helper function to batch insert tags and link them to a prompt.
+ * Reduces N*3 queries to just 3 queries regardless of tag count.
+ *
+ * Before: A prompt with 10 tags = 30 queries (3 per tag)
+ * After:  A prompt with 10 tags = 3 queries total
+ */
+const batchInsertTags = (
+  sql: Context.Tag.Service<typeof SqlService>,
+  promptId: string,
+  tags: readonly string[]
+) =>
+  Effect.gen(function* () {
+    if (tags.length === 0) return;
+
+    // Convert to mutable array for SQL parameters
+    const tagArray = [...tags];
+
+    // 1. Batch insert all tags at once (INSERT OR IGNORE handles duplicates)
+    const tagPlaceholders = tagArray.map(() => "(?)").join(", ");
+    yield* sql.run(`INSERT OR IGNORE INTO tags (name) VALUES ${tagPlaceholders}`, tagArray);
+
+    // 2. Batch select all tag IDs in one query
+    const selectPlaceholders = tagArray.map(() => "?").join(", ");
+    const tagRows = yield* sql.query<TagRow>(
+      `SELECT id, name FROM tags WHERE name IN (${selectPlaceholders})`,
+      tagArray
+    );
+
+    // 3. Batch insert all prompt_tags in one query
+    if (tagRows.length > 0) {
+      const promptTagPlaceholders = tagRows.map(() => "(?, ?)").join(", ");
+      const promptTagValues = tagRows.flatMap((t) => [promptId, t.id]);
+      yield* sql.run(
+        `INSERT OR IGNORE INTO prompt_tags (prompt_id, tag_id) VALUES ${promptTagPlaceholders}`,
+        promptTagValues
+      );
+    }
+  });
+
+/**
  * Sync service implementation
  */
 export const SyncLive = Layer.effect(
@@ -160,25 +200,9 @@ export const SyncLive = Layer.effect(
                   [frontmatter.id, frontmatter.name, content, tagsStr]
                 );
 
-                // Insert tags if present
+                // Insert tags if present (batched for efficiency)
                 if (frontmatter.tags && frontmatter.tags.length > 0) {
-                  for (const tagName of frontmatter.tags) {
-                    // Insert tag if it doesn't exist
-                    yield* sql.run(`INSERT OR IGNORE INTO tags (name) VALUES (?)`, [tagName]);
-
-                    // Get tag ID
-                    const tagRows = yield* sql.query<TagRow>(`SELECT id FROM tags WHERE name = ?`, [
-                      tagName,
-                    ]);
-
-                    if (tagRows.length > 0) {
-                      // Link prompt to tag
-                      yield* sql.run(
-                        `INSERT OR IGNORE INTO prompt_tags (prompt_id, tag_id) VALUES (?, ?)`,
-                        [frontmatter.id, tagRows[0].id]
-                      );
-                    }
-                  }
+                  yield* batchInsertTags(sql, frontmatter.id, frontmatter.tags);
                 }
 
                 return { _tag: "created" } as const;
@@ -206,27 +230,11 @@ export const SyncLive = Layer.effect(
                   [frontmatter.id, frontmatter.name, content, tagsStr]
                 );
 
-                // Update tags - remove old ones and add new ones
+                // Update tags - remove old ones and add new ones (batched for efficiency)
                 yield* sql.run(`DELETE FROM prompt_tags WHERE prompt_id = ?`, [frontmatter.id]);
 
                 if (frontmatter.tags && frontmatter.tags.length > 0) {
-                  for (const tagName of frontmatter.tags) {
-                    // Insert tag if it doesn't exist
-                    yield* sql.run(`INSERT OR IGNORE INTO tags (name) VALUES (?)`, [tagName]);
-
-                    // Get tag ID
-                    const tagRows = yield* sql.query<TagRow>(`SELECT id FROM tags WHERE name = ?`, [
-                      tagName,
-                    ]);
-
-                    if (tagRows.length > 0) {
-                      // Link prompt to tag
-                      yield* sql.run(
-                        `INSERT OR IGNORE INTO prompt_tags (prompt_id, tag_id) VALUES (?, ?)`,
-                        [frontmatter.id, tagRows[0].id]
-                      );
-                    }
-                  }
+                  yield* batchInsertTags(sql, frontmatter.id, frontmatter.tags);
                 }
 
                 return { _tag: "updated" } as const;
@@ -366,27 +374,11 @@ export const SyncLive = Layer.effect(
             );
           }
 
-          // Update tags
+          // Update tags - remove old ones and add new ones (batched for efficiency)
           yield* sql.run(`DELETE FROM prompt_tags WHERE prompt_id = ?`, [frontmatter.id]);
 
           if (frontmatter.tags && frontmatter.tags.length > 0) {
-            for (const tagName of frontmatter.tags) {
-              // Insert tag if it doesn't exist
-              yield* sql.run(`INSERT OR IGNORE INTO tags (name) VALUES (?)`, [tagName]);
-
-              // Get tag ID
-              const tagRows = yield* sql.query<TagRow>(`SELECT id FROM tags WHERE name = ?`, [
-                tagName,
-              ]);
-
-              if (tagRows.length > 0) {
-                // Link prompt to tag
-                yield* sql.run(
-                  `INSERT OR IGNORE INTO prompt_tags (prompt_id, tag_id) VALUES (?, ?)`,
-                  [frontmatter.id, tagRows[0].id]
-                );
-              }
-            }
+            yield* batchInsertTags(sql, frontmatter.id, frontmatter.tags);
           }
         }),
 

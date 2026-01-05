@@ -305,7 +305,7 @@ export interface AgentAdapter {
   /**
    * Initialize agent configuration in the project
    */
-  readonly init: (projectPath: string) => Effect.Effect<void>;
+  readonly init: (projectPath: string) => Effect.Effect<void, AgentAdapterError>;
 
   /**
    * Get the project-local skills directory path for this agent
@@ -357,7 +357,7 @@ export interface AgentAdapter {
     projectPath: string,
     name: string,
     config: McpConfig
-  ) => Effect.Effect<void>;
+  ) => Effect.Effect<void, AgentAdapterError>;
 
   /**
    * Inject content into agent markdown file
@@ -374,7 +374,7 @@ export interface AgentAdapter {
   readonly removeInjection: (
     projectPath: string,
     skillName: string
-  ) => Effect.Effect<void>;
+  ) => Effect.Effect<void, AgentAdapterError>;
 }
 
 // ============================================================================
@@ -455,7 +455,7 @@ const ClaudeCodeAdapter: AgentAdapter = {
           });
         }
       }
-    }).pipe(Effect.orDie),
+    }),
 
   getSkillsDir: (projectPath: string) => {
     return join(projectPath, ".claude", "skills");
@@ -578,7 +578,7 @@ const ClaudeCodeAdapter: AgentAdapter = {
 
       // Remove injection from CLAUDE.md
       yield* ClaudeCodeAdapter.removeInjection(projectPath, skillName);
-    }).pipe(Effect.orDie),
+    }),
 
   installPlugin: (marketplace: string, name: string) =>
     Effect.gen(function* () {
@@ -668,7 +668,7 @@ const ClaudeCodeAdapter: AgentAdapter = {
             cause: error,
           }),
       });
-    }).pipe(Effect.orDie),
+    }),
 
   injectContent: (projectPath: string, skillName: string, content: string) =>
     Effect.gen(function* () {
@@ -735,7 +735,7 @@ const ClaudeCodeAdapter: AgentAdapter = {
             }),
         });
       }
-    }).pipe(Effect.orDie),
+    }),
 };
 
 /**
@@ -831,7 +831,7 @@ const OpenCodeAdapter: AgentAdapter = {
           });
         }
       }
-    }).pipe(Effect.orDie),
+    }),
 
   getSkillsDir: (projectPath: string) => {
     return join(projectPath, ".opencode", "skills");
@@ -954,7 +954,7 @@ const OpenCodeAdapter: AgentAdapter = {
 
       // Remove injection from AGENTS.md
       yield* OpenCodeAdapter.removeInjection(projectPath, skillName);
-    }).pipe(Effect.orDie),
+    }),
 
   configureMcp: (projectPath: string, name: string, config: McpConfig) =>
     Effect.gen(function* () {
@@ -1002,7 +1002,7 @@ const OpenCodeAdapter: AgentAdapter = {
             cause: error,
           }),
       });
-    }).pipe(Effect.orDie),
+    }),
 
   injectContent: (projectPath: string, skillName: string, content: string) =>
     Effect.gen(function* () {
@@ -1069,7 +1069,7 @@ const OpenCodeAdapter: AgentAdapter = {
             }),
         });
       }
-    }).pipe(Effect.orDie),
+    }),
 };
 
 /**
@@ -1145,7 +1145,7 @@ const GenericAdapter: AgentAdapter = {
           });
         }
       }
-    }).pipe(Effect.orDie),
+    }),
 
   getSkillsDir: (projectPath: string) => {
     return join(projectPath, ".skills");
@@ -1268,7 +1268,7 @@ const GenericAdapter: AgentAdapter = {
 
       // Remove injection from AGENTS.md
       yield* GenericAdapter.removeInjection(projectPath, skillName);
-    }).pipe(Effect.orDie),
+    }),
 
   injectContent: (projectPath: string, skillName: string, content: string) =>
     Effect.gen(function* () {
@@ -1335,7 +1335,7 @@ const GenericAdapter: AgentAdapter = {
             }),
         });
       }
-    }).pipe(Effect.orDie),
+    }),
 };
 
 // ============================================================================
@@ -1447,7 +1447,7 @@ Instructions for AI coding assistants.
           });
         }
       }
-    }).pipe(Effect.orDie),
+    }),
 
   getSkillsDir: (projectPath: string) => {
     // Codex now supports skills directory (Dec 2025)
@@ -1553,7 +1553,7 @@ Instructions for AI coding assistants.
 
       // Also remove any legacy injection from AGENTS.md
       yield* CodexAdapter.removeInjection(projectPath, skillName);
-    }).pipe(Effect.orDie),
+    }),
 
   injectContent: (projectPath: string, skillName: string, content: string) =>
     Effect.gen(function* () {
@@ -1624,7 +1624,7 @@ Instructions for AI coding assistants.
           });
         }
       }
-    }).pipe(Effect.orDie),
+    }),
 };
 
 // ============================================================================
@@ -1752,7 +1752,7 @@ const CursorAdapter: AgentAdapter = {
             }),
         });
       }
-    }).pipe(Effect.orDie),
+    }),
 
   getSkillsDir: (projectPath: string) => {
     return join(projectPath, ".cursor", "rules");
@@ -1899,7 +1899,7 @@ const CursorAdapter: AgentAdapter = {
             }),
         });
       }
-    }).pipe(Effect.orDie),
+    }),
 
   injectContent: (projectPath: string, skillName: string, content: string) =>
     Effect.gen(function* () {
@@ -1961,7 +1961,7 @@ const CursorAdapter: AgentAdapter = {
             }),
         });
       }
-    }).pipe(Effect.orDie),
+    }),
 };
 
 // ============================================================================
@@ -2037,7 +2037,7 @@ Coding guidelines and conventions for this project.
           });
         }
       }
-    }).pipe(Effect.orDie),
+    }),
 
   getSkillsDir: (projectPath: string) => {
     // Aider doesn't have a skills dir - uses CONVENTIONS.md injection
@@ -2106,7 +2106,7 @@ Coding guidelines and conventions for this project.
   disableSkill: (projectPath: string, skillName: string) =>
     Effect.gen(function* () {
       yield* AiderAdapter.removeInjection(projectPath, skillName);
-    }).pipe(Effect.orDie),
+    }),
 
   injectContent: (projectPath: string, skillName: string, content: string) =>
     Effect.gen(function* () {
@@ -2166,7 +2166,7 @@ Coding guidelines and conventions for this project.
             }),
         });
       }
-    }).pipe(Effect.orDie),
+    }),
 };
 
 // ============================================================================
@@ -2242,7 +2242,7 @@ Instructions for Amp AI coding assistant.
           });
         }
       }
-    }).pipe(Effect.orDie),
+    }),
 
   getSkillsDir: (projectPath: string) => {
     // Amp doesn't have a skills dir - uses AGENT.md injection
@@ -2312,7 +2312,7 @@ Instructions for Amp AI coding assistant.
   disableSkill: (projectPath: string, skillName: string) =>
     Effect.gen(function* () {
       yield* AmpAdapter.removeInjection(projectPath, skillName);
-    }).pipe(Effect.orDie),
+    }),
 
   injectContent: (projectPath: string, skillName: string, content: string) =>
     Effect.gen(function* () {
@@ -2372,7 +2372,7 @@ Instructions for Amp AI coding assistant.
             }),
         });
       }
-    }).pipe(Effect.orDie),
+    }),
 };
 
 // ============================================================================
@@ -2465,7 +2465,7 @@ Instructions for Gemini AI coding assistant.
           });
         }
       }
-    }).pipe(Effect.orDie),
+    }),
 
   getSkillsDir: (projectPath: string) => {
     return join(projectPath, ".gemini", "skills");
@@ -2588,7 +2588,7 @@ Instructions for Gemini AI coding assistant.
 
       // Remove injection from GEMINI.md
       yield* GeminiAdapter.removeInjection(projectPath, skillName);
-    }).pipe(Effect.orDie),
+    }),
 
   configureMcp: (projectPath: string, name: string, config: McpConfig) =>
     Effect.gen(function* () {
@@ -2639,7 +2639,7 @@ Instructions for Gemini AI coding assistant.
             cause: error,
           }),
       });
-    }).pipe(Effect.orDie),
+    }),
 
   injectContent: (projectPath: string, skillName: string, content: string) =>
     Effect.gen(function* () {
@@ -2702,7 +2702,7 @@ Instructions for Gemini AI coding assistant.
             }),
         });
       }
-    }).pipe(Effect.orDie),
+    }),
 };
 
 // ============================================================================

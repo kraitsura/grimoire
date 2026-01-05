@@ -16,7 +16,7 @@
  * - VS Code integrated terminal
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Context, Data, Effect, Layer } from "effect";
 import { spawn } from "child_process";
 
 // =============================================================================
@@ -48,22 +48,16 @@ export interface TerminalInfo {
 // Errors
 // =============================================================================
 
-export class TerminalNotSupportedError {
-  readonly _tag = "TerminalNotSupportedError";
-  constructor(
-    readonly terminal: TerminalInfo,
-    readonly message: string
-  ) {}
-}
+export class TerminalNotSupportedError extends Data.TaggedError("TerminalNotSupportedError")<{
+  terminal: TerminalInfo;
+  message: string;
+}> {}
 
-export class TerminalCommandError {
-  readonly _tag = "TerminalCommandError";
-  constructor(
-    readonly command: string,
-    readonly stderr: string,
-    readonly exitCode: number
-  ) {}
-}
+export class TerminalCommandError extends Data.TaggedError("TerminalCommandError")<{
+  command: string;
+  stderr: string;
+  exitCode: number;
+}> {}
 
 // =============================================================================
 // Terminal Detection
@@ -161,7 +155,7 @@ const detectTerminal = (): TerminalInfo => {
 // =============================================================================
 
 /**
- * Execute a shell command and return result
+ * Execute a shell command and return result (with guaranteed process cleanup)
  */
 const execCommand = (
   command: string,
@@ -174,10 +168,21 @@ const execCommand = (
         stdout: "pipe",
         stderr: "pipe",
       });
-      const stdout = await new Response(proc.stdout).text();
-      const stderr = await new Response(proc.stderr).text();
-      const exitCode = await proc.exited;
-      return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
+      try {
+        const stdout = await new Response(proc.stdout).text();
+        const stderr = await new Response(proc.stderr).text();
+        const exitCode = await proc.exited;
+        return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
+      } finally {
+        // Ensure process is killed on error/interruption
+        try {
+          if (!proc.killed) {
+            proc.kill();
+          }
+        } catch {
+          // Ignore errors during cleanup
+        }
+      }
     },
     catch: (error) => ({
       stdout: "",
@@ -217,7 +222,11 @@ end tell
     const result = yield* execCommand(`osascript -e ${shellEscape(script)}`);
     if (result.exitCode !== 0) {
       return yield* Effect.fail(
-        new TerminalCommandError("osascript (iTerm2)", result.stderr, result.exitCode)
+        new TerminalCommandError({
+          command: "osascript (iTerm2)",
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+        })
       );
     }
   });
@@ -245,7 +254,11 @@ end tell
     const result = yield* execCommand(`osascript -e ${shellEscape(script)}`);
     if (result.exitCode !== 0) {
       return yield* Effect.fail(
-        new TerminalCommandError("osascript (Terminal.app)", result.stderr, result.exitCode)
+        new TerminalCommandError({
+          command: "osascript (Terminal.app)",
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+        })
       );
     }
   });
@@ -263,7 +276,11 @@ const openWezTermTab = (
     );
     if (result.exitCode !== 0) {
       return yield* Effect.fail(
-        new TerminalCommandError("wezterm cli spawn", result.stderr, result.exitCode)
+        new TerminalCommandError({
+          command: "wezterm cli spawn",
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+        })
       );
     }
   });
@@ -281,7 +298,11 @@ const openAlacrittyWindow = (
     );
     if (result.exitCode !== 0) {
       return yield* Effect.fail(
-        new TerminalCommandError("alacritty msg create-window", result.stderr, result.exitCode)
+        new TerminalCommandError({
+          command: "alacritty msg create-window",
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+        })
       );
     }
   });
@@ -336,10 +357,10 @@ const makeTerminalService = (): TerminalServiceImpl => ({
 
       if (!terminal.supportsNewTab) {
         return yield* Effect.fail(
-          new TerminalNotSupportedError(
+          new TerminalNotSupportedError({
             terminal,
-            `${terminal.name} does not support opening new tabs programmatically.`
-          )
+            message: `${terminal.name} does not support opening new tabs programmatically.`,
+          })
         );
       }
 
@@ -358,10 +379,10 @@ const makeTerminalService = (): TerminalServiceImpl => ({
           break;
         default:
           return yield* Effect.fail(
-            new TerminalNotSupportedError(
+            new TerminalNotSupportedError({
               terminal,
-              `${terminal.name} is not supported.`
-            )
+              message: `${terminal.name} is not supported.`,
+            })
           );
       }
     }),

@@ -101,18 +101,24 @@ const decodeState = (content: string): MutableInternalWorktreeState => {
 };
 
 /**
- * Decode state as any for inline service implementation (fallback)
- * This is used by the inline WorktreeStateService stub which doesn't need strict types
+ * Decode state for inline service implementation with fallback.
+ * Returns version 2 format with guaranteed createdAt field.
+ *
+ * Note: Uses `any` return type because this stub service implementation
+ * needs to satisfy the public WorktreeState interface while using
+ * internal types. The type is validated at runtime via Schema.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const decodeStateForInline = (content: string): any => {
   try {
     const parsed = JSON.parse(content);
     const validated = Schema.decodeUnknownSync(InternalWorktreeStateSchema)(parsed);
-    // Return as-is with version 2 for compatibility
     return {
       version: 2,
-      worktrees: [...validated.worktrees].map(w => ({ ...w, createdAt: w.createdAt || new Date().toISOString() })),
+      worktrees: [...validated.worktrees].map(w => ({
+        ...w,
+        createdAt: w.createdAt || new Date().toISOString(),
+      })),
     };
   } catch {
     return { version: 2, worktrees: [] };

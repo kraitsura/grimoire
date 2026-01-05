@@ -112,7 +112,8 @@ const killCommand = Command.make(
     name: Args.text({ name: "name" }).pipe(Args.withDescription("Worktree name")),
     force: Options.boolean("force").pipe(Options.withDefault(false)),
   },
-  ({ name, force }) => worktreeKill(buildParsedArgs(["kill", name], { force }))
+  // Handler expects positional[3] to be the name (legacy format: grim wt kill <name>)
+  ({ name, force }) => worktreeKill(buildParsedArgs(["grim", "wt", "kill", name], { force }))
 ).pipe(Command.withDescription("Terminate a spawned agent"));
 
 // Children command

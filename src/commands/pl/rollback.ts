@@ -110,7 +110,7 @@ export const rollbackCommand = (args: ParsedArgs) =>
 
     // Confirm rollback (unless --force)
     if (!validatedArgs.force) {
-      const confirmed = yield* Effect.promise(() => askConfirmation("Apply rollback? [y/N] "));
+      const confirmed = yield* askConfirmation("Apply rollback? [y/N] ");
       if (!confirmed) {
         console.log("Cancelled.");
         return;
@@ -147,20 +147,23 @@ export const rollbackCommand = (args: ParsedArgs) =>
   });
 
 /**
- * Ask for user confirmation
- *
- * @param question - The question to ask the user
- * @returns Promise that resolves to true if user confirmed (y), false otherwise
+ * Ask for user confirmation with guaranteed readline cleanup.
+ * Uses Effect.acquireUseRelease to ensure interface is closed on
+ * completion, error, or interruption.
  */
-function askConfirmation(question: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.toLowerCase() === "y");
-    });
-  });
-}
+const askConfirmation = (question: string): Effect.Effect<boolean> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      })
+    ),
+    (rl) =>
+      Effect.async<boolean>((resume) => {
+        rl.question(question, (answer) => {
+          resume(Effect.succeed(answer.toLowerCase() === "y"));
+        });
+      }),
+    (rl) => Effect.sync(() => rl.close())
+  );

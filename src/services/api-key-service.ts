@@ -140,25 +140,33 @@ const writeEnvFile = (entries: Map<string, string>): Effect.Effect<void, EnvFile
     const envPath = getEnvFilePath();
     const envDir = join(homedir(), ".grimoire");
 
-    try {
-      // Ensure directory exists
-      yield* Effect.promise(() =>
-        import("fs/promises").then((fs) => fs.mkdir(envDir, { recursive: true }))
-      );
+    // Ensure directory exists
+    yield* Effect.tryPromise({
+      try: () => import("fs/promises").then((fs) => fs.mkdir(envDir, { recursive: true })),
+      catch: (error) =>
+        new EnvFileWriteError({
+          message: `Failed to create directory: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+    });
 
-      // Write .env file
-      const content = serializeEnvFile(entries);
-      yield* Effect.promise(() => Bun.write(envPath, content));
-
-      // Set file permissions to 0600 (user read/write only) for security
-      yield* Effect.promise(() => import("fs/promises").then((fs) => fs.chmod(envPath, 0o600)));
-    } catch (error) {
-      return yield* Effect.fail(
+    // Write .env file
+    const content = serializeEnvFile(entries);
+    yield* Effect.tryPromise({
+      try: () => Bun.write(envPath, content),
+      catch: (error) =>
         new EnvFileWriteError({
           message: `Failed to write .env file: ${error instanceof Error ? error.message : String(error)}`,
-        })
-      );
-    }
+        }),
+    });
+
+    // Set file permissions to 0600 (user read/write only) for security
+    yield* Effect.tryPromise({
+      try: () => import("fs/promises").then((fs) => fs.chmod(envPath, 0o600)),
+      catch: (error) =>
+        new EnvFileWriteError({
+          message: `Failed to set permissions: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+    });
   });
 
 // Service implementation

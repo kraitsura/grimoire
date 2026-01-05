@@ -6,7 +6,7 @@
  * OpenAI's tokenization.
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Context, Data, Effect, Layer } from "effect";
 import { getEncoding, encodingForModel } from "js-tiktoken";
 import type { Tiktoken, TiktokenModel, TiktokenEncoding } from "js-tiktoken";
 
@@ -21,10 +21,9 @@ export interface Message {
 /**
  * Error types
  */
-export class TokenCounterError {
-  readonly _tag = "TokenCounterError";
-  constructor(readonly message: string) {}
-}
+export class TokenCounterError extends Data.TaggedError("TokenCounterError")<{
+  message: string;
+}> {}
 
 /**
  * Model to encoding mapping
@@ -134,9 +133,9 @@ const getEncodingForModel = (model: string): Effect.Effect<Tiktoken, TokenCounte
       const encodingName = MODEL_TO_ENCODING[model];
       if (!encodingName) {
         return Effect.fail(
-          new TokenCounterError(
-            `Unknown model: ${model}. Supported models: ${Object.keys(MODEL_TO_ENCODING).join(", ")}`
-          )
+          new TokenCounterError({
+            message: `Unknown model: ${model}. Supported models: ${Object.keys(MODEL_TO_ENCODING).join(", ")}`,
+          })
         );
       }
 
@@ -144,9 +143,9 @@ const getEncodingForModel = (model: string): Effect.Effect<Tiktoken, TokenCounte
         return Effect.succeed(getEncoding(encodingName));
       } catch (error) {
         return Effect.fail(
-          new TokenCounterError(
-            `Failed to load encoding ${encodingName}: ${error instanceof Error ? error.message : String(error)}`
-          )
+          new TokenCounterError({
+            message: `Failed to load encoding ${encodingName}: ${error instanceof Error ? error.message : String(error)}`,
+          })
         );
       }
     }
@@ -167,9 +166,9 @@ export const TokenCounterServiceLive = Layer.succeed(
           return tokens.length;
         } catch (error) {
           return yield* Effect.fail(
-            new TokenCounterError(
-              `Failed to encode text: ${error instanceof Error ? error.message : String(error)}`
-            )
+            new TokenCounterError({
+              message: `Failed to encode text: ${error instanceof Error ? error.message : String(error)}`,
+            })
           );
         }
       }),
@@ -204,9 +203,9 @@ export const TokenCounterServiceLive = Layer.succeed(
           return totalTokens;
         } catch (error) {
           return yield* Effect.fail(
-            new TokenCounterError(
-              `Failed to count message tokens: ${error instanceof Error ? error.message : String(error)}`
-            )
+            new TokenCounterError({
+              message: `Failed to count message tokens: ${error instanceof Error ? error.message : String(error)}`,
+            })
           );
         }
       }),
@@ -216,9 +215,9 @@ export const TokenCounterServiceLive = Layer.succeed(
         const pricing = MODEL_PRICING[model];
         if (!pricing) {
           return yield* Effect.fail(
-            new TokenCounterError(
-              `No pricing information for model: ${model}. Supported models: ${Object.keys(MODEL_PRICING).join(", ")}`
-            )
+            new TokenCounterError({
+              message: `No pricing information for model: ${model}. Supported models: ${Object.keys(MODEL_PRICING).join(", ")}`,
+            })
           );
         }
 

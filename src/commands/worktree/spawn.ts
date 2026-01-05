@@ -608,11 +608,15 @@ export const worktreeSpawn = (args: ParsedArgs) =>
                   endedAt: new Date().toISOString(),
                   exitCode: code ?? undefined,
                 })
-              ).catch(() => {}),
+              ).catch((err) => {
+                console.warn("Warning: Failed to update session status:", err);
+              }),
             ];
             if (configPath) {
               cleanupPromises.push(
-                import("fs/promises").then((fs) => fs.unlink(configPath).catch(() => {}))
+                import("fs/promises").then((fs) =>
+                  fs.unlink(configPath).catch(() => undefined) // Temp file cleanup can fail silently
+                )
               );
             }
             Promise.all(cleanupPromises).finally(() => {
@@ -628,7 +632,9 @@ export const worktreeSpawn = (args: ParsedArgs) =>
                 status: "crashed",
                 endedAt: new Date().toISOString(),
               })
-            ).catch(() => {});
+            ).catch((updateErr) => {
+              console.warn("Warning: Failed to update session status:", updateErr);
+            });
             process.exitCode = 1;
             resolve();
           });

@@ -143,7 +143,7 @@ export const worktreeEach = (args: ParsedArgs) =>
       const allResults = yield* Effect.forEach(
         worktrees,
         (wt) => Effect.promise(() => runInWorktree(wt, command, true)),
-        { concurrency: "unbounded" }
+        { concurrency: 5 }
       );
 
       for (const result of allResults) {

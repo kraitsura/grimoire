@@ -8,7 +8,7 @@
  * - Config merging with mandatory protections
  */
 
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Data, Effect, Layer, Schema } from "effect";
 import { join } from "path";
 import { homedir } from "os";
 import {
@@ -120,13 +120,10 @@ export interface ResolvedSrtConfig {
 // Errors
 // =============================================================================
 
-export class SrtConfigParseError {
-  readonly _tag = "SrtConfigParseError";
-  constructor(
-    readonly path: string,
-    readonly cause: string
-  ) {}
-}
+export class SrtConfigParseError extends Data.TaggedError("SrtConfigParseError")<{
+  path: string;
+  cause: string;
+}> {}
 
 // =============================================================================
 // Service Interface
@@ -206,27 +203,24 @@ const readConfigFile = (
 
     const content = yield* Effect.tryPromise({
       try: () => file.text(),
-      catch: () => new SrtConfigParseError(path, "Failed to read file"),
+      catch: () => new SrtConfigParseError({ path, cause: "Failed to read file" }),
     });
 
     // Parse JSON
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(content);
-    } catch (e) {
-      return yield* Effect.fail(
-        new SrtConfigParseError(
+    const parsed = yield* Effect.try({
+      try: () => JSON.parse(content),
+      catch: (e) =>
+        new SrtConfigParseError({
           path,
-          `Invalid JSON: ${e instanceof Error ? e.message : String(e)}`
-        )
-      );
-    }
+          cause: `Invalid JSON: ${e instanceof Error ? e.message : String(e)}`,
+        }),
+    });
 
     // Validate with schema
     const decoded = Schema.decodeUnknownEither(SrtUserConfigSchema)(parsed);
     if (decoded._tag === "Left") {
       return yield* Effect.fail(
-        new SrtConfigParseError(path, "Schema validation failed")
+        new SrtConfigParseError({ path, cause: "Schema validation failed" })
       );
     }
 

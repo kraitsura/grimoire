@@ -352,7 +352,7 @@ const makeLLMService = Effect.sync(() => {
             Effect.catchAll(() => Effect.succeed([] as string[]))
           )
         ),
-        { concurrency: "unbounded" }
+        { concurrency: 5 }
       );
 
       return modelLists.flat();
@@ -382,7 +382,7 @@ export const makeLLMServiceLayer = (providerEffects: LLMProvider[]): Layer.Layer
       const service = yield* makeLLMService;
       yield* Effect.all(
         providerEffects.map((p) => service.registerProvider(p)),
-        { concurrency: "unbounded" }
+        { concurrency: 5 }
       );
       return service;
     })

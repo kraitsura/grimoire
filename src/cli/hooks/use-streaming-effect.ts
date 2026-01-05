@@ -85,10 +85,9 @@ export function useStreamingEffect(
         connectionTimeoutRef.current = null;
       }
       // Cancel any running fiber on unmount
+      // Interrupt errors are expected (fiber may already be complete)
       if (fiberRef.current) {
-        runtime.runPromise(Fiber.interrupt(fiberRef.current)).catch(() => {
-          // Ignore interrupt errors
-        });
+        runtime.runPromise(Fiber.interrupt(fiberRef.current)).catch(() => undefined);
       }
     };
   }, [runtime]);
@@ -99,11 +98,9 @@ export function useStreamingEffect(
       clearTimeout(connectionTimeoutRef.current);
       connectionTimeoutRef.current = null;
     }
-    // Cancel any running fiber
+    // Cancel any running fiber (interrupt errors expected)
     if (fiberRef.current) {
-      runtime.runPromise(Fiber.interrupt(fiberRef.current)).catch(() => {
-        // Ignore interrupt errors
-      });
+      runtime.runPromise(Fiber.interrupt(fiberRef.current)).catch(() => undefined);
       fiberRef.current = null;
     }
     setState(initialState);
@@ -112,12 +109,10 @@ export function useStreamingEffect(
   const start = useCallback(() => {
     log.info("useStreamingEffect", "start() called");
 
-    // Cancel any existing fiber
+    // Cancel any existing fiber (interrupt errors expected)
     if (fiberRef.current) {
       log.debug("useStreamingEffect", "Cancelling existing fiber");
-      runtime.runPromise(Fiber.interrupt(fiberRef.current)).catch(() => {
-        // Ignore interrupt errors
-      });
+      runtime.runPromise(Fiber.interrupt(fiberRef.current)).catch(() => undefined);
     }
 
     // Reset state for new stream
@@ -152,9 +147,9 @@ export function useStreamingEffect(
           }
           return prev;
         });
-        // Interrupt the fiber if it's still running
+        // Interrupt the fiber if it's still running (interrupt errors expected)
         if (fiberRef.current) {
-          runtime.runPromise(Fiber.interrupt(fiberRef.current)).catch(() => {});
+          runtime.runPromise(Fiber.interrupt(fiberRef.current)).catch(() => undefined);
         }
       }
     }, 30000);

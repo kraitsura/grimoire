@@ -135,17 +135,26 @@ export const EditorServiceLive = Layer.effect(
           // Get editor command
           const editorCommand = getEditorCommand();
 
-          // Spawn editor process and wait for it to exit
+          // Spawn editor process and wait for it to exit (with guaranteed cleanup)
           yield* Effect.tryPromise({
             try: async () => {
               const proc = Bun.spawn([editorCommand, tempFilePath], {
                 stdio: ["inherit", "inherit", "inherit"],
               });
-              await proc.exited;
-
-              // Check exit code
-              if (proc.exitCode !== 0) {
-                throw new Error(`Editor exited with code ${proc.exitCode}`);
+              try {
+                const exitCode = await proc.exited;
+                if (exitCode !== 0) {
+                  throw new Error(`Editor exited with code ${exitCode}`);
+                }
+              } finally {
+                // Ensure process is killed on error/interruption
+                try {
+                  if (!proc.killed) {
+                    proc.kill();
+                  }
+                } catch {
+                  // Ignore errors during cleanup
+                }
               }
             },
             catch: (error) =>

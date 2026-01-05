@@ -338,7 +338,7 @@ export const worktreePs = (args: ParsedArgs) =>
             diff,
           };
         }),
-      { concurrency: "unbounded" }
+      { concurrency: 10 }
     );
 
     // Filter worktrees based on context (unless --all)

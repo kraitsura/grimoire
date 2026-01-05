@@ -365,75 +365,88 @@ export const configCommand = (args: ParsedArgs) =>
   });
 
 /**
+ * Create a readline interface with guaranteed cleanup on interruption.
+ * Uses Effect.acquireRelease to ensure the interface is always closed.
+ */
+const withReadline = <A>(
+  use: (rl: readline.Interface) => Effect.Effect<A>
+): Effect.Effect<A> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      })
+    ),
+    use,
+    (rl) => Effect.sync(() => rl.close())
+  );
+
+/**
+ * Prompt for a single line of input using readline.
+ * Properly cleans up the readline interface on completion, error, or interruption.
+ */
+const promptLine = (prompt: string): Effect.Effect<string> =>
+  withReadline((rl) =>
+    Effect.async<string>((resume) => {
+      rl.question(prompt, (answer) => {
+        resume(Effect.succeed(answer));
+      });
+    })
+  );
+
+/**
  * Prompt user for input with optional hidden/masked input for sensitive data
  */
 function promptForInput(prompt: string, hideInput = false): Effect.Effect<string> {
+  if (!hideInput) {
+    return promptLine(prompt);
+  }
+
+  // For hidden input (like passwords), use raw mode if TTY
+  if (!process.stdin.isTTY) {
+    return promptLine(prompt);
+  }
+
   return Effect.async<string>((resume) => {
     process.stdout.write(prompt);
+    let input = "";
 
-    if (!hideInput) {
-      // Normal visible input
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
 
-      rl.question("", (answer) => {
-        rl.close();
-        resume(Effect.succeed(answer));
-      });
-    } else {
-      // Hidden input - show asterisks instead of characters
-      let input = "";
+    const cleanup = () => {
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdin.removeListener("data", onData);
+    };
 
-      if (!process.stdin.isTTY) {
-        // Non-TTY mode (piped input), just read normally
-        const rl = readline.createInterface({
-          input: process.stdin,
-          output: process.stdout,
-        });
-        rl.question("", (answer) => {
-          rl.close();
-          resume(Effect.succeed(answer));
-        });
-        return;
-      }
+    const onData = (char: string) => {
+      const charCode = char.charCodeAt(0);
 
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
-      process.stdin.setEncoding("utf8");
-
-      const onData = (char: string) => {
-        const charCode = char.charCodeAt(0);
-
-        if (char === "\r" || char === "\n") {
-          // Enter pressed - done
-          process.stdin.setRawMode(false);
-          process.stdin.pause();
-          process.stdin.removeListener("data", onData);
-          process.stdout.write("\n");
-          resume(Effect.succeed(input));
-        } else if (charCode === 3) {
-          // Ctrl+C - exit
-          process.stdin.setRawMode(false);
-          process.stdin.pause();
-          process.stdout.write("\n");
-          process.exit(0);
-        } else if (charCode === 127 || charCode === 8) {
-          // Backspace
-          if (input.length > 0) {
-            input = input.slice(0, -1);
-            process.stdout.write("\b \b"); // Erase the asterisk
-          }
-        } else if (charCode >= 32) {
-          // Printable character
-          input += char;
-          process.stdout.write("*");
+      if (char === "\r" || char === "\n") {
+        cleanup();
+        process.stdout.write("\n");
+        resume(Effect.succeed(input));
+      } else if (charCode === 3) {
+        cleanup();
+        process.stdout.write("\n");
+        process.exit(0);
+      } else if (charCode === 127 || charCode === 8) {
+        if (input.length > 0) {
+          input = input.slice(0, -1);
+          process.stdout.write("\b \b");
         }
-      };
+      } else if (charCode >= 32) {
+        input += char;
+        process.stdout.write("*");
+      }
+    };
+    process.stdin.on("data", onData);
 
-      process.stdin.on("data", onData);
-    }
+    // Return cleanup function for interruption
+    return Effect.sync(cleanup);
   });
 }
 

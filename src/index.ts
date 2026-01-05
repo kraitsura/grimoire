@@ -73,12 +73,14 @@ import { runCli } from "./cli/effect";
  */
 const handleCompletionHelpers = async (args: string[]): Promise<boolean> => {
   if (args.includes("--cmplt-prompts")) {
-    await Effect.runPromise(listPromptNamesForCompletion).catch(() => {});
+    // Completion must fail silently - errors break shell tab completion
+    await Effect.runPromise(listPromptNamesForCompletion).catch(() => undefined);
     return true;
   }
 
   if (args.includes("--cmplt-worktrees")) {
-    await Effect.runPromise(listWorktreeNamesForCompletion).catch(() => {});
+    // Completion must fail silently - errors break shell tab completion
+    await Effect.runPromise(listWorktreeNamesForCompletion).catch(() => undefined);
     return true;
   }
 

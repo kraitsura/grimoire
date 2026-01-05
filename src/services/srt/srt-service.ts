@@ -10,7 +10,7 @@
  * - Command wrapping for sandboxed execution
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Context, Data, Effect, Layer } from "effect";
 import { join } from "path";
 import { tmpdir, homedir } from "os";
 import { randomUUID } from "crypto";
@@ -90,24 +90,20 @@ export interface SrtExecResult {
 // Errors
 // =============================================================================
 
-export class SrtNotAvailableError {
-  readonly _tag = "SrtNotAvailableError";
-  constructor(readonly info: PlatformInfo) {}
-}
+export class SrtNotAvailableError extends Data.TaggedError("SrtNotAvailableError")<{
+  info: PlatformInfo;
+}> {}
 
-export class SrtConfigWriteError {
-  readonly _tag = "SrtConfigWriteError";
-  constructor(readonly path: string, readonly cause: string) {}
-}
+export class SrtConfigWriteError extends Data.TaggedError("SrtConfigWriteError")<{
+  path: string;
+  cause: string;
+}> {}
 
-export class SrtExecError {
-  readonly _tag = "SrtExecError";
-  constructor(
-    readonly command: string,
-    readonly stderr: string,
-    readonly exitCode: number
-  ) {}
-}
+export class SrtExecError extends Data.TaggedError("SrtExecError")<{
+  command: string;
+  stderr: string;
+  exitCode: number;
+}> {}
 
 // =============================================================================
 // Default Configuration
@@ -406,10 +402,10 @@ const makeSrtService = (): SrtServiceImpl => {
         yield* Effect.tryPromise({
           try: () => Bun.write(configPath, JSON.stringify(config, null, 2)),
           catch: (error) =>
-            new SrtConfigWriteError(
-              configPath,
-              error instanceof Error ? error.message : String(error)
-            ),
+            new SrtConfigWriteError({
+              path: configPath,
+              cause: error instanceof Error ? error.message : String(error),
+            }),
         });
 
         return configPath;
@@ -425,7 +421,7 @@ const makeSrtService = (): SrtServiceImpl => {
         // Check availability first
         const info = yield* makeSrtService().checkPlatform();
         if (!info.srtAvailable) {
-          return yield* Effect.fail(new SrtNotAvailableError(info));
+          return yield* Effect.fail(new SrtNotAvailableError({ info }));
         }
 
         // Write config

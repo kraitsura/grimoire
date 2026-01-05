@@ -79,7 +79,7 @@ EXAMPLES:
           Effect.map((prompt) => ({ name, prompt }))
         )
       ),
-      { concurrency: "unbounded" }
+      { concurrency: 5 }
     );
 
     // Interpolate variables in content for each prompt
@@ -123,7 +123,7 @@ EXAMPLES:
           } as ComparisonResult;
         })
       ),
-      { concurrency: parallel ? "unbounded" : 1 }
+      { concurrency: parallel ? 5 : 1 }
     );
 
     // Output results based on format

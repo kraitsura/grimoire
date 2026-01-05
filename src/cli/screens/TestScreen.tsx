@@ -113,7 +113,7 @@ export const TestScreen: React.FC<TestScreenProps> = ({ promptId }) => {
 
       const modelLists = yield* Effect.all(
         config.providers.map((provider) => llm.listModels(provider)),
-        { concurrency: "unbounded" }
+        { concurrency: 5 }
       );
 
       return modelLists.flat();

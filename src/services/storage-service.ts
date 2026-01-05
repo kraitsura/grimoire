@@ -130,6 +130,14 @@ interface TagRow {
 }
 
 /**
+ * Database row structure for batch tag loading
+ */
+interface PromptTagRow {
+  prompt_id: string;
+  name: string;
+}
+
+/**
  * Storage service interface - manages prompt CRUD operations
  */
 interface StorageServiceImpl {
@@ -213,6 +221,45 @@ const rowToPrompt = (row: PromptRow, content: string, tags?: string[]): Prompt =
 });
 
 /**
+ * Batch load tags for multiple prompts in a single query
+ * Returns a Map from prompt_id to array of tag names
+ *
+ * This avoids N+1 query patterns by loading all tags in one query
+ * instead of one query per prompt.
+ */
+const batchLoadTags = (
+  sql: Context.Tag.Service<typeof SqlService>,
+  promptIds: string[]
+): Effect.Effect<Map<string, string[]>, SqlError> =>
+  Effect.gen(function* () {
+    if (promptIds.length === 0) {
+      return new Map<string, string[]>();
+    }
+
+    // Build placeholders for IN clause
+    const placeholders = promptIds.map(() => "?").join(",");
+
+    // Batch load ALL tags in one query
+    const allTags = yield* sql.query<PromptTagRow>(
+      `SELECT pt.prompt_id, t.name
+       FROM tags t
+       JOIN prompt_tags pt ON t.id = pt.tag_id
+       WHERE pt.prompt_id IN (${placeholders})`,
+      promptIds
+    );
+
+    // Group tags by prompt_id
+    const tagsByPromptId = new Map<string, string[]>();
+    for (const tag of allTags) {
+      const existing = tagsByPromptId.get(tag.prompt_id) || [];
+      existing.push(tag.name);
+      tagsByPromptId.set(tag.prompt_id, existing);
+    }
+
+    return tagsByPromptId;
+  });
+
+/**
  * Storage service implementation
  */
 export const StorageServiceLive = Layer.effect(
@@ -228,18 +275,15 @@ export const StorageServiceLive = Layer.effect(
         // Query database for all prompts
         const rows = yield* sql.query<PromptRow>("SELECT * FROM prompts ORDER BY updated_at DESC");
 
-        // Process each row, logging failures and converting to None
+        // Batch load all tags in one query to avoid N+1 pattern
+        const promptIds = rows.map((r) => r.id);
+        const tagsByPromptId = yield* batchLoadTags(sql, promptIds);
+
+        // Process each row using the pre-loaded tags
         const processRow = (row: PromptRow) =>
           Effect.gen(function* () {
             const parsed = yield* promptStorage.readPrompt(row.file_path);
-            const tagRows = yield* sql.query<TagRow>(
-              `SELECT t.name
-               FROM tags t
-               JOIN prompt_tags pt ON t.id = pt.tag_id
-               WHERE pt.prompt_id = ?`,
-              [row.id]
-            );
-            const tags = tagRows.map((t) => t.name);
+            const tags = tagsByPromptId.get(row.id) || [];
             return rowToPrompt(row, parsed.content, tags);
           }).pipe(
             Effect.tapError((error) => logError("getAll", row.id, error)),
@@ -507,18 +551,15 @@ export const StorageServiceLive = Layer.effect(
 
           const rows = yield* sql.query<PromptRow>(query, tags);
 
-          // Process each row, logging failures and converting to None
+          // Batch load all tags in one query to avoid N+1 pattern
+          const promptIds = rows.map((r) => r.id);
+          const tagsByPromptId = yield* batchLoadTags(sql, promptIds);
+
+          // Process each row using the pre-loaded tags
           const processRow = (row: PromptRow) =>
             Effect.gen(function* () {
               const parsed = yield* promptStorage.readPrompt(row.file_path);
-              const tagRows = yield* sql.query<TagRow>(
-                `SELECT t.name
-                 FROM tags t
-                 JOIN prompt_tags pt ON t.id = pt.tag_id
-                 WHERE pt.prompt_id = ?`,
-                [row.id]
-              );
-              const promptTags = tagRows.map((t) => t.name);
+              const promptTags = tagsByPromptId.get(row.id) || [];
               return rowToPrompt(row, parsed.content, promptTags);
             }).pipe(
               Effect.tapError((error) => logError("findByTags", row.id, error)),
@@ -548,18 +589,15 @@ export const StorageServiceLive = Layer.effect(
             [sanitized]
           );
 
-          // Process each row, logging failures and converting to None
+          // Batch load all tags in one query to avoid N+1 pattern
+          const promptIds = rows.map((r) => r.id);
+          const tagsByPromptId = yield* batchLoadTags(sql, promptIds);
+
+          // Process each row using the pre-loaded tags
           const processRow = (row: PromptRow) =>
             Effect.gen(function* () {
               const parsed = yield* promptStorage.readPrompt(row.file_path);
-              const tagRows = yield* sql.query<TagRow>(
-                `SELECT t.name
-                 FROM tags t
-                 JOIN prompt_tags pt ON t.id = pt.tag_id
-                 WHERE pt.prompt_id = ?`,
-                [row.id]
-              );
-              const tags = tagRows.map((t) => t.name);
+              const tags = tagsByPromptId.get(row.id) || [];
               return rowToPrompt(row, parsed.content, tags);
             }).pipe(
               Effect.tapError((error) => logError("search", row.id, error)),

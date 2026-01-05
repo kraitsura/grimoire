@@ -145,7 +145,7 @@ const getSyncConfigPath = (): string => {
 };
 
 /**
- * Run a git command in the prompts directory
+ * Run a git command in the prompts directory (with guaranteed process cleanup)
  */
 const runGit = (args: string[]): Effect.Effect<string, StorageError> =>
   Effect.tryPromise({
@@ -155,14 +155,23 @@ const runGit = (args: string[]): Effect.Effect<string, StorageError> =>
         stdout: "pipe",
         stderr: "pipe",
       });
-
-      const output = await proc.exited;
-      if (output !== 0) {
-        const stderrText = await new Response(proc.stderr).text();
-        throw new Error(`Git command failed: ${stderrText}`);
+      try {
+        const exitCode = await proc.exited;
+        if (exitCode !== 0) {
+          const stderrText = await new Response(proc.stderr).text();
+          throw new Error(`Git command failed: ${stderrText}`);
+        }
+        return await new Response(proc.stdout).text();
+      } finally {
+        // Ensure process is killed on error/interruption
+        try {
+          if (!proc.killed) {
+            proc.kill();
+          }
+        } catch {
+          // Ignore errors during cleanup
+        }
       }
-
-      return await new Response(proc.stdout).text();
     },
     catch: (error) =>
       new StorageError({
@@ -240,7 +249,7 @@ const writeConfig = (config: SyncConfig): Effect.Effect<void, StorageError> =>
   });
 
 /**
- * Check if directory is a git repository
+ * Check if directory is a git repository (with guaranteed process cleanup)
  */
 const isGitRepo = (): Effect.Effect<boolean, StorageError> =>
   Effect.gen(function* () {
@@ -251,8 +260,19 @@ const isGitRepo = (): Effect.Effect<boolean, StorageError> =>
           stdout: "pipe",
           stderr: "pipe",
         });
-        const exitCode = await proc.exited;
-        return exitCode === 0;
+        try {
+          const exitCode = await proc.exited;
+          return exitCode === 0;
+        } finally {
+          // Ensure process is killed on error/interruption
+          try {
+            if (!proc.killed) {
+              proc.kill();
+            }
+          } catch {
+            // Ignore errors during cleanup
+          }
+        }
       },
       catch: () => false,
     }).pipe(Effect.orElse(() => Effect.succeed(false)));

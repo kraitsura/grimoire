@@ -451,7 +451,7 @@ export const spawnCommand = (args: ParsedArgs) =>
         );
       }
 
-      yield* Effect.all(cleanupEffects, { concurrency: "unbounded" });
+      yield* Effect.all(cleanupEffects, { concurrency: 10 });
 
       process.exitCode = code ?? 0;
     }
