@@ -67,3 +67,5 @@ convex/_generated/
 .claude/
 test-project/
 test/
+
+.vendor/
