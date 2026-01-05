@@ -9,7 +9,6 @@ import {
   createParsedArgs,
   createTestLayer,
   createMockExportService,
-  createTestPrompt,
   captureConsole,
 } from "./test-helpers";
 
@@ -25,201 +24,135 @@ describe("pl export command", () => {
     console$.clear();
   });
 
-  it("should export all prompts to file", async () => {
-    let exportedToPath = "";
+  it("should export all prompts to stdout by default", async () => {
+    let exportAllCalled = false;
+    const exportService = {
+      ...createMockExportService(),
+      exportAll: (_options: any) => {
+        exportAllCalled = true;
+        return Effect.succeed('{"version":"1.0","prompts":[]}');
+      },
+    };
+    const TestLayer = createTestLayer({ export: exportService });
+
+    const args = createParsedArgs({ positional: [] });
+
+    await Effect.runPromise(exportCommand(args).pipe(Effect.provide(TestLayer)));
+
+    expect(exportAllCalled).toBe(true);
+    const logs = console$.getLogs();
+    expect(logs.some((l) => l.includes("version") || l.includes("prompts"))).toBe(true);
+  });
+
+  it("should export to file with --output flag", async () => {
+    let writtenPath = "";
     const exportService = {
       ...createMockExportService(),
       exportAll: (_options: any) =>
-        Effect.succeed({
-          version: "1.0",
-          exportedAt: new Date().toISOString(),
-          prompts: [
-            { id: "1", name: "prompt1", content: "content1" },
-            { id: "2", name: "prompt2", content: "content2" },
-          ],
-        }),
-      exportToFile: (filePath: string, _bundle: any) => {
-        exportedToPath = filePath;
+        Effect.succeed('{"version":"1.0","prompts":[]}'),
+      writeToFile: (content: string, path: string) => {
+        writtenPath = path;
         return Effect.void;
       },
     };
     const TestLayer = createTestLayer({ export: exportService });
 
     const args = createParsedArgs({
-      positional: ["prompts.json"],
+      positional: [],
+      flags: { output: "prompts.json" },
     });
 
     await Effect.runPromise(exportCommand(args).pipe(Effect.provide(TestLayer)));
 
-    expect(exportedToPath).toBe("prompts.json");
+    expect(writtenPath).toBe("prompts.json");
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Exported") || l.includes("prompts.json"))).toBe(true);
-  });
-
-  it("should export specific prompts by name", async () => {
-    let exportedIds: string[] = [];
-    const exportService = {
-      ...createMockExportService(),
-      exportPrompts: (promptIds: string[], _options: any) => {
-        exportedIds = promptIds;
-        return Effect.succeed({
-          version: "1.0",
-          exportedAt: new Date().toISOString(),
-          prompts: [],
-        });
-      },
-      exportToFile: (_filePath: string, _bundle: any) => Effect.void,
-    };
-    const TestLayer = createTestLayer({ export: exportService });
-
-    const args = createParsedArgs({
-      positional: ["prompts.json"],
-      flags: { prompts: "prompt1,prompt2" },
-    });
-
-    await Effect.runPromise(exportCommand(args).pipe(Effect.provide(TestLayer)));
-
-    expect(exportedIds).toContain("prompt1");
-    expect(exportedIds).toContain("prompt2");
+    expect(logs.some((l) => l.includes("Exported"))).toBe(true);
   });
 
   it("should filter by tags with --tags flag", async () => {
-    let receivedOptions: any;
+    let receivedTags: string[] = [];
     const exportService = {
       ...createMockExportService(),
-      exportAll: (options: any) => {
-        receivedOptions = options;
-        return Effect.succeed({
-          version: "1.0",
-          exportedAt: new Date().toISOString(),
-          prompts: [],
-        });
+      exportByTags: (tags: string[], _options: any) => {
+        receivedTags = tags;
+        return Effect.succeed('{"version":"1.0","prompts":[]}');
       },
-      exportToFile: (_filePath: string, _bundle: any) => Effect.void,
-    };
-    const TestLayer = createTestLayer({ export: exportService });
-
-    const args = createParsedArgs({
-      positional: ["prompts.json"],
-      flags: { tags: "coding,testing" },
-    });
-
-    await Effect.runPromise(exportCommand(args).pipe(Effect.provide(TestLayer)));
-
-    expect(receivedOptions?.tags).toEqual(["coding", "testing"]);
-  });
-
-  it("should include versions with --include-versions flag", async () => {
-    let receivedOptions: any;
-    const exportService = {
-      ...createMockExportService(),
-      exportAll: (options: any) => {
-        receivedOptions = options;
-        return Effect.succeed({
-          version: "1.0",
-          exportedAt: new Date().toISOString(),
-          prompts: [],
-        });
-      },
-      exportToFile: (_filePath: string, _bundle: any) => Effect.void,
-    };
-    const TestLayer = createTestLayer({ export: exportService });
-
-    const args = createParsedArgs({
-      positional: ["prompts.json"],
-      flags: { "include-versions": true },
-    });
-
-    await Effect.runPromise(exportCommand(args).pipe(Effect.provide(TestLayer)));
-
-    expect(receivedOptions?.includeVersions).toBe(true);
-  });
-
-  it("should output to stdout with --stdout flag", async () => {
-    const exportService = {
-      ...createMockExportService(),
-      exportAll: (_options: any) =>
-        Effect.succeed({
-          version: "1.0",
-          exportedAt: "2025-01-01T00:00:00.000Z",
-          prompts: [{ id: "1", name: "test", content: "content" }],
-        }),
     };
     const TestLayer = createTestLayer({ export: exportService });
 
     const args = createParsedArgs({
       positional: [],
-      flags: { stdout: true },
+      flags: { tags: "coding,testing" },
     });
 
     await Effect.runPromise(exportCommand(args).pipe(Effect.provide(TestLayer)));
 
-    const logs = console$.getLogs();
-    const output = logs.join("\n");
-    expect(output.includes("version")).toBe(true);
-    expect(output.includes("prompts")).toBe(true);
+    expect(receivedTags).toContain("coding");
+    expect(receivedTags).toContain("testing");
   });
 
-  it("should show usage when no file path and no --stdout", async () => {
-    const TestLayer = createTestLayer();
-
-    const args = createParsedArgs({ positional: [] });
-
-    await Effect.runPromise(exportCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Usage"))).toBe(true);
-  });
-
-  it("should export templates only with --templates-only flag", async () => {
+  it("should include history with --include-history flag", async () => {
     let receivedOptions: any;
     const exportService = {
       ...createMockExportService(),
       exportAll: (options: any) => {
         receivedOptions = options;
-        return Effect.succeed({
-          version: "1.0",
-          exportedAt: new Date().toISOString(),
-          prompts: [],
-        });
+        return Effect.succeed('{"version":"1.0","prompts":[]}');
       },
-      exportToFile: (_filePath: string, _bundle: any) => Effect.void,
     };
     const TestLayer = createTestLayer({ export: exportService });
 
     const args = createParsedArgs({
-      positional: ["templates.json"],
-      flags: { "templates-only": true },
+      positional: [],
+      flags: { "include-history": true },
     });
 
     await Effect.runPromise(exportCommand(args).pipe(Effect.provide(TestLayer)));
 
-    expect(receivedOptions?.templatesOnly).toBe(true);
+    expect(receivedOptions?.includeHistory).toBe(true);
   });
 
-  it("should export favorites only with --favorites-only flag", async () => {
+  it("should use specified format with --format flag", async () => {
     let receivedOptions: any;
     const exportService = {
       ...createMockExportService(),
       exportAll: (options: any) => {
         receivedOptions = options;
-        return Effect.succeed({
-          version: "1.0",
-          exportedAt: new Date().toISOString(),
-          prompts: [],
-        });
+        return Effect.succeed("prompts: []");
       },
-      exportToFile: (_filePath: string, _bundle: any) => Effect.void,
     };
     const TestLayer = createTestLayer({ export: exportService });
 
     const args = createParsedArgs({
-      positional: ["favorites.json"],
-      flags: { "favorites-only": true },
+      positional: [],
+      flags: { format: "yaml" },
     });
 
     await Effect.runPromise(exportCommand(args).pipe(Effect.provide(TestLayer)));
 
-    expect(receivedOptions?.favoritesOnly).toBe(true);
+    expect(receivedOptions?.format).toBe("yaml");
+  });
+
+  it("should use -o shorthand for --output", async () => {
+    let writtenPath = "";
+    const exportService = {
+      ...createMockExportService(),
+      exportAll: (_options: any) =>
+        Effect.succeed('{"version":"1.0","prompts":[]}'),
+      writeToFile: (_content: string, path: string) => {
+        writtenPath = path;
+        return Effect.void;
+      },
+    };
+    const TestLayer = createTestLayer({ export: exportService });
+
+    const args = createParsedArgs({
+      positional: [],
+      flags: { o: "output.json" },
+    });
+
+    await Effect.runPromise(exportCommand(args).pipe(Effect.provide(TestLayer)));
+
+    expect(writtenPath).toBe("output.json");
   });
 });

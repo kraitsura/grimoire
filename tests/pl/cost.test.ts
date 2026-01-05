@@ -38,7 +38,6 @@ describe("pl cost command", () => {
     const tokenCounter = {
       ...createMockTokenCounterService(),
       count: (_text: string, _model?: string) => Effect.succeed(150),
-      estimateCost: (_tokens: number, _model?: string) => Effect.succeed(0.003),
     };
     const TestLayer = createTestLayer({ storage, tokenCounter });
 
@@ -48,135 +47,90 @@ describe("pl cost command", () => {
 
     const logs = console$.getLogs();
     expect(logs.some((l) => l.includes("150") || l.includes("tokens"))).toBe(true);
-    expect(logs.some((l) => l.includes("0.003") || l.includes("$"))).toBe(true);
   });
 
   it("should calculate cost for specific model with --model flag", async () => {
     const prompt = createTestPrompt({ id: "model-cost", name: "model-prompt" });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
-    let usedModel = "";
     const tokenCounter = {
       ...createMockTokenCounterService(),
-      count: (_text: string, model?: string) => {
-        usedModel = model ?? "";
-        return Effect.succeed(100);
-      },
-      estimateCost: (_tokens: number, _model?: string) => Effect.succeed(0.01),
+      count: (_text: string, _model?: string) => Effect.succeed(100),
     };
     const TestLayer = createTestLayer({ storage, tokenCounter });
 
+    // Use a valid model from MODEL_PRICING
     const args = createParsedArgs({
       positional: ["model-prompt"],
-      flags: { model: "gpt-4-turbo" },
-    });
-
-    await Effect.runPromise(costCommand(args).pipe(Effect.provide(TestLayer)));
-
-    expect(usedModel).toBe("gpt-4-turbo");
-  });
-
-  it("should show cost for multiple prompts", async () => {
-    const prompts = [
-      createTestPrompt({ id: "multi-1", name: "multi-prompt-1", content: "Content 1" }),
-      createTestPrompt({ id: "multi-2", name: "multi-prompt-2", content: "Content 2" }),
-    ];
-    const state = createMockStorageState(prompts);
-    const storage = createMockStorageService(state);
-    const tokenCounter = {
-      ...createMockTokenCounterService(),
-      count: (_text: string, _model?: string) => Effect.succeed(100),
-      estimateCost: (_tokens: number, _model?: string) => Effect.succeed(0.002),
-    };
-    const TestLayer = createTestLayer({ storage, tokenCounter });
-
-    const args = createParsedArgs({
-      positional: ["multi-prompt-1", "multi-prompt-2"],
+      flags: { model: "gpt-4o-mini" },
     });
 
     await Effect.runPromise(costCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("multi-prompt-1"))).toBe(true);
-    expect(logs.some((l) => l.includes("multi-prompt-2"))).toBe(true);
+    expect(logs.some((l) => l.includes("gpt-4o-mini"))).toBe(true);
   });
 
-  it("should show total cost with --total flag", async () => {
-    const prompts = [
-      createTestPrompt({ id: "total-1", name: "total-prompt-1" }),
-      createTestPrompt({ id: "total-2", name: "total-prompt-2" }),
-    ];
-    const state = createMockStorageState(prompts);
+  it("should not crash for unknown model", async () => {
+    const prompt = createTestPrompt({ id: "unknown-model", name: "unknown-prompt" });
+    const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
-    const tokenCounter = {
-      ...createMockTokenCounterService(),
-      count: (_text: string, _model?: string) => Effect.succeed(100),
-      estimateCost: (_tokens: number, _model?: string) => Effect.succeed(0.005),
-    };
+    const tokenCounter = createMockTokenCounterService();
     const TestLayer = createTestLayer({ storage, tokenCounter });
 
     const args = createParsedArgs({
-      positional: ["total-prompt-1", "total-prompt-2"],
-      flags: { total: true },
+      positional: ["unknown-prompt"],
+      flags: { model: "unknown-model-xyz" },
     });
 
+    // Command logs error to console.error and returns early
     await Effect.runPromise(costCommand(args).pipe(Effect.provide(TestLayer)));
 
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Total") || l.includes("0.01"))).toBe(true);
+    // Just verify it doesn't throw
+    expect(true).toBe(true);
   });
 
-  it("should output JSON with --json flag", async () => {
-    const prompt = createTestPrompt({ id: "json-cost", name: "json-prompt" });
+  it("should show all models with --all-models flag", async () => {
+    const prompt = createTestPrompt({ id: "all-models", name: "all-models-prompt" });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
     const tokenCounter = {
       ...createMockTokenCounterService(),
-      count: (_text: string, _model?: string) => Effect.succeed(200),
-      estimateCost: (_tokens: number, _model?: string) => Effect.succeed(0.004),
+      count: (_text: string, _model?: string) => Effect.succeed(100),
     };
     const TestLayer = createTestLayer({ storage, tokenCounter });
 
     const args = createParsedArgs({
-      positional: ["json-prompt"],
-      flags: { json: true },
+      positional: ["all-models-prompt"],
+      flags: { "all-models": true },
     });
 
     await Effect.runPromise(costCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    const output = logs.join("\n");
-    const parsed = JSON.parse(output);
-    expect(parsed.tokens).toBe(200);
-    expect(parsed.cost).toBe(0.004);
+    expect(logs.some((l) => l.includes("gpt-4o"))).toBe(true);
+    expect(logs.some((l) => l.includes("claude"))).toBe(true);
   });
 
-  it("should calculate cost for all prompts with --all flag", async () => {
-    const prompts = [
-      createTestPrompt({ id: "all-1", name: "all-prompt-1" }),
-      createTestPrompt({ id: "all-2", name: "all-prompt-2" }),
-      createTestPrompt({ id: "all-3", name: "all-prompt-3" }),
-    ];
-    const state = createMockStorageState(prompts);
+  it("should show batch estimate with --batch flag", async () => {
+    const prompt = createTestPrompt({ id: "batch-test", name: "batch-prompt" });
+    const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
     const tokenCounter = {
       ...createMockTokenCounterService(),
       count: (_text: string, _model?: string) => Effect.succeed(100),
-      estimateCost: (_tokens: number, _model?: string) => Effect.succeed(0.002),
     };
     const TestLayer = createTestLayer({ storage, tokenCounter });
 
     const args = createParsedArgs({
-      positional: [],
-      flags: { all: true },
+      positional: ["batch-prompt"],
+      flags: { batch: "100" },
     });
 
     await Effect.runPromise(costCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("all-prompt-1"))).toBe(true);
-    expect(logs.some((l) => l.includes("all-prompt-2"))).toBe(true);
-    expect(logs.some((l) => l.includes("all-prompt-3"))).toBe(true);
+    expect(logs.some((l) => l.includes("100") && l.includes("runs"))).toBe(true);
   });
 
   it("should show usage when no arguments provided", async () => {
@@ -188,5 +142,27 @@ describe("pl cost command", () => {
 
     const logs = console$.getLogs();
     expect(logs.some((l) => l.includes("Usage"))).toBe(true);
+  });
+
+  it("should handle custom output tokens with --output-tokens flag", async () => {
+    const prompt = createTestPrompt({ id: "output-test", name: "output-prompt" });
+    const state = createMockStorageState([prompt]);
+    const storage = createMockStorageService(state);
+    const tokenCounter = {
+      ...createMockTokenCounterService(),
+      count: (_text: string, _model?: string) => Effect.succeed(100),
+    };
+    const TestLayer = createTestLayer({ storage, tokenCounter });
+
+    const args = createParsedArgs({
+      positional: ["output-prompt"],
+      flags: { "output-tokens": "1000" },
+    });
+
+    await Effect.runPromise(costCommand(args).pipe(Effect.provide(TestLayer)));
+
+    const logs = console$.getLogs();
+    // Should show cost table
+    expect(logs.some((l) => l.includes("$"))).toBe(true);
   });
 });

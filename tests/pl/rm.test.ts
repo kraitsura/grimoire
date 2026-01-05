@@ -179,14 +179,15 @@ describe("pl rm command", () => {
     expect(result._tag).toBe("Failure");
   });
 
-  it("should show usage when no arguments provided", async () => {
+  it("should fail when no arguments provided", async () => {
     const TestLayer = createTestLayer();
 
     const args = createParsedArgs({ positional: [] });
 
-    await Effect.runPromise(rmCommand(args).pipe(Effect.provide(TestLayer)));
+    const result = await Effect.runPromiseExit(
+      rmCommand(args).pipe(Effect.provide(TestLayer))
+    );
 
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Usage") || l.includes("grimoire rm"))).toBe(true);
+    expect(result._tag).toBe("Failure");
   });
 });

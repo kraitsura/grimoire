@@ -47,17 +47,18 @@ describe("pl pop command", () => {
     expect(logs.some((l) => l.includes("Popped") || l.includes("clipboard"))).toBe(true);
   });
 
-  it("should handle empty stash", async () => {
+  it("should fail when stash is empty", async () => {
     const stashState = { items: [] };
     const stash = createMockStashService(stashState);
     const TestLayer = createTestLayer({ stash });
 
     const args = createParsedArgs({ positional: [] });
 
-    await Effect.runPromise(popCommand(args).pipe(Effect.provide(TestLayer)));
+    const result = await Effect.runPromiseExit(
+      popCommand(args).pipe(Effect.provide(TestLayer))
+    );
 
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("empty") || l.includes("Nothing"))).toBe(true);
+    expect(result._tag).toBe("Failure");
   });
 
   it("should pop named item from stash", async () => {
@@ -81,12 +82,11 @@ describe("pl pop command", () => {
     expect(logs.length).toBeGreaterThanOrEqual(0);
   });
 
-  it("should pop by index", async () => {
+  it("should pop by name", async () => {
     const stashState = {
       items: [
-        { id: "1", content: "First", createdAt: new Date(), stackOrder: 0 },
-        { id: "2", content: "Second", createdAt: new Date(), stackOrder: 1 },
-        { id: "3", content: "Third", createdAt: new Date(), stackOrder: 2 },
+        { id: "1", content: "First", name: "first-item", createdAt: new Date(), stackOrder: 0 },
+        { id: "2", content: "Second", name: "second-item", createdAt: new Date(), stackOrder: 1 },
       ],
     };
     const stash = createMockStashService(stashState);
@@ -94,12 +94,13 @@ describe("pl pop command", () => {
     const clipboard = createMockClipboardService(clipboardState);
     const TestLayer = createTestLayer({ stash, clipboard });
 
-    const args = createParsedArgs({ positional: ["1"] });
+    const args = createParsedArgs({ positional: ["second-item"] });
 
     await Effect.runPromise(popCommand(args).pipe(Effect.provide(TestLayer)));
 
-    const logs = console$.getLogs();
-    expect(logs.length).toBeGreaterThanOrEqual(0);
+    // Should have popped the named item
+    expect(stashState.items.length).toBe(1);
+    expect(stashState.items[0].name).toBe("first-item");
   });
 
   it("should output to stdout with --stdout flag", async () => {

@@ -257,27 +257,35 @@ export const createMockStashService = (
   },
   pop: () => {
     const item = state.items.shift();
+    if (!item) {
+      return Effect.fail({ _tag: "StashEmptyError" as const, message: "Stash is empty" });
+    }
     return Effect.succeed(item);
   },
-  peek: () => Effect.succeed(state.items[0]),
-  list: () => Effect.succeed([...state.items]),
-  get: (nameOrIndex: string | number) => {
-    if (typeof nameOrIndex === "number") {
-      return Effect.succeed(state.items[nameOrIndex]);
+  popByName: (name: string) => {
+    const idx = state.items.findIndex((i) => i.name === name);
+    if (idx < 0) {
+      return Effect.fail({ _tag: "StashItemNotFoundError" as const, name, message: `Stash item not found: ${name}` });
     }
-    return Effect.succeed(state.items.find((i) => i.name === nameOrIndex));
+    const [item] = state.items.splice(idx, 1);
+    return Effect.succeed(item);
   },
-  remove: (nameOrIndex: string | number) => {
-    if (typeof nameOrIndex === "number") {
-      const [item] = state.items.splice(nameOrIndex, 1);
-      return Effect.succeed(item !== undefined);
+  peek: () => Effect.succeed(state.items[0] ?? null),
+  list: () => Effect.succeed([...state.items]),
+  getByName: (name: string) => {
+    const item = state.items.find((i) => i.name === name);
+    if (!item) {
+      return Effect.fail({ _tag: "StashItemNotFoundError" as const, name, message: `Stash item not found: ${name}` });
     }
-    const idx = state.items.findIndex((i) => i.name === nameOrIndex);
-    if (idx >= 0) {
-      state.items.splice(idx, 1);
-      return Effect.succeed(true);
+    return Effect.succeed(item);
+  },
+  delete: (id: string) => {
+    const idx = state.items.findIndex((i) => i.id === id);
+    if (idx < 0) {
+      return Effect.fail({ _tag: "StashItemNotFoundError" as const, name: id, message: `Stash item not found: ${id}` });
     }
-    return Effect.succeed(false);
+    state.items.splice(idx, 1);
+    return Effect.void;
   },
   clear: () => {
     const count = state.items.length;
@@ -372,19 +380,14 @@ export const createMockBranchService = (
 // ============================================================================
 
 export const createMockExportService = (): typeof ExportService.Service => ({
-  exportPrompts: (_promptIds, _options: ExportOptions): Effect.Effect<ExportBundle, any> =>
-    Effect.succeed({
-      version: "1.0",
-      exportedAt: new Date().toISOString(),
-      prompts: [],
-    }),
-  exportAll: (_options: ExportOptions): Effect.Effect<ExportBundle, any> =>
-    Effect.succeed({
-      version: "1.0",
-      exportedAt: new Date().toISOString(),
-      prompts: [],
-    }),
-  exportToFile: (_filePath, _bundle) => Effect.void,
+  exportAll: (_options) =>
+    Effect.succeed('{"version":"1.0","prompts":[]}'),
+  exportByTags: (_tags, _options) =>
+    Effect.succeed('{"version":"1.0","prompts":[]}'),
+  exportByIds: (_ids, _options) =>
+    Effect.succeed('{"version":"1.0","prompts":[]}'),
+  writeToFile: (_content, _path) =>
+    Effect.void,
 });
 
 // ============================================================================
@@ -577,6 +580,7 @@ export const createMockConfigService = (): typeof ConfigService.Service => ({
     }),
   set: (_key, _value) => Effect.void,
   getPath: () => Effect.succeed("/mock/.grimoire/config.json"),
+  getDefaultModel: () => Effect.succeed({ provider: "openai", model: "gpt-4o" }),
 });
 
 // ============================================================================

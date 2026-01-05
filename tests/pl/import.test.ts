@@ -25,15 +25,16 @@ describe("pl import command", () => {
   });
 
   it("should import prompts from file", async () => {
-    let importedFile = "";
+    let importedSource = "";
     const importService = {
       ...createMockImportService(),
-      importFromFile: (filePath: string, _strategy: any) => {
-        importedFile = filePath;
+      import: (source: string, _strategy: any) => {
+        importedSource = source;
         return Effect.succeed({
           imported: 5,
           skipped: 0,
-          merged: 0,
+          renamed: 0,
+          overwritten: 0,
           errors: [],
         });
       },
@@ -46,21 +47,22 @@ describe("pl import command", () => {
 
     await Effect.runPromise(importCommand(args).pipe(Effect.provide(TestLayer)));
 
-    expect(importedFile).toBe("prompts.json");
+    expect(importedSource).toBe("prompts.json");
     const logs = console$.getLogs();
     expect(logs.some((l) => l.includes("Imported") || l.includes("5"))).toBe(true);
   });
 
-  it("should use skip strategy with --skip flag", async () => {
+  it("should use skip strategy by default", async () => {
     let receivedStrategy = "";
     const importService = {
       ...createMockImportService(),
-      importFromFile: (_filePath: string, strategy: any) => {
+      import: (source: string, strategy: any) => {
         receivedStrategy = strategy;
         return Effect.succeed({
-          imported: 3,
-          skipped: 2,
-          merged: 0,
+          imported: 2,
+          skipped: 1,
+          renamed: 0,
+          overwritten: 0,
           errors: [],
         });
       },
@@ -69,26 +71,24 @@ describe("pl import command", () => {
 
     const args = createParsedArgs({
       positional: ["prompts.json"],
-      flags: { skip: true },
     });
 
     await Effect.runPromise(importCommand(args).pipe(Effect.provide(TestLayer)));
 
     expect(receivedStrategy).toBe("skip");
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("skipped") || l.includes("2"))).toBe(true);
   });
 
-  it("should use overwrite strategy with --overwrite flag", async () => {
+  it("should use overwrite strategy with --on-conflict=overwrite", async () => {
     let receivedStrategy = "";
     const importService = {
       ...createMockImportService(),
-      importFromFile: (_filePath: string, strategy: any) => {
+      import: (_source: string, strategy: any) => {
         receivedStrategy = strategy;
         return Effect.succeed({
-          imported: 5,
+          imported: 2,
           skipped: 0,
-          merged: 0,
+          renamed: 0,
+          overwritten: 3,
           errors: [],
         });
       },
@@ -97,7 +97,7 @@ describe("pl import command", () => {
 
     const args = createParsedArgs({
       positional: ["prompts.json"],
-      flags: { overwrite: true },
+      flags: { "on-conflict": "overwrite" },
     });
 
     await Effect.runPromise(importCommand(args).pipe(Effect.provide(TestLayer)));
@@ -105,16 +105,17 @@ describe("pl import command", () => {
     expect(receivedStrategy).toBe("overwrite");
   });
 
-  it("should use merge strategy with --merge flag", async () => {
+  it("should use rename strategy with --on-conflict=rename", async () => {
     let receivedStrategy = "";
     const importService = {
       ...createMockImportService(),
-      importFromFile: (_filePath: string, strategy: any) => {
+      import: (_source: string, strategy: any) => {
         receivedStrategy = strategy;
         return Effect.succeed({
-          imported: 3,
+          imported: 2,
           skipped: 0,
-          merged: 2,
+          renamed: 3,
+          overwritten: 0,
           errors: [],
         });
       },
@@ -123,29 +124,30 @@ describe("pl import command", () => {
 
     const args = createParsedArgs({
       positional: ["prompts.json"],
-      flags: { merge: true },
+      flags: { "on-conflict": "rename" },
     });
 
     await Effect.runPromise(importCommand(args).pipe(Effect.provide(TestLayer)));
 
-    expect(receivedStrategy).toBe("merge");
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("merged") || l.includes("2"))).toBe(true);
+    expect(receivedStrategy).toBe("rename");
   });
 
   it("should preview import with --dry-run flag", async () => {
+    let previewCalled = false;
     const importService = {
       ...createMockImportService(),
-      preview: (_bundle: any) =>
-        Effect.succeed({
-          prompts: [
-            { id: "1", name: "prompt1" },
-            { id: "2", name: "prompt2" },
+      preview: (_source: string) => {
+        previewCalled = true;
+        return Effect.succeed({
+          total: 10,
+          newPrompts: 7,
+          conflicts: [
+            { name: "conflict1", contentDiffers: true },
+            { name: "conflict2", contentDiffers: false },
           ],
-          conflicts: [{ id: "2", name: "prompt2", reason: "exists" }],
-          newCount: 1,
-          conflictCount: 1,
-        }),
+          errors: [],
+        });
+      },
     };
     const TestLayer = createTestLayer({ import: importService });
 
@@ -156,21 +158,21 @@ describe("pl import command", () => {
 
     await Effect.runPromise(importCommand(args).pipe(Effect.provide(TestLayer)));
 
+    expect(previewCalled).toBe(true);
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Preview") || l.includes("Dry run"))).toBe(true);
+    expect(logs.some((l) => l.includes("Preview"))).toBe(true);
   });
 
   it("should report import errors", async () => {
     const importService = {
       ...createMockImportService(),
-      importFromFile: (_filePath: string, _strategy: any) =>
+      import: (_source: string, _strategy: any) =>
         Effect.succeed({
           imported: 3,
           skipped: 0,
-          merged: 0,
-          errors: [
-            { id: "err-1", name: "failed-prompt", reason: "Invalid format" },
-          ],
+          renamed: 0,
+          overwritten: 0,
+          errors: ["Failed to import prompt1", "Invalid format for prompt2"],
         }),
     };
     const TestLayer = createTestLayer({ import: importService });
@@ -182,72 +184,18 @@ describe("pl import command", () => {
     await Effect.runPromise(importCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("error") || l.includes("failed"))).toBe(true);
+    expect(logs.some((l) => l.includes("Error") || l.includes("Failed"))).toBe(true);
   });
 
-  it("should show usage when no file path provided", async () => {
+  it("should fail when no file path provided", async () => {
     const TestLayer = createTestLayer();
 
     const args = createParsedArgs({ positional: [] });
 
-    await Effect.runPromise(importCommand(args).pipe(Effect.provide(TestLayer)));
+    const result = await Effect.runPromiseExit(
+      importCommand(args).pipe(Effect.provide(TestLayer))
+    );
 
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Usage"))).toBe(true);
-  });
-
-  it("should handle --prefix flag for imported prompts", async () => {
-    let receivedOptions: any;
-    const importService = {
-      ...createMockImportService(),
-      importFromFile: (_filePath: string, _strategy: any, options?: any) => {
-        receivedOptions = options;
-        return Effect.succeed({
-          imported: 5,
-          skipped: 0,
-          merged: 0,
-          errors: [],
-        });
-      },
-    };
-    const TestLayer = createTestLayer({ import: importService });
-
-    const args = createParsedArgs({
-      positional: ["prompts.json"],
-      flags: { prefix: "imported-" },
-    });
-
-    await Effect.runPromise(importCommand(args).pipe(Effect.provide(TestLayer)));
-
-    // The prefix should be passed to the import service
-    const logs = console$.getLogs();
-    expect(logs.length).toBeGreaterThan(0);
-  });
-
-  it("should handle --tag flag to add tag to imported prompts", async () => {
-    let receivedOptions: any;
-    const importService = {
-      ...createMockImportService(),
-      importFromFile: (_filePath: string, _strategy: any, options?: any) => {
-        receivedOptions = options;
-        return Effect.succeed({
-          imported: 5,
-          skipped: 0,
-          merged: 0,
-          errors: [],
-        });
-      },
-    };
-    const TestLayer = createTestLayer({ import: importService });
-
-    const args = createParsedArgs({
-      positional: ["prompts.json"],
-      flags: { tag: "imported" },
-    });
-
-    await Effect.runPromise(importCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    expect(logs.length).toBeGreaterThan(0);
+    expect(result._tag).toBe("Failure");
   });
 });

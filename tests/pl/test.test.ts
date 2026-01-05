@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { testCommand } from "../../src/commands/pl/test";
 import {
   createParsedArgs,
@@ -11,7 +11,7 @@ import {
   createMockStorageService,
   createMockStorageState,
   createMockLLMService,
-  createMockStatsService,
+  createMockTokenCounterService,
   createTestPrompt,
   captureConsole,
 } from "./test-helpers";
@@ -28,30 +28,37 @@ describe("pl test command", () => {
     console$.clear();
   });
 
-  it("should test a prompt with LLM", async () => {
+  it("should test a prompt with LLM in non-streaming mode", async () => {
     const prompt = createTestPrompt({
       id: "test-prompt",
       name: "test-me",
-      content: "You are a helpful assistant. Respond with 'Hello!'",
+      content: "You are a helpful assistant.",
     });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
-    const llm = createMockLLMService("Hello! I'm a helpful assistant.");
-    let recordedUsage = false;
-    const stats = {
-      ...createMockStatsService(),
-      recordUsage: (_promptId: string, action: string) => {
-        if (action === "test") recordedUsage = true;
-        return Effect.void;
-      },
+    const llm = {
+      ...createMockLLMService("Hello!"),
+      complete: (_request: any) =>
+        Effect.succeed({
+          content: "Hello! I'm a helpful assistant.",
+          model: "gpt-4o",
+          usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+          finishReason: "stop" as const,
+        }),
     };
-    const TestLayer = createTestLayer({ storage, llm, stats });
+    const tokenCounter = {
+      ...createMockTokenCounterService(),
+      estimateCost: (_input: number, _output: number, _model?: string) => Effect.succeed(0.001),
+    };
+    const TestLayer = createTestLayer({ storage, llm, tokenCounter });
 
-    const args = createParsedArgs({ positional: ["test-me"] });
+    const args = createParsedArgs({
+      positional: ["test-me"],
+      flags: { "no-stream": true },
+    });
 
     await Effect.runPromise(testCommand(args).pipe(Effect.provide(TestLayer)));
 
-    expect(recordedUsage).toBe(true);
     const logs = console$.getLogs();
     expect(logs.some((l) => l.includes("Hello") || l.includes("assistant"))).toBe(true);
   });
@@ -68,53 +75,28 @@ describe("pl test command", () => {
         return Effect.succeed({
           content: "Test response",
           model: request.model,
-          usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+          usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
           finishReason: "stop" as const,
         });
       },
     };
-    const TestLayer = createTestLayer({ storage, llm });
+    const tokenCounter = {
+      ...createMockTokenCounterService(),
+      estimateCost: (_input: number, _output: number, _model?: string) => Effect.succeed(0.001),
+    };
+    const TestLayer = createTestLayer({ storage, llm, tokenCounter });
 
     const args = createParsedArgs({
       positional: ["model-prompt"],
-      flags: { model: "claude-3-opus" },
+      flags: { model: "claude-sonnet-4", "no-stream": true },
     });
 
     await Effect.runPromise(testCommand(args).pipe(Effect.provide(TestLayer)));
 
-    expect(usedModel).toBe("claude-3-opus");
+    expect(usedModel).toBe("claude-sonnet-4");
   });
 
-  it("should use user message with --message flag", async () => {
-    const prompt = createTestPrompt({ id: "msg-test", name: "msg-prompt" });
-    const state = createMockStorageState([prompt]);
-    const storage = createMockStorageService(state);
-    let receivedMessage = "";
-    const llm = {
-      ...createMockLLMService("Response"),
-      complete: (request: any) => {
-        receivedMessage = request.messages?.find((m: any) => m.role === "user")?.content ?? "";
-        return Effect.succeed({
-          content: "Test response",
-          model: "gpt-4o",
-          usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-          finishReason: "stop" as const,
-        });
-      },
-    };
-    const TestLayer = createTestLayer({ storage, llm });
-
-    const args = createParsedArgs({
-      positional: ["msg-prompt"],
-      flags: { message: "What is the capital of France?" },
-    });
-
-    await Effect.runPromise(testCommand(args).pipe(Effect.provide(TestLayer)));
-
-    expect(receivedMessage).toBe("What is the capital of France?");
-  });
-
-  it("should interpolate variables with -v flag", async () => {
+  it("should interpolate variables with --vars flag", async () => {
     const prompt = createTestPrompt({
       id: "var-test",
       name: "var-prompt",
@@ -122,30 +104,37 @@ describe("pl test command", () => {
     });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
-    let receivedSystem = "";
+    let receivedContent = "";
     const llm = {
       ...createMockLLMService("Response"),
       complete: (request: any) => {
-        receivedSystem = request.messages?.find((m: any) => m.role === "system")?.content ?? "";
+        receivedContent = request.messages?.[0]?.content ?? "";
         return Effect.succeed({
           content: "Test response",
           model: "gpt-4o",
-          usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+          usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
           finishReason: "stop" as const,
         });
       },
     };
-    const TestLayer = createTestLayer({ storage, llm });
+    const tokenCounter = {
+      ...createMockTokenCounterService(),
+      estimateCost: (_input: number, _output: number, _model?: string) => Effect.succeed(0.001),
+    };
+    const TestLayer = createTestLayer({ storage, llm, tokenCounter });
 
-    // Note: Variable parsing happens from process.argv in the actual implementation
     const args = createParsedArgs({
       positional: ["var-prompt"],
+      flags: {
+        vars: '{"role": "teacher", "task": "math"}',
+        "no-stream": true,
+      },
     });
 
     await Effect.runPromise(testCommand(args).pipe(Effect.provide(TestLayer)));
 
-    const logs = console$.getLogs();
-    expect(logs.length).toBeGreaterThan(0);
+    expect(receivedContent).toContain("teacher");
+    expect(receivedContent).toContain("math");
   });
 
   it("should show token usage after test", async () => {
@@ -158,51 +147,37 @@ describe("pl test command", () => {
         Effect.succeed({
           content: "Test response",
           model: "gpt-4o",
-          usage: { promptTokens: 150, completionTokens: 200, totalTokens: 350 },
+          usage: { inputTokens: 150, outputTokens: 200, totalTokens: 350 },
           finishReason: "stop" as const,
         }),
     };
-    const TestLayer = createTestLayer({ storage, llm });
+    const tokenCounter = {
+      ...createMockTokenCounterService(),
+      estimateCost: (_input: number, _output: number, _model?: string) => Effect.succeed(0.005),
+    };
+    const TestLayer = createTestLayer({ storage, llm, tokenCounter });
 
     const args = createParsedArgs({
       positional: ["usage-prompt"],
-      flags: { "show-usage": true },
+      flags: { "no-stream": true },
     });
 
     await Effect.runPromise(testCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("350") || l.includes("tokens"))).toBe(true);
+    expect(logs.some((l) => l.includes("Tokens") || l.includes("150"))).toBe(true);
   });
 
-  it("should output JSON with --json flag", async () => {
-    const prompt = createTestPrompt({ id: "json-test", name: "json-prompt" });
-    const state = createMockStorageState([prompt]);
-    const storage = createMockStorageService(state);
-    const llm = createMockLLMService("JSON response content");
-    const TestLayer = createTestLayer({ storage, llm });
-
-    const args = createParsedArgs({
-      positional: ["json-prompt"],
-      flags: { json: true },
-    });
-
-    await Effect.runPromise(testCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    const output = logs.join("\n");
-    expect(() => JSON.parse(output)).not.toThrow();
-  });
-
-  it("should show usage when no arguments provided", async () => {
+  it("should fail when no arguments provided", async () => {
     const TestLayer = createTestLayer();
 
     const args = createParsedArgs({ positional: [] });
 
-    await Effect.runPromise(testCommand(args).pipe(Effect.provide(TestLayer)));
+    const result = await Effect.runPromiseExit(
+      testCommand(args).pipe(Effect.provide(TestLayer))
+    );
 
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Usage"))).toBe(true);
+    expect(result._tag).toBe("Failure");
   });
 
   it("should fail for non-existent prompt", async () => {
@@ -217,5 +192,37 @@ describe("pl test command", () => {
     );
 
     expect(result._tag).toBe("Failure");
+  });
+
+  it("should show header with prompt name and model", async () => {
+    const prompt = createTestPrompt({ id: "header-test", name: "header-prompt" });
+    const state = createMockStorageState([prompt]);
+    const storage = createMockStorageService(state);
+    const llm = {
+      ...createMockLLMService("Response"),
+      complete: (_request: any) =>
+        Effect.succeed({
+          content: "Response",
+          model: "gpt-4o",
+          usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+          finishReason: "stop" as const,
+        }),
+    };
+    const tokenCounter = {
+      ...createMockTokenCounterService(),
+      estimateCost: (_input: number, _output: number, _model?: string) => Effect.succeed(0.001),
+    };
+    const TestLayer = createTestLayer({ storage, llm, tokenCounter });
+
+    const args = createParsedArgs({
+      positional: ["header-prompt"],
+      flags: { "no-stream": true },
+    });
+
+    await Effect.runPromise(testCommand(args).pipe(Effect.provide(TestLayer)));
+
+    const logs = console$.getLogs();
+    expect(logs.some((l) => l.includes("Testing") || l.includes("header-prompt"))).toBe(true);
+    expect(logs.some((l) => l.includes("Model"))).toBe(true);
   });
 });

@@ -24,12 +24,12 @@ describe("pl reindex command", () => {
     console$.clear();
   });
 
-  it("should reindex the search index", async () => {
-    let reindexCalled = false;
+  it("should rebuild the search index", async () => {
+    let rebuildCalled = false;
     const search = {
       ...createMockSearchService([]),
-      reindex: () => {
-        reindexCalled = true;
+      rebuildIndex: () => {
+        rebuildCalled = true;
         return Effect.void;
       },
     };
@@ -39,50 +39,24 @@ describe("pl reindex command", () => {
 
     await Effect.runPromise(reindexCommand(args).pipe(Effect.provide(TestLayer)));
 
-    expect(reindexCalled).toBe(true);
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Reindex") || l.includes("complete"))).toBe(true);
-  });
-
-  it("should rebuild entire index with --full flag", async () => {
-    let rebuildCalled = false;
-    const search = {
-      ...createMockSearchService([]),
-      rebuildIndex: () => {
-        rebuildCalled = true;
-        return Effect.void;
-      },
-      reindex: () => Effect.void,
-    };
-    const TestLayer = createTestLayer({ search });
-
-    const args = createParsedArgs({
-      positional: [],
-      flags: { full: true },
-    });
-
-    await Effect.runPromise(reindexCommand(args).pipe(Effect.provide(TestLayer)));
-
     expect(rebuildCalled).toBe(true);
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Rebuild") || l.includes("full"))).toBe(true);
+    expect(logs.some((l) => l.includes("rebuilt") || l.includes("Rebuilding"))).toBe(true);
   });
 
-  it("should show progress during reindex", async () => {
+  it("should show progress messages", async () => {
     const search = {
       ...createMockSearchService([]),
-      reindex: () => Effect.void,
+      rebuildIndex: () => Effect.void,
     };
     const TestLayer = createTestLayer({ search });
 
-    const args = createParsedArgs({
-      positional: [],
-      flags: { verbose: true },
-    });
+    const args = createParsedArgs({ positional: [] });
 
     await Effect.runPromise(reindexCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
     expect(logs.length).toBeGreaterThan(0);
+    expect(logs.some((l) => l.includes("search index"))).toBe(true);
   });
 });
