@@ -1,5 +1,11 @@
 /**
  * Tests for pl format command
+ *
+ * The format command formats prompt content according to configuration.
+ * Supports:
+ * - --check: Check mode (no changes, just report issues)
+ * - --fix: Auto-fix issues (default)
+ * - --all: Format all prompts
  */
 
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
@@ -37,7 +43,7 @@ describe("pl format command", () => {
     const storage = createMockStorageService(state);
     const format = {
       ...createMockFormatService(),
-      format: (content: string, _config: any) =>
+      formatPrompt: (content: string, _config: any) =>
         Effect.succeed({
           content: content.trim().replace(/\s+/g, " "),
           changes: [{ type: "whitespace", from: 0, to: 10 }],
@@ -54,17 +60,17 @@ describe("pl format command", () => {
     expect(logs.some((l) => l.includes("Formatted") || l.includes("format"))).toBe(true);
   });
 
-  it("should lint prompt with --lint flag", async () => {
+  it("should check prompt with --check flag", async () => {
     const prompt = createTestPrompt({
-      id: "lint-test",
-      name: "lint-prompt",
-      content: "Content to lint",
+      id: "check-test",
+      name: "check-prompt",
+      content: "Content to check",
     });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
     const format = {
       ...createMockFormatService(),
-      lint: (content: string) =>
+      checkPrompt: (_content: string, _config: any) =>
         Effect.succeed({
           valid: true,
           issues: [],
@@ -73,27 +79,28 @@ describe("pl format command", () => {
     const TestLayer = createTestLayer({ storage, format });
 
     const args = createParsedArgs({
-      positional: ["lint-prompt"],
-      flags: { lint: true },
+      positional: ["check-prompt"],
+      flags: { check: true },
     });
 
     await Effect.runPromise(formatCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("valid") || l.includes("No issues"))).toBe(true);
+    // Check mode should not modify content
+    expect(state.prompts.get("check-test")?.content).toBe("Content to check");
   });
 
-  it("should report lint issues", async () => {
+  it("should report check issues", async () => {
     const prompt = createTestPrompt({
-      id: "lint-issues",
-      name: "lint-issues-prompt",
+      id: "check-issues",
+      name: "check-issues-prompt",
       content: "Content with issues",
     });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
     const format = {
       ...createMockFormatService(),
-      lint: (_content: string) =>
+      checkPrompt: (_content: string, _config: any) =>
         Effect.succeed({
           valid: false,
           issues: [
@@ -105,35 +112,14 @@ describe("pl format command", () => {
     const TestLayer = createTestLayer({ storage, format });
 
     const args = createParsedArgs({
-      positional: ["lint-issues-prompt"],
-      flags: { lint: true },
-    });
-
-    await Effect.runPromise(formatCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Missing closing tag") || l.includes("issues"))).toBe(true);
-  });
-
-  it("should check format without modifying with --check flag", async () => {
-    const prompt = createTestPrompt({
-      id: "check-test",
-      name: "check-prompt",
-      content: "Content to check",
-    });
-    const state = createMockStorageState([prompt]);
-    const storage = createMockStorageService(state);
-    const TestLayer = createTestLayer({ storage });
-
-    const args = createParsedArgs({
-      positional: ["check-prompt"],
+      positional: ["check-issues-prompt"],
       flags: { check: true },
     });
 
     await Effect.runPromise(formatCommand(args).pipe(Effect.provide(TestLayer)));
 
-    // Content should not be modified
-    expect(state.prompts.get("check-test")?.content).toBe("Content to check");
+    const logs = console$.getLogs();
+    expect(logs.some((l) => l.includes("issue") || l.includes("error") || l.includes("warning"))).toBe(true);
   });
 
   it("should format all prompts with --all flag", async () => {
@@ -154,7 +140,7 @@ describe("pl format command", () => {
     await Effect.runPromise(formatCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("3") || l.includes("prompts"))).toBe(true);
+    expect(logs.some((l) => l.includes("3") || l.includes("prompts") || l.includes("Formatted"))).toBe(true);
   });
 
   it("should show usage when no arguments provided", async () => {
@@ -166,35 +152,5 @@ describe("pl format command", () => {
 
     const logs = console$.getLogs();
     expect(logs.some((l) => l.includes("Usage"))).toBe(true);
-  });
-
-  it("should handle --dry-run flag", async () => {
-    const prompt = createTestPrompt({
-      id: "dry-test",
-      name: "dry-prompt",
-      content: "Original content",
-    });
-    const state = createMockStorageState([prompt]);
-    const storage = createMockStorageService(state);
-    const format = {
-      ...createMockFormatService(),
-      format: (content: string, _config: any) =>
-        Effect.succeed({
-          content: "Modified content",
-          changes: [],
-          stats: { added: 1, removed: 1, modified: 1 },
-        }),
-    };
-    const TestLayer = createTestLayer({ storage, format });
-
-    const args = createParsedArgs({
-      positional: ["dry-prompt"],
-      flags: { "dry-run": true },
-    });
-
-    await Effect.runPromise(formatCommand(args).pipe(Effect.provide(TestLayer)));
-
-    // Content should not be modified in dry-run mode
-    expect(state.prompts.get("dry-test")?.content).toBe("Original content");
   });
 });

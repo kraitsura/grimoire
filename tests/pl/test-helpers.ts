@@ -301,7 +301,13 @@ export const createMockVersionService = (
   }),
   listVersions: (_promptId, _options) => Effect.succeed(versions),
   getVersion: (_promptId, _version) => Effect.succeed(versions[0] ?? null),
-  getLatestVersion: (_promptId) => Effect.succeed(versions[0] ?? null),
+  getHead: (_promptId, _branch) => {
+    const head = versions[0];
+    if (!head) {
+      return Effect.fail({ _tag: "VersionNotFoundError" as const, promptId: _promptId, version: 0 });
+    }
+    return Effect.succeed(head);
+  },
   diff: (_promptId, _fromVersion, _toVersion): Effect.Effect<DiffResult, any> =>
     Effect.succeed({
       from: { version: 1, content: "old" },
@@ -504,24 +510,25 @@ export const createMockAliasService = (
 // ============================================================================
 
 export const createMockFormatService = (): typeof FormatService.Service => ({
-  format: (content, _config): Effect.Effect<FormatResult, any> =>
+  formatPrompt: (content: string, _config: any): Effect.Effect<FormatResult, any> =>
     Effect.succeed({
       content,
       changes: [],
       stats: { added: 0, removed: 0, modified: 0 },
     }),
-  lint: (_content): Effect.Effect<LintResult, any> =>
+  checkPrompt: (_content: string, _config: any): Effect.Effect<LintResult, any> =>
     Effect.succeed({
       valid: true,
       issues: [],
     }),
-  extractFrontmatter: (content) =>
+  validateYamlFrontmatter: (content: string) =>
     Effect.succeed({
       frontmatter: {},
       content,
       raw: "",
+      valid: true,
+      errors: [],
     }),
-  normalizeFrontmatter: (frontmatter) => Effect.succeed(frontmatter),
 });
 
 // ============================================================================

@@ -1,5 +1,8 @@
 /**
  * Tests for pl history command
+ *
+ * The history command displays version history for a prompt.
+ * Uses VersionService to list and diff versions.
  */
 
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
@@ -10,10 +13,11 @@ import {
   createTestLayer,
   createMockStorageService,
   createMockStorageState,
-  createMockStatsService,
+  createMockVersionService,
   createTestPrompt,
   captureConsole,
 } from "./test-helpers";
+import type { PromptVersion } from "../../src/services/version-service";
 
 describe("pl history command", () => {
   const console$ = captureConsole();
@@ -27,160 +31,100 @@ describe("pl history command", () => {
     console$.clear();
   });
 
-  it("should show usage history for a prompt", async () => {
+  it("should show version history for a prompt", async () => {
     const prompt = createTestPrompt({ id: "history-test", name: "history-prompt" });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
-    const stats = {
-      ...createMockStatsService(),
-      getPromptStats: (promptId: string) =>
-        Effect.succeed({
-          promptId,
-          copies: 25,
-          tests: 10,
-          lastUsed: new Date(),
-          totalTokens: 5000,
-        }),
-    };
-    const TestLayer = createTestLayer({ storage, stats });
+    const versions: PromptVersion[] = [
+      { id: 1, promptId: "history-test", version: 3, content: "v3 content", frontmatter: {}, createdAt: new Date(), branch: "main" },
+      { id: 2, promptId: "history-test", version: 2, content: "v2 content", frontmatter: {}, createdAt: new Date(), branch: "main" },
+      { id: 3, promptId: "history-test", version: 1, content: "v1 content", frontmatter: {}, createdAt: new Date(), branch: "main" },
+    ];
+    const versionService = createMockVersionService(versions);
+    const TestLayer = createTestLayer({ storage, versions: versionService });
 
     const args = createParsedArgs({ positional: ["history-prompt"] });
 
     await Effect.runPromise(historyCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("25") || l.includes("copies"))).toBe(true);
-    expect(logs.some((l) => l.includes("10") || l.includes("tests"))).toBe(true);
+    expect(logs.some((l) => l.includes("3") || l.includes("version") || l.includes("HEAD"))).toBe(true);
   });
 
-  it("should show overall history with --all flag", async () => {
-    const stats = {
-      ...createMockStatsService(),
-      getCollectionStats: () =>
-        Effect.succeed({
-          totalPrompts: 50,
-          totalTemplates: 10,
-          totalTags: 25,
-          topPrompts: [
-            { name: "popular-1", copies: 100 },
-            { name: "popular-2", copies: 75 },
-          ],
-          tagCounts: {},
-        }),
+  it("should limit history entries with -n flag", async () => {
+    const prompt = createTestPrompt({ id: "limit-test", name: "limit-prompt" });
+    const state = createMockStorageState([prompt]);
+    const storage = createMockStorageService(state);
+    let receivedOptions: any;
+    const versionService = {
+      ...createMockVersionService([]),
+      listVersions: (promptId: string, options?: any) => {
+        receivedOptions = options;
+        return Effect.succeed([]);
+      },
     };
-    const TestLayer = createTestLayer({ stats });
+    const TestLayer = createTestLayer({ storage, versions: versionService });
 
     const args = createParsedArgs({
-      positional: [],
+      positional: ["limit-prompt"],
+      flags: { n: 5 },
+    });
+
+    await Effect.runPromise(historyCommand(args).pipe(Effect.provide(TestLayer)));
+
+    expect(receivedOptions?.limit).toBe(5);
+  });
+
+  it("should show all versions with --all flag", async () => {
+    const prompt = createTestPrompt({ id: "all-test", name: "all-prompt" });
+    const state = createMockStorageState([prompt]);
+    const storage = createMockStorageService(state);
+    let receivedOptions: any;
+    const versionService = {
+      ...createMockVersionService([]),
+      listVersions: (promptId: string, options?: any) => {
+        receivedOptions = options;
+        return Effect.succeed([]);
+      },
+    };
+    const TestLayer = createTestLayer({ storage, versions: versionService });
+
+    const args = createParsedArgs({
+      positional: ["all-prompt"],
       flags: { all: true },
     });
 
     await Effect.runPromise(historyCommand(args).pipe(Effect.provide(TestLayer)));
 
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("50") || l.includes("prompts"))).toBe(true);
+    // --all should not set a limit
+    expect(receivedOptions?.limit).toBeUndefined();
   });
 
-  it("should limit history entries with --limit flag", async () => {
-    const stats = {
-      ...createMockStatsService(),
-      getCollectionStats: () =>
-        Effect.succeed({
-          totalPrompts: 50,
-          totalTemplates: 10,
-          totalTags: 25,
-          topPrompts: Array.from({ length: 20 }, (_, i) => ({
-            name: `prompt-${i}`,
-            copies: 100 - i,
-          })),
-          tagCounts: {},
-        }),
-    };
-    const TestLayer = createTestLayer({ stats });
-
-    const args = createParsedArgs({
-      positional: [],
-      flags: { all: true, limit: "5" },
-    });
-
-    await Effect.runPromise(historyCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    // Should only show limited number of entries
-    expect(logs.length).toBeLessThanOrEqual(15);
-  });
-
-  it("should filter by date with --since flag", async () => {
-    const prompt = createTestPrompt({ id: "since-test", name: "since-prompt" });
+  it("should show no versions message when empty", async () => {
+    const prompt = createTestPrompt({ id: "empty-test", name: "empty-prompt" });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
-    const TestLayer = createTestLayer({ storage });
+    const versionService = createMockVersionService([]);
+    const TestLayer = createTestLayer({ storage, versions: versionService });
 
-    const args = createParsedArgs({
-      positional: ["since-prompt"],
-      flags: { since: "2025-01-01" },
-    });
+    const args = createParsedArgs({ positional: ["empty-prompt"] });
 
     await Effect.runPromise(historyCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.length).toBeGreaterThan(0);
+    expect(logs.some((l) => l.includes("No") || l.includes("empty") || l.includes("history"))).toBe(true);
   });
 
-  it("should output JSON with --json flag", async () => {
-    const prompt = createTestPrompt({ id: "json-history", name: "json-history-prompt" });
-    const state = createMockStorageState([prompt]);
-    const storage = createMockStorageService(state);
-    const stats = {
-      ...createMockStatsService(),
-      getPromptStats: (_promptId: string) =>
-        Effect.succeed({
-          promptId: "json-history",
-          copies: 10,
-          tests: 5,
-          lastUsed: new Date(),
-          totalTokens: 1000,
-        }),
-    };
-    const TestLayer = createTestLayer({ storage, stats });
-
-    const args = createParsedArgs({
-      positional: ["json-history-prompt"],
-      flags: { json: true },
-    });
-
-    await Effect.runPromise(historyCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    const output = logs.join("\n");
-    expect(() => JSON.parse(output)).not.toThrow();
-  });
-
-  it("should show usage when no arguments provided", async () => {
+  it("should fail with validation error when no prompt name provided", async () => {
     const TestLayer = createTestLayer();
 
     const args = createParsedArgs({ positional: [] });
 
-    await Effect.runPromise(historyCommand(args).pipe(Effect.provide(TestLayer)));
+    const result = await Effect.runPromiseExit(
+      historyCommand(args).pipe(Effect.provide(TestLayer))
+    );
 
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Usage"))).toBe(true);
-  });
-
-  it("should clear history with --clear flag", async () => {
-    const prompt = createTestPrompt({ id: "clear-history", name: "clear-history-prompt" });
-    const state = createMockStorageState([prompt]);
-    const storage = createMockStorageService(state);
-    const TestLayer = createTestLayer({ storage });
-
-    const args = createParsedArgs({
-      positional: ["clear-history-prompt"],
-      flags: { clear: true, yes: true },
-    });
-
-    await Effect.runPromise(historyCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Cleared") || l.includes("history"))).toBe(true);
+    // Should fail with validation error including usage message
+    expect(result._tag).toBe("Failure");
   });
 });
