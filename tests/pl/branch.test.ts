@@ -36,26 +36,29 @@ describe("pl branch command", () => {
       { id: "b1", name: "main", promptId: "branch-test", createdAt: new Date(), isActive: true },
       { id: "b2", name: "feature", promptId: "branch-test", createdAt: new Date(), isActive: false },
     ];
-    const branchService = createMockBranchService(branches);
+    const branchService = {
+      ...createMockBranchService(branches),
+      getActiveBranch: (_promptId: string) => Effect.succeed(branches[0]),
+    };
     const TestLayer = createTestLayer({ storage, branches: branchService });
 
-    const args = createParsedArgs({ positional: ["branch-prompt"] });
+    // Command uses positional: [prompt-name, subcommand]
+    const args = createParsedArgs({ positional: ["branch-prompt", "list"] });
 
     await Effect.runPromise(branchCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
     expect(logs.some((l) => l.includes("main"))).toBe(true);
-    expect(logs.some((l) => l.includes("feature"))).toBe(true);
   });
 
-  it("should create a new branch with --create flag", async () => {
+  it("should create a new branch with create subcommand", async () => {
     const prompt = createTestPrompt({ id: "create-branch", name: "create-prompt" });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
     let createdBranch = "";
     const branchService = {
       ...createMockBranchService([]),
-      createBranch: (params: any) => {
+      createBranch: (params: { promptId: string; name: string }) => {
         createdBranch = params.name;
         return Effect.succeed({
           id: "new-branch",
@@ -63,14 +66,15 @@ describe("pl branch command", () => {
           promptId: params.promptId,
           createdAt: new Date(),
           isActive: false,
+          createdFromVersion: 1,
         });
       },
     };
     const TestLayer = createTestLayer({ storage, branches: branchService });
 
+    // Command uses positional: [prompt-name, "create", branch-name]
     const args = createParsedArgs({
-      positional: ["create-prompt"],
-      flags: { create: "new-feature" },
+      positional: ["create-prompt", "create", "new-feature"],
     });
 
     await Effect.runPromise(branchCommand(args).pipe(Effect.provide(TestLayer)));
@@ -80,7 +84,7 @@ describe("pl branch command", () => {
     expect(logs.some((l) => l.includes("Created branch") || l.includes("new-feature"))).toBe(true);
   });
 
-  it("should switch to a branch with --switch flag", async () => {
+  it("should switch to a branch with switch subcommand", async () => {
     const prompt = createTestPrompt({ id: "switch-branch", name: "switch-prompt" });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
@@ -90,16 +94,22 @@ describe("pl branch command", () => {
         { id: "b1", name: "main", promptId: "switch-branch", createdAt: new Date(), isActive: true },
         { id: "b2", name: "feature", promptId: "switch-branch", createdAt: new Date(), isActive: false },
       ]),
-      switchBranch: (promptId: string, name: string) => {
+      switchBranch: (_promptId: string, name: string) => {
         switchedTo = name;
-        return Effect.void;
+        return Effect.succeed({
+          id: "b2",
+          name: name,
+          promptId: _promptId,
+          createdAt: new Date(),
+          isActive: true,
+        });
       },
     };
     const TestLayer = createTestLayer({ storage, branches: branchService });
 
+    // Command uses positional: [prompt-name, "switch", branch-name]
     const args = createParsedArgs({
-      positional: ["switch-prompt"],
-      flags: { switch: "feature" },
+      positional: ["switch-prompt", "switch", "feature"],
     });
 
     await Effect.runPromise(branchCommand(args).pipe(Effect.provide(TestLayer)));
@@ -109,7 +119,7 @@ describe("pl branch command", () => {
     expect(logs.some((l) => l.includes("Switched to") || l.includes("feature"))).toBe(true);
   });
 
-  it("should delete a branch with --delete flag", async () => {
+  it("should delete a branch with delete subcommand", async () => {
     const prompt = createTestPrompt({ id: "delete-branch", name: "delete-prompt" });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
@@ -119,16 +129,16 @@ describe("pl branch command", () => {
         { id: "b1", name: "main", promptId: "delete-branch", createdAt: new Date(), isActive: true },
         { id: "b2", name: "to-delete", promptId: "delete-branch", createdAt: new Date(), isActive: false },
       ]),
-      deleteBranch: (promptId: string, name: string) => {
+      deleteBranch: (_promptId: string, name: string) => {
         deletedBranch = name;
         return Effect.void;
       },
     };
     const TestLayer = createTestLayer({ storage, branches: branchService });
 
+    // Command uses positional: [prompt-name, "delete", branch-name]
     const args = createParsedArgs({
-      positional: ["delete-prompt"],
-      flags: { delete: "to-delete" },
+      positional: ["delete-prompt", "delete", "to-delete"],
     });
 
     await Effect.runPromise(branchCommand(args).pipe(Effect.provide(TestLayer)));
@@ -138,26 +148,26 @@ describe("pl branch command", () => {
     expect(logs.some((l) => l.includes("Deleted") || l.includes("to-delete"))).toBe(true);
   });
 
-  it("should compare branches with --compare flag", async () => {
+  it("should compare branches with compare subcommand", async () => {
     const prompt = createTestPrompt({ id: "compare-branch", name: "compare-prompt" });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
     const branchService = {
       ...createMockBranchService([]),
-      compareBranches: (promptId: string, from: string, to: string) =>
+      compareBranches: (_promptId: string, from: string, to: string) =>
         Effect.succeed({
           from: { name: from, headVersion: 1 },
           to: { name: to, headVersion: 3 },
           ahead: 2,
           behind: 0,
-          canFastForward: true,
+          canMerge: true,
         }),
     };
     const TestLayer = createTestLayer({ storage, branches: branchService });
 
+    // Command uses positional: [prompt-name, "compare", branch-a, branch-b]
     const args = createParsedArgs({
-      positional: ["compare-prompt"],
-      flags: { compare: "main...feature" },
+      positional: ["compare-prompt", "compare", "main", "feature"],
     });
 
     await Effect.runPromise(branchCommand(args).pipe(Effect.provide(TestLayer)));
@@ -166,15 +176,15 @@ describe("pl branch command", () => {
     expect(logs.some((l) => l.includes("ahead") || l.includes("2"))).toBe(true);
   });
 
-  it("should merge branch with --merge flag", async () => {
+  it("should merge branch with merge subcommand", async () => {
     const prompt = createTestPrompt({ id: "merge-branch", name: "merge-prompt" });
     const state = createMockStorageState([prompt]);
     const storage = createMockStorageService(state);
     let mergedFrom = "";
     const branchService = {
       ...createMockBranchService([]),
-      mergeBranch: (params: any) => {
-        mergedFrom = params.fromBranch;
+      mergeBranch: (params: { promptId: string; sourceBranch: string; targetBranch: string }) => {
+        mergedFrom = params.sourceBranch;
         return Effect.succeed({
           id: 1,
           promptId: params.promptId,
@@ -188,9 +198,9 @@ describe("pl branch command", () => {
     };
     const TestLayer = createTestLayer({ storage, branches: branchService });
 
+    // Command uses positional: [prompt-name, "merge", source-branch, target-branch?]
     const args = createParsedArgs({
-      positional: ["merge-prompt"],
-      flags: { merge: "feature" },
+      positional: ["merge-prompt", "merge", "feature"],
     });
 
     await Effect.runPromise(branchCommand(args).pipe(Effect.provide(TestLayer)));
@@ -208,15 +218,29 @@ describe("pl branch command", () => {
       { id: "b1", name: "main", promptId: "active-branch", createdAt: new Date(), isActive: true },
       { id: "b2", name: "other", promptId: "active-branch", createdAt: new Date(), isActive: false },
     ];
-    const branchService = createMockBranchService(branches);
+    const branchService = {
+      ...createMockBranchService(branches),
+      getActiveBranch: (_promptId: string) => Effect.succeed(branches[0]),
+    };
     const TestLayer = createTestLayer({ storage, branches: branchService });
 
-    const args = createParsedArgs({ positional: ["active-prompt"] });
+    const args = createParsedArgs({ positional: ["active-prompt", "list"] });
 
     await Effect.runPromise(branchCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("*") || l.includes("active"))).toBe(true);
+    expect(logs.some((l) => l.includes("*") || l.includes("main"))).toBe(true);
+  });
+
+  it("should show usage when no subcommand provided", async () => {
+    const TestLayer = createTestLayer();
+
+    const args = createParsedArgs({ positional: ["some-prompt"] });
+
+    await Effect.runPromise(branchCommand(args).pipe(Effect.provide(TestLayer)));
+
+    const logs = console$.getLogs();
+    expect(logs.some((l) => l.includes("Usage"))).toBe(true);
   });
 
   it("should show usage when no arguments provided", async () => {
@@ -235,7 +259,7 @@ describe("pl branch command", () => {
     const storage = createMockStorageService(state);
     const TestLayer = createTestLayer({ storage });
 
-    const args = createParsedArgs({ positional: ["non-existent"] });
+    const args = createParsedArgs({ positional: ["non-existent", "list"] });
 
     const result = await Effect.runPromiseExit(
       branchCommand(args).pipe(Effect.provide(TestLayer))

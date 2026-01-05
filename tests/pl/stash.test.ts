@@ -158,7 +158,8 @@ describe("pl stash command", () => {
     await Effect.runPromise(stashCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("31 chars"))).toBe(true);
+    // "This is a 30 character string." is exactly 30 characters
+    expect(logs.some((l) => l.includes("30 chars"))).toBe(true);
   });
 
   it("should truncate long content in list preview", async () => {

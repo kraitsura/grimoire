@@ -39,7 +39,8 @@ describe("pl templates command", () => {
     };
     const TestLayer = createTestLayer({ storage });
 
-    const args = createParsedArgs({ positional: [] });
+    // Command uses: grimoire templates list
+    const args = createParsedArgs({ positional: ["list"] });
 
     await Effect.runPromise(templatesCommand(args).pipe(Effect.provide(TestLayer)));
 
@@ -62,15 +63,16 @@ describe("pl templates command", () => {
     };
     const TestLayer = createTestLayer({ storage });
 
-    const args = createParsedArgs({ positional: [] });
+    // Command uses: grimoire templates list
+    const args = createParsedArgs({ positional: ["list"] });
 
     await Effect.runPromise(templatesCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("No templates") || l.includes("empty"))).toBe(true);
+    expect(logs.some((l) => l.includes("No templates"))).toBe(true);
   });
 
-  it("should show template variables with --show-vars flag", async () => {
+  it("should show template with variables using show subcommand", async () => {
     const prompts = [
       createTestPrompt({
         id: "t1",
@@ -83,12 +85,22 @@ describe("pl templates command", () => {
     const storage = {
       ...createMockStorageService(state),
       getAll: Effect.succeed(prompts),
+      getById: (id: string) => {
+        const prompt = prompts.find((p) => p.id === id);
+        if (!prompt) return Effect.fail({ _tag: "PromptNotFoundError" as const, id });
+        return Effect.succeed(prompt);
+      },
+      getByName: (name: string) => {
+        const prompt = prompts.find((p) => p.name === name);
+        if (!prompt) return Effect.fail({ _tag: "PromptNotFoundError" as const, id: name });
+        return Effect.succeed(prompt);
+      },
     };
     const TestLayer = createTestLayer({ storage });
 
+    // Command uses: grimoire templates show <name>
     const args = createParsedArgs({
-      positional: [],
-      flags: { "show-vars": true },
+      positional: ["show", "template-with-vars"],
     });
 
     await Effect.runPromise(templatesCommand(args).pipe(Effect.provide(TestLayer)));
@@ -97,10 +109,36 @@ describe("pl templates command", () => {
     expect(logs.some((l) => l.includes("name") || l.includes("role") || l.includes("project"))).toBe(true);
   });
 
-  it("should filter templates by tag with --tag flag", async () => {
+  it("should show usage when no subcommand provided", async () => {
+    const TestLayer = createTestLayer();
+
+    const args = createParsedArgs({ positional: [] });
+
+    await Effect.runPromise(templatesCommand(args).pipe(Effect.provide(TestLayer)));
+
+    const logs = console$.getLogs();
+    expect(logs.some((l) => l.includes("Usage"))).toBe(true);
+  });
+
+  it("should show usage for show without template name", async () => {
+    const TestLayer = createTestLayer();
+
+    const args = createParsedArgs({ positional: ["show"] });
+
+    await Effect.runPromise(templatesCommand(args).pipe(Effect.provide(TestLayer)));
+
+    const logs = console$.getLogs();
+    expect(logs.some((l) => l.includes("Usage"))).toBe(true);
+  });
+
+  it("should show variables in list output", async () => {
     const prompts = [
-      createTestPrompt({ id: "t1", name: "coding-template", isTemplate: true, tags: ["coding"] }),
-      createTestPrompt({ id: "t2", name: "writing-template", isTemplate: true, tags: ["writing"] }),
+      createTestPrompt({
+        id: "t1",
+        name: "greeting-template",
+        isTemplate: true,
+        content: "Hello {{name}}, welcome to {{place}}!",
+      }),
     ];
     const state = createMockStorageState(prompts);
     const storage = {
@@ -109,85 +147,40 @@ describe("pl templates command", () => {
     };
     const TestLayer = createTestLayer({ storage });
 
-    const args = createParsedArgs({
-      positional: [],
-      flags: { tag: "coding" },
-    });
+    const args = createParsedArgs({ positional: ["list"] });
 
     await Effect.runPromise(templatesCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("coding-template"))).toBe(true);
-    expect(logs.every((l) => !l.includes("writing-template"))).toBe(true);
+    // List output shows variables in VARIABLES column
+    expect(logs.some((l) => l.includes("name") || l.includes("place"))).toBe(true);
   });
 
-  it("should output JSON with --json flag", async () => {
+  it("should error for non-template prompt in show", async () => {
     const prompts = [
-      createTestPrompt({ id: "t1", name: "json-template", isTemplate: true }),
+      createTestPrompt({ id: "p1", name: "regular-prompt", isTemplate: false }),
     ];
     const state = createMockStorageState(prompts);
     const storage = {
       ...createMockStorageService(state),
-      getAll: Effect.succeed(prompts),
+      getById: (id: string) => {
+        const prompt = prompts.find((p) => p.id === id);
+        if (!prompt) return Effect.fail({ _tag: "PromptNotFoundError" as const, id });
+        return Effect.succeed(prompt);
+      },
+      getByName: (name: string) => {
+        const prompt = prompts.find((p) => p.name === name);
+        if (!prompt) return Effect.fail({ _tag: "PromptNotFoundError" as const, id: name });
+        return Effect.succeed(prompt);
+      },
     };
     const TestLayer = createTestLayer({ storage });
 
-    const args = createParsedArgs({
-      positional: [],
-      flags: { json: true },
-    });
+    const args = createParsedArgs({ positional: ["show", "regular-prompt"] });
 
     await Effect.runPromise(templatesCommand(args).pipe(Effect.provide(TestLayer)));
 
     const logs = console$.getLogs();
-    const output = logs.join("\n");
-    expect(() => JSON.parse(output)).not.toThrow();
-  });
-
-  it("should search templates with --search flag", async () => {
-    const prompts = [
-      createTestPrompt({ id: "t1", name: "api-template", isTemplate: true, content: "API documentation" }),
-      createTestPrompt({ id: "t2", name: "email-template", isTemplate: true, content: "Email format" }),
-    ];
-    const state = createMockStorageState(prompts);
-    const storage = {
-      ...createMockStorageService(state),
-      getAll: Effect.succeed(prompts),
-    };
-    const TestLayer = createTestLayer({ storage });
-
-    const args = createParsedArgs({
-      positional: [],
-      flags: { search: "api" },
-    });
-
-    await Effect.runPromise(templatesCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("api-template"))).toBe(true);
-    expect(logs.every((l) => !l.includes("email-template"))).toBe(true);
-  });
-
-  it("should limit results with --limit flag", async () => {
-    const prompts = Array.from({ length: 20 }, (_, i) =>
-      createTestPrompt({ id: `t${i}`, name: `template-${i}`, isTemplate: true })
-    );
-    const state = createMockStorageState(prompts);
-    const storage = {
-      ...createMockStorageService(state),
-      getAll: Effect.succeed(prompts),
-    };
-    const TestLayer = createTestLayer({ storage });
-
-    const args = createParsedArgs({
-      positional: [],
-      flags: { limit: "5" },
-    });
-
-    await Effect.runPromise(templatesCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    // Should only show limited results
-    expect(logs.length).toBeLessThanOrEqual(10); // Including header/footer
+    expect(logs.some((l) => l.includes("Not a template"))).toBe(true);
   });
 });

@@ -12,32 +12,31 @@ import {
   createMockStorageState,
   createTestPrompt,
   captureConsole,
-  mockProcessExit,
+  createMockClipboardService,
+  createMockEditorService,
 } from "./test-helpers";
 
 describe("pl load command", () => {
   const console$ = captureConsole();
-  const exitMock = mockProcessExit();
 
   beforeEach(() => {
     console$.start();
-    exitMock.start();
   });
 
   afterEach(() => {
     console$.stop();
     console$.clear();
-    exitMock.stop();
-    exitMock.reset();
   });
 
-  it("should create a new prompt", async () => {
+  it("should create a new prompt with content flag", async () => {
     const state = createMockStorageState([]);
     const storage = createMockStorageService(state);
     const TestLayer = createTestLayer({ storage });
 
+    // The command uses args.command as the prompt name
     const args = createParsedArgs({
-      positional: ["new-prompt"],
+      command: "new-prompt",
+      positional: [],
       flags: {
         content: "This is the new prompt content.",
       },
@@ -56,7 +55,8 @@ describe("pl load command", () => {
     const TestLayer = createTestLayer({ storage });
 
     const args = createParsedArgs({
-      positional: ["tagged-prompt"],
+      command: "tagged-prompt",
+      positional: [],
       flags: {
         content: "Tagged content",
         tags: "coding,testing",
@@ -76,71 +76,72 @@ describe("pl load command", () => {
     const TestLayer = createTestLayer({ storage });
 
     const args = createParsedArgs({
-      positional: ["template-prompt"],
+      command: "my-template",
+      positional: [],
       flags: {
-        content: "You are a {{role}}.",
+        content: "Hello {{name}}!",
         template: true,
       },
     });
 
     await Effect.runPromise(promptCommand(args).pipe(Effect.provide(TestLayer)));
 
-    const created = state.byName.get("template-prompt");
+    const created = state.byName.get("my-template");
     expect(created?.isTemplate).toBe(true);
   });
 
-  it("should edit existing prompt with --edit flag", async () => {
-    const prompt = createTestPrompt({
-      id: "edit-test",
-      name: "edit-prompt",
-      content: "Original content",
-    });
-    const state = createMockStorageState([prompt]);
+  it("should paste from clipboard with -p flag", async () => {
+    const state = createMockStorageState([]);
     const storage = createMockStorageService(state);
-    const TestLayer = createTestLayer({ storage });
+    const clipboardState = { content: "Clipboard content here" };
+    const clipboard = createMockClipboardService(clipboardState);
+    const TestLayer = createTestLayer({ storage, clipboard });
 
     const args = createParsedArgs({
-      positional: ["edit-prompt"],
+      command: "paste-prompt",
+      positional: [],
       flags: {
-        content: "Updated content",
+        paste: true,
       },
     });
 
     await Effect.runPromise(promptCommand(args).pipe(Effect.provide(TestLayer)));
 
-    const updated = state.prompts.get("edit-test");
-    expect(updated?.content).toBe("Updated content");
+    const created = state.byName.get("paste-prompt");
+    expect(created?.content).toBe("Clipboard content here");
   });
 
-  it("should read content from stdin with --stdin flag", async () => {
+  it("should edit existing prompt", async () => {
+    const existingPrompt = createTestPrompt({ id: "p1", name: "existing", content: "Old content" });
+    const state = createMockStorageState([existingPrompt]);
+    const storage = createMockStorageService(state);
+    const editor = createMockEditorService("New edited content");
+    const TestLayer = createTestLayer({ storage, editor });
+
+    const args = createParsedArgs({
+      command: "existing",
+      positional: [],
+      flags: {},
+    });
+
+    await Effect.runPromise(promptCommand(args).pipe(Effect.provide(TestLayer)));
+
+    const updated = state.byName.get("existing");
+    expect(updated?.content).toBe("New edited content");
+  });
+
+  it("should fail for invalid arguments", async () => {
     const state = createMockStorageState([]);
     const storage = createMockStorageService(state);
     const TestLayer = createTestLayer({ storage });
 
-    // Note: stdin reading would need to be mocked in a real scenario
+    // Can't use both -c and -p
     const args = createParsedArgs({
-      positional: ["stdin-prompt"],
+      command: "test-prompt",
+      positional: [],
       flags: {
-        content: "Simulated stdin content",
-      },
-    });
-
-    await Effect.runPromise(promptCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    expect(logs.length).toBeGreaterThanOrEqual(0);
-  });
-
-  it("should fail for duplicate name without --force", async () => {
-    const existing = createTestPrompt({ id: "dup-test", name: "duplicate-prompt" });
-    const state = createMockStorageState([existing]);
-    const storage = createMockStorageService(state);
-    const TestLayer = createTestLayer({ storage });
-
-    const args = createParsedArgs({
-      positional: ["duplicate-prompt"],
-      flags: {
-        content: "New content",
+        content: "Some content",
+        paste: true,
       },
     });
 
@@ -148,45 +149,25 @@ describe("pl load command", () => {
       promptCommand(args).pipe(Effect.provide(TestLayer))
     );
 
-    // Should fail with duplicate name error
     expect(result._tag).toBe("Failure");
   });
 
-  it("should overwrite with --force flag", async () => {
-    const existing = createTestPrompt({
-      id: "force-test",
-      name: "force-prompt",
-      content: "Old content",
-    });
-    const state = createMockStorageState([existing]);
+  it("should rename prompt with --name flag", async () => {
+    const existingPrompt = createTestPrompt({ id: "p1", name: "old-name", content: "Content" });
+    const state = createMockStorageState([existingPrompt]);
     const storage = createMockStorageService(state);
     const TestLayer = createTestLayer({ storage });
 
     const args = createParsedArgs({
-      positional: ["force-prompt"],
+      command: "old-name",
+      positional: [],
       flags: {
-        content: "New forced content",
-        force: true,
+        name: "new-name",
       },
     });
 
     await Effect.runPromise(promptCommand(args).pipe(Effect.provide(TestLayer)));
 
-    // Should have updated the content
-    const updated = state.prompts.get("force-test");
-    expect(updated?.content).toBe("New forced content");
-  });
-
-  it("should show usage when no name provided", async () => {
-    const TestLayer = createTestLayer();
-
-    const args = createParsedArgs({
-      positional: [],
-    });
-
-    await Effect.runPromise(promptCommand(args).pipe(Effect.provide(TestLayer)));
-
-    const logs = console$.getLogs();
-    expect(logs.some((l) => l.includes("Usage"))).toBe(true);
+    expect(state.byName.has("new-name")).toBe(true);
   });
 });

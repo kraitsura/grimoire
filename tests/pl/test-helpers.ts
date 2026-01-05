@@ -143,9 +143,12 @@ export const createMockStorageService = (
     }
     const updated = { ...prompt, ...input, updated: new Date() };
     state.prompts.set(id, updated);
-    if (input.name) {
+    if (input.name && input.name !== prompt.name) {
       state.byName.delete(prompt.name);
       state.byName.set(input.name, updated);
+    } else {
+      // Update in-place for same name
+      state.byName.set(prompt.name, updated);
     }
     return Effect.succeed(updated);
   },
@@ -199,7 +202,7 @@ export const createMockClipboardService = (
     state.content = text;
     return Effect.void;
   },
-  paste: Effect.succeed(state.content),
+  paste: Effect.sync(() => state.content),
 });
 
 // ============================================================================
@@ -680,6 +683,19 @@ export const createMockRetentionService = (): typeof RetentionService.Service =>
 });
 
 // ============================================================================
+// Mock Editor Service
+// ============================================================================
+
+import { EditorService } from "../../src/services/editor-service";
+
+export const createMockEditorService = (
+  editedContent: string = "edited content"
+): typeof EditorService.Service => ({
+  open: (_content: string, _filename?: string) => Effect.succeed(editedContent),
+  getEditorCommand: Effect.succeed("mock-editor"),
+});
+
+// ============================================================================
 // Layer Factories
 // ============================================================================
 
@@ -709,6 +725,7 @@ export const createTestLayer = (options?: {
   pins?: typeof PinService.Service;
   remoteSync?: typeof RemoteSyncService.Service;
   retention?: typeof RetentionService.Service;
+  editor?: typeof EditorService.Service;
 }) => {
   return Layer.mergeAll(
     Layer.succeed(StorageService, options?.storage ?? createMockStorageService()),
@@ -732,7 +749,8 @@ export const createTestLayer = (options?: {
     Layer.succeed(FavoriteService, options?.favorites ?? createMockFavoriteService()),
     Layer.succeed(PinService, options?.pins ?? createMockPinService()),
     Layer.succeed(RemoteSyncService, options?.remoteSync ?? createMockRemoteSyncService()),
-    Layer.succeed(RetentionService, options?.retention ?? createMockRetentionService())
+    Layer.succeed(RetentionService, options?.retention ?? createMockRetentionService()),
+    Layer.succeed(EditorService, options?.editor ?? createMockEditorService())
   );
 };
 
