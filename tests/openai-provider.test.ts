@@ -33,7 +33,7 @@ describe("OpenAI Provider", () => {
       expect(models).toContain("gpt-4")
       expect(models).toContain("gpt-3.5-turbo")
       expect(models).toContain("o1")
-      expect(models).toContain("o1-mini")
+      expect(models).toContain("o3-mini")
     })
   })
 
@@ -77,7 +77,7 @@ describe("OpenAI Provider", () => {
 
       expect(result._tag).toBe("Left")
       if (result._tag === "Left") {
-        expect(result.left._tag).toBe("LLMError")
+        expect(result.left._tag).toBe("LLMAuthError")
         expect(result.left.message).toContain("API key not found")
       }
     })
